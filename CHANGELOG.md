@@ -35,6 +35,10 @@ SemVer once 1.0 ships.
   `docs/roadmap.md`. D-01 now records the verified facts: no
   `bubblewrap-suid` on Arch, and no mainline AppArmor userns-restrict sysctl.
 
+- Research: a Kicksecure security-misc review at `9535bf8`, merged into the
+  roadmap. It found two gaps in `pam_faillock`, now documented as roadmap G1
+  and G2: the tally lives on tmpfs, and Arch's `su` bypasses `system-auth`.
+
 ### Changed
 
 - `SECURITY.md`: GitHub private vulnerability reporting is not available on

@@ -7,12 +7,23 @@ This backlog merges the two research reviews:
   re-checked against 2026 kernels. 192 settings classified.
 - [research/secureblue-review.md](research/secureblue-review.md): secureblue
   at `5be4f13`.
+- [research/kicksecure-security-misc-review.md](research/kicksecure-security-misc-review.md):
+  Kicksecure security-misc at `9535bf8`.
 
 Both were checked against Omarchy at `dde0d12`. **Nothing here is implemented
 yet.** Each item changes security posture, so it needs the owner's go-ahead.
 Items that wait on a recorded decision point to `open-decisions.md`.
 
 "Both" means the two reviews recommend the item independently.
+
+## Tier 0: gaps in roles that are already implemented
+
+Both were verified in the digest-pinned Arch test image on 2026-10-21.
+
+| # | Gap | Fix | Role | Source |
+|---|---|---|---|---|
+| G1 | **The faillock counter resets on every reboot.** The default tally `dir` is `/var/run/faillock` (commented default in Arch's `faillock.conf`), and `/var/run` → `/run` is tmpfs, so a reboot gives 10 fresh attempts | `dir = /var/lib/faillock` in `faillock.conf` **and** inline on Omarchy's `pam_faillock` lines (inline args win), plus a `tmpfiles.d` entry. Trade-off: a lockout then also survives a reboot (still 15 minutes) | `pam_faillock` | Kicksecure |
+| G2 | **`su` is not covered by faillock.** Arch's `/etc/pam.d/su` and `su-l` call `pam_unix.so` directly and never include `system-auth`, and the `pam_wheel.so use_uid` line ships commented out | Uncomment `auth required pam_wheel.so use_uid` (only wheel may `su`), and add the `pam_faillock` preauth/authfail lines to `su` and `su-l` | `pam_faillock` | Kicksecure |
 
 ## Tier 1: low Omarchy risk, extends existing roles
 
@@ -41,6 +52,27 @@ Items that wait on a recorded decision point to `open-decisions.md`.
 | 16 | sshd drop-in for Omarchy's opt-in sshd: `Compression no` (OpenSSH 10.6, 2026-10-06, changed compression over a side channel; verified in the release notes), `PermitRootLogin no`, `MaxAuthTries 3`, no forwarding, `LogLevel VERBOSE`, keep `UsePAM yes` | `sshd` | both |
 | 17 | Mount options: ESP `nodev,nosuid,noexec,fmask=0077,dmask=0077`; `/home` and `/tmp` `nodev,nosuid`. **Never** `noexec` on `/var` or `/home` | `mounts` | Securix |
 | 18 | Flathub `--subset=verified` remote plus a permission-severity audit (no global lockdown) | `flatpak` | secureblue |
+
+### Added from the Kicksecure review
+
+| # | Item | Proposed role |
+|---|---|---|
+| 18a | `dev.tty.legacy_tiocsti=0`. Arch already builds it off, so this is an **assert** that catches a kernel that does not | `sysctl` |
+| 18b | sudo `Defaults umask_override, umask=0022`. A **required** companion to any `pam_umask 027` (#26); without it, Omarchy's `sudo tee /etc/...` scripts create root-only files | `login_policy` |
+| 18c | Limine boot lockdown: `editor_enabled: no`, `hash_mismatch_panic: yes` (Omarchy ships `hash_mismatch_panic: no` in `default/limine/limine.conf`). Recovery then needs a live USB | `secure_boot` / `kernel` |
+| 18d | Crash-record minimisation: `pstore.conf.d` `Storage=none` plus `erst_disable` | `coredump` |
+| 18e | `proc_mem.force_override=ptrace` (Arch defaults to always-allow). VM-test with Steam/Proton and JIT apps first | `kernel` |
+| 18f | Bluetooth exposure limits in `/etc/bluetooth/main.conf` (`PairableTimeout=30`, `DiscoverableTimeout=30`, optionally `Privacy=network/on`). bluetoothd ignores drop-in files. **Leave `AutoEnable` alone**: Omarchy reverted it | `network_privacy` |
+| 18g | Module blocklist additions: GNSS, Intel PMT, `pcspkr`, `evbug`, `usbkbd`/`usbmouse`, and the `ksmbd`/`nfsd` *servers*; `joydev` and `rndis_host` opt-in. Use a stub that prints why a module is blocked instead of `/bin/false` | `module_blocklist` |
+| 18h | Narrow setuid strip (`chfn`, `chsh`, `newgrp`, `gpasswd`, `expiry`, `chage`) re-applied by a pacman `PostTransaction` hook | `pacman_integrity` |
+| 18i | Set `oops_limit`/`warn_limit` late (after `graphical.target`), with a cmdline escape hatch, so boot-time driver noise does not count | `sysctl` |
+| 18j | If `slab_debug` is ever enabled, `hash_pointers=always` is **mandatory**: `slab_debug` turns off pointer hashing otherwise | `kernel` |
+
+**Resolved:** coredump `Storage=none` keeps `omarchy-crash-watch` working,
+because crashes and backtraces are still journalled (`coredump.conf(5)`). It
+breaks the `coredumpctl dump` step of Omarchy's diagnose-crash skill
+(`default/agents/skills/diagnose-crash/SKILL.md:61`), so #14 uses size caps,
+not `none`.
 
 ## Tier 3: needs a decision or a VM test first
 
@@ -77,6 +109,22 @@ These were confirmed against Omarchy's source:
 - Overriding Omarchy's zram/kyber/BBR tuning.
 - Replacing resolved with Unbound/dnsconfd.
 - Securix's server-era sshd ciphers (blowfish-cbc was removed in OpenSSH 7.6).
+- From Kicksecure:
+  - `ptrace_scope=3`, `oops_limit`/`warn_limit=1`, `panic=-1` as defaults
+  - `kernel.modules_disabled=1` after boot (breaks hotplug)
+  - `hide-hardware-info` (breaks the Omarchy shell and hardware detection)
+  - `/usr/lib/modules` or `/boot` mode 0700 (pacman resets them)
+  - global SSH client algorithm pinning
+  - `git core.symlinks=false`
+  - a passwordless rescue shell before the Limine editor is locked
+  - `accept_ra=0` (probably a no-op under NetworkManager)
+- Kicksecure no-ops on Arch. They would read as controls and change nothing:
+  - `cfi=kcfi` (GCC-built kernel)
+  - `kfence.sample_interval=100` and `efi_pstore.pstore_disable=1` (already the default)
+  - `extra_latent_entropy` (linux-hardened only)
+  - `jitterentropy_rng` in modules-load (built in)
+  - `nf_conntrack_helper=0` (no such parameter)
+  - `kpti=` (ARM64 only)
 
 ## Where the reviews and the PRD disagree
 

@@ -33,7 +33,8 @@ you cannot recover.
 Immutability (PRD 3.6) is aspirational and has no role yet.
 
 Next candidates, ranked by risk to Omarchy, are in [docs/roadmap.md](docs/roadmap.md).
-That list merges a 2026 re-check of Securix-Linux and a review of secureblue.
+That list merges a 2026 re-check of Securix-Linux and reviews of secureblue
+and Kicksecure security-misc.
 
 The PRD's picture of Omarchy differs from the real thing in two places: SSH is
 **not** opened by default (it is opt-in), and the kernel is `linux-omarchy`,
@@ -66,6 +67,10 @@ Tags: `p0` `p1` `p2`, area tags (`kernel`, `auth`, `isolation`, `network`,
 **Before applying `auth`:** after ten wrong passwords you are locked out for
 15 minutes. SSH, console, sudo and the lock screen share one counter. Keep a second logged-in TTY open
 the first time. `faillock --user "$USER" --reset` (as root) clears a lockout.
+
+**Known gaps in `pam_faillock`** (roadmap G1, G2, verified in the test image):
+the failure counter lives on tmpfs, so a reboot resets it; and Arch's `su`
+bypasses `system-auth`, so `su` attempts are not counted at all.
 
 **After every `omarchy-update`:** run the playbook again. Omarchy's update
 scripts rewrite some PAM files (D-11).
@@ -105,7 +110,7 @@ docs/PRD.md               requirements
 docs/upstream-baseline.md what Omarchy really ships (verified)
 docs/open-decisions.md    security decisions each stub is waiting on
 docs/roadmap.md           ranked backlog (Securix-Linux + secureblue reviews)
-docs/research/            the two source reviews
+docs/research/            the source reviews (Securix-Linux, secureblue, Kicksecure)
 docs/adr/                 architecture decisions
 ```
 
