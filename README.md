@@ -17,7 +17,7 @@ you cannot recover.
 |---|---|---|---|
 | `preflight` | — | ✅ implemented | Nothing. Refuses non-Arch hosts, finds the Omarchy install, prints the baseline |
 | `sysctl` | 3.1 | ✅ implemented | Writes `/etc/sysctl.d/99-zz-aegis-hardened.conf`: `dmesg_restrict=1`, `kptr_restrict=2`, `kexec_load_disabled=1`, `yama.ptrace_scope=1`, then reads the live values back |
-| `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=3 unlock_time=900` in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack, then verifies |
+| `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count) and `unlock_time=900` (Omarchy: 120 s) in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack, then verifies |
 | `firewall` | 3.4 | ✅ implemented | ufw default-deny incoming; removes LocalSend (53317) and the opt-in SSH rule; keeps Docker DNS (configurable) |
 | `pacman_integrity` | 3.5 | ✅ audit only | Fails the run if any repo's `SigLevel` accepts unsigned or untrusted packages |
 | `kernel` | 3.1 | ⏳ stub | `linux-hardened` alongside `linux-omarchy` (D-02) |
@@ -63,8 +63,8 @@ Tags: `p0` `p1` `p2`, area tags (`kernel`, `auth`, `isolation`, `network`,
 `supply-chain`), and one tag per role. All the tunables are in each role's
 `defaults/main.yml` and are named `aegis_<area>_*`.
 
-**Before applying `auth`:** after three wrong passwords you are locked out for
-15 minutes, and the lock screen counts too. Keep a second logged-in TTY open
+**Before applying `auth`:** after ten wrong passwords you are locked out for
+15 minutes. SSH, console, sudo and the lock screen share one counter. Keep a second logged-in TTY open
 the first time. `faillock --user "$USER" --reset` (as root) clears a lockout.
 
 **After every `omarchy-update`:** run the playbook again. Omarchy's update

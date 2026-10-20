@@ -80,9 +80,9 @@ These were confirmed against Omarchy's source:
 
 ## Where the reviews and the PRD disagree
 
-- **faillock count.** The PRD asks for `deny=3`, and that is what is
-  implemented. The Securix review suggests 5, and secureblue uses 50 with a
-  24-hour unlock. The PRD stands unless the owner changes it.
+- **faillock count (decided, D-13).** The PRD asked for `deny=3`. The owner
+  chose 10, Omarchy's default, and kept the PRD's 15-minute unlock. The
+  Securix review suggested 5; secureblue uses 50 with a 24-hour unlock.
 - **Kernel facts are checked against Arch `linux`, not `linux-omarchy`.**
   Neither review found the `linux-omarchy` config. The `kernel` role must read
   `/proc/config.gz` on the target before relying on any of them.

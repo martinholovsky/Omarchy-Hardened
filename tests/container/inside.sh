@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=11
+checks_total=12
 checks_passed=0
 
 pass() { checks_passed=$((checks_passed + 1)); echo "PASS: $*"; }
@@ -36,13 +36,13 @@ ansible-playbook tests/container/playbook.yml
 pass "first run succeeded"
 
 # Independent read-back (grep, not the roles' own asserts).
-[[ $(grep -c 'pam_faillock.so.*deny=3 unlock_time=900' /etc/pam.d/system-auth) -eq 2 ]] \
-  || fail "system-auth: expected 2 lines with deny=3 unlock_time=900"
-! grep -Eq 'deny=10|unlock_time=120' /etc/pam.d/system-auth /etc/pam.d/omarchy-lock-password \
-  || fail "relaxed inline faillock values remain"
+[[ $(grep -c 'pam_faillock.so.*deny=10 unlock_time=900' /etc/pam.d/system-auth) -eq 2 ]] \
+  || fail "system-auth: expected 2 lines with deny=10 unlock_time=900"
+! grep -Eq 'unlock_time=120' /etc/pam.d/system-auth /etc/pam.d/omarchy-lock-password \
+  || fail "Omarchy's 120 s unlock_time remains"
 pass "PAM inline faillock values hardened"
 
-if ! { grep -qx 'deny = 3' /etc/security/faillock.conf && grep -qx 'unlock_time = 900' /etc/security/faillock.conf; }; then
+if ! { grep -qx 'deny = 10' /etc/security/faillock.conf && grep -qx 'unlock_time = 900' /etc/security/faillock.conf; }; then
   fail "faillock.conf not hardened"
 fi
 pass "faillock.conf hardened"
@@ -56,6 +56,19 @@ echo "--- second run (idempotence)"
 out=$(ansible-playbook tests/container/playbook.yml)
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "second run was not idempotent"; }
 pass "second run changed nothing"
+
+# The default deny equals Omarchy's, so the runs above never exercise the deny
+# rewrite. Apply a different count, check it, then restore the default.
+echo "--- non-default deny is rewritten everywhere"
+ansible-playbook tests/container/playbook.yml -e aegis_faillock_deny=4 >/dev/null
+if ! { [[ $(grep -c 'pam_faillock.so.*deny=4 unlock_time=900' /etc/pam.d/system-auth) -eq 2 ]] \
+  && [[ $(grep -c 'pam_faillock.so.*deny=4 unlock_time=900' /etc/pam.d/omarchy-lock-password) -eq 2 ]] \
+  && grep -qx 'deny = 4' /etc/security/faillock.conf; }; then
+  fail "aegis_faillock_deny=4 was not applied to every file"
+fi
+ansible-playbook tests/container/playbook.yml >/dev/null
+grep -qx 'deny = 10' /etc/security/faillock.conf || fail "default deny not restored"
+pass "deny rewrite applies a non-default count and restores 10"
 
 echo "--- negative: an unsigned repository must fail the audit"
 # shellcheck disable=SC2016 # $arch is pacman's placeholder, written literally

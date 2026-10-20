@@ -1,6 +1,12 @@
 ---
-# PRD 3.2: 3 failed attempts, then a 15-minute lockout. Omarchy ships 10 / 120 s.
-aegis_faillock_deny: 3
+# Lock after 10 failed attempts, the same count Omarchy ships; the owner chose
+# this over the PRD's 3 (docs/open-decisions.md D-13). The unlock time stays at
+# the PRD's 15 minutes instead of Omarchy's 120 s.
+#
+# faillock keeps one per-user counter, and SSH (system-remote-login), console
+# login, sudo and the lock screen all go through it, so this count cannot be
+# set for SSH alone.
+aegis_faillock_deny: 10
 aegis_faillock_unlock_time: 900
 
 aegis_faillock_conf: /etc/security/faillock.conf

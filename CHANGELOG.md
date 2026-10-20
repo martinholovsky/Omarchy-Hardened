@@ -14,7 +14,7 @@ SemVer once 1.0 ships.
 - `sysctl`: `dmesg_restrict`, `kptr_restrict`, `kexec_load_disabled`,
   `yama.ptrace_scope`, verified against the live kernel. The unprivileged-userns
   switch is refused until D-01 is decided.
-- `pam_faillock`: `deny=3 unlock_time=900` in `faillock.conf` and in Omarchy's
+- `pam_faillock`: `deny=10 unlock_time=900` in `faillock.conf` and in Omarchy's
   inline PAM arguments (`system-auth`, `omarchy-lock-password`), with read-back
   verification.
 - `firewall`: removes the LocalSend and opt-in SSH ufw rules, keeps

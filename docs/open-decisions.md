@@ -111,3 +111,23 @@ The repo is private for now, but the PRD says it will be open source. Apache-2.0
 was chosen to match the permissive-only policy. Note that the runtime toolchain
 (ansible-core, community.general) is GPL-3.0. The playbook only invokes it and
 does not link to it, but this needs a proper look before the repo goes public.
+
+## D-13 — faillock lockout count (Decided: deny=10, unlock_time=900)
+
+The PRD (3.2) asked for `deny=3`. The owner decided on 10 failed attempts,
+the same as Omarchy's default, and kept the PRD's 15-minute unlock (Omarchy
+uses 120 s). faillock counts per user across every PAM service that includes
+`system-auth`: SSH (via `system-remote-login`), console login, sudo, and the
+lock screen's own stack. So the count is the same everywhere and cannot be set
+for SSH alone. The include chain was checked in the Arch test image:
+`sshd` → `system-remote-login` → `system-login` → `system-auth`, and
+`sudo` → `system-auth`.
+
+Caveat: Omarchy's opt-in sshd sets `PasswordAuthentication no` and
+`KbdInteractiveAuthentication no`. Public-key authentication does not run
+PAM's `auth` stack, so faillock never counts failed SSH attempts on that setup.
+This follows from sshd's design and has not been tested here. SSH brute-force
+protection therefore comes from key-only auth, `MaxAuthTries` and
+`PerSourcePenalties` (proposed `sshd` role), and from keeping port 22 off the
+LAN entirely (the `firewall` role removes `ufw limit 22/tcp`; `overlay_network`
+is planned).
