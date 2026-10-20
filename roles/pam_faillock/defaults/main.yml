@@ -1,0 +1,13 @@
+---
+# PRD 3.2: 3 failed attempts, then a 15-minute lockout. Omarchy ships 10 / 120 s.
+aegis_faillock_deny: 3
+aegis_faillock_unlock_time: 900
+
+aegis_faillock_conf: /etc/security/faillock.conf
+
+# Omarchy repeats deny=/unlock_time= inline on the pam_faillock lines of these
+# files, and inline arguments override faillock.conf — so writing the conf file
+# alone would change nothing. Files that do not exist are skipped.
+aegis_faillock_pam_files:
+  - /etc/pam.d/system-auth            # install/config/increase-lockout-limit.sh
+  - /etc/pam.d/omarchy-lock-password  # bin/omarchy-apply-lock (lock screen)

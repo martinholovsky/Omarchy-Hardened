@@ -1,0 +1,20 @@
+---
+# PRD 3.4. Outbound filtering is OpenSnitch's job (opensnitch role), so UFW
+# keeps Omarchy's allow-outgoing default.
+aegis_firewall_default_incoming: deny
+aegis_firewall_default_outgoing: allow
+
+# Omarchy opens LocalSend (53317 tcp+udp) at install time.
+aegis_firewall_remove_localsend: true
+
+# Omarchy does NOT open SSH by default; `omarchy-setup-security-sshd` adds
+# `ufw limit 22/tcp` when the user opts in. Remove it here; SSH belongs on the
+# overlay network (overlay_network role).
+aegis_firewall_remove_ssh: true
+
+# Omarchy allows Docker containers to reach DNS on the host bridge
+# (172.17.0.1:53/udp). Removing it breaks name resolution inside containers.
+aegis_firewall_remove_docker_dns: false
+aegis_firewall_docker_dns_sources:
+  - 172.16.0.0/12
+  - 192.168.0.0/16

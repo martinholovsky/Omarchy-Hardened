@@ -1,0 +1,8 @@
+---
+# STUB — PRD 3.4. Not implemented yet; changes nothing on the host.
+# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-09).
+- name: Report that the opensnitch role is not implemented yet
+  ansible.builtin.debug:
+    msg: >-
+      opensnitch: not implemented (PRD 3.4, waiting on D-09). Will install OpenSnitch with
+      a default-deny outbound rule set. Nothing was changed.

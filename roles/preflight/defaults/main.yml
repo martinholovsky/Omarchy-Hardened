@@ -1,0 +1,10 @@
+---
+# Refuse to run unless an Omarchy install is found. Set false only to test the
+# roles against plain Arch (the CI container does this).
+aegis_require_omarchy: true
+
+# Where Omarchy lives. 4.x installs to /usr/share/omarchy; 3.x installs lived
+# under the user's ~/.local/share/omarchy. The first path that exists wins.
+aegis_omarchy_paths:
+  - /usr/share/omarchy
+  - "{{ lookup('ansible.builtin.env', 'HOME') }}/.local/share/omarchy"

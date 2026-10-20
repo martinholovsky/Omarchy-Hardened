@@ -1,0 +1,25 @@
+---
+# systemd-sysctl applies drop-ins in lexical order and the last value wins.
+# "zz" sorts this after Omarchy's 99-omarchy-sysctl.conf, so a key both set
+# ends up hardened.
+aegis_sysctl_file: /etc/sysctl.d/99-zz-aegis-hardened.conf
+
+# Apply the values to the running kernel as well as writing the file. The CI
+# container sets this false because /proc/sys is read-only there.
+aegis_sysctl_apply: true
+
+# PRD 3.1. Every key here must exist on the running kernel, or the apply step
+# fails — on purpose, so a value that silently does nothing is not reported as
+# applied.
+aegis_sysctl_settings:
+  kernel.dmesg_restrict: 1
+  kernel.kptr_restrict: 2
+  # One-way until the next reboot: kexec stays disabled even if this file is
+  # removed.
+  kernel.kexec_load_disabled: 1
+  kernel.yama.ptrace_scope: 1
+
+# Disabling unprivileged user namespaces breaks Flatpak/bubblewrap and browser
+# sandboxes, which the PRD also relies on (3.3). Left off until that conflict
+# is decided: docs/open-decisions.md D-01.
+aegis_sysctl_disable_unprivileged_userns: false

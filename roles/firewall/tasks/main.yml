@@ -1,0 +1,65 @@
+---
+- name: Set the default incoming policy
+  community.general.ufw:
+    direction: incoming
+    default: "{{ aegis_firewall_default_incoming }}"
+
+- name: Set the default outgoing policy
+  community.general.ufw:
+    direction: outgoing
+    default: "{{ aegis_firewall_default_outgoing }}"
+
+- name: Remove the LocalSend allowances
+  community.general.ufw:
+    rule: allow
+    port: "53317"
+    proto: "{{ item }}"
+    delete: true
+  loop: [tcp, udp]
+  when: aegis_firewall_remove_localsend | bool
+
+- name: Remove the SSH rule added by omarchy-setup-security-sshd
+  community.general.ufw:
+    rule: "{{ item }}"
+    port: "22"
+    proto: tcp
+    delete: true
+  loop: [limit, allow]
+  when: aegis_firewall_remove_ssh | bool
+
+- name: Remove the Docker DNS allowances
+  community.general.ufw:
+    rule: allow
+    direction: in
+    proto: udp
+    from_ip: "{{ item }}"
+    to_ip: 172.17.0.1
+    port: "53"
+    delete: true
+  loop: "{{ aegis_firewall_docker_dns_sources }}"
+  when: aegis_firewall_remove_docker_dns | bool
+
+- name: Enable the firewall
+  community.general.ufw:
+    state: enabled
+
+- name: Read back the active rule set
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: aegis_firewall_status
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Assert the firewall is active with the hardened rule set
+  vars:
+    aegis_firewall_status_re: '(?m)^Status: active$'
+    aegis_firewall_default_re: 'Default: {{ aegis_firewall_default_incoming }} \(incoming\)'
+  ansible.builtin.assert:
+    that:
+      - aegis_firewall_status.stdout is search(aegis_firewall_status_re)
+      - aegis_firewall_status.stdout is search(aegis_firewall_default_re)
+      - not (aegis_firewall_remove_localsend | bool) or aegis_firewall_status.stdout is not search('(?m)^53317')
+      - not (aegis_firewall_remove_ssh | bool) or aegis_firewall_status.stdout is not search('(?m)^22(/tcp)?\s')
+    fail_msg: "Unexpected firewall state:\n{{ aegis_firewall_status.stdout }}"
+    quiet: true
+  when: not ansible_check_mode

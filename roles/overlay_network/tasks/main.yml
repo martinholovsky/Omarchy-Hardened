@@ -1,0 +1,8 @@
+---
+# STUB — PRD 3.4. Not implemented yet; changes nothing on the host.
+# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-10).
+- name: Report that the overlay_network role is not implemented yet
+  ansible.builtin.debug:
+    msg: >-
+      overlay_network: not implemented (PRD 3.4, waiting on D-10). Will bind sshd to the
+      Tailscale/WireGuard interface only. Nothing was changed.

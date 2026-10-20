@@ -1,0 +1,18 @@
+[project]
+name = "omarchy-hardened"
+version = "0.1.0"
+description = "Ansible playbook that hardens an Omarchy / Arch Linux workstation (dev tooling only)."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = []
+
+[dependency-groups]
+# Control-node tooling for linting and syntax checks. On the target machine,
+# use Arch's packaged ansible-core instead (see README).
+# ansible-core 2.21: security fixes until May 2027, EOL Nov 2027
+# (docs.ansible.com release_and_maintenance, checked 2026-10-20).
+dev = [
+  "ansible-core==2.21.5",
+  "ansible-lint==26.10.1",
+  "yamllint==1.38.0",
+]

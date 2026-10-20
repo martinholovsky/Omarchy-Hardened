@@ -1,0 +1,49 @@
+---
+- name: Assert the target is Arch Linux
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Archlinux'
+    fail_msg: >-
+      Omarchy-Hardened only targets Arch Linux / Omarchy
+      (found {{ ansible_facts['distribution'] }}).
+    quiet: true
+
+- name: Look for an Omarchy install
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ aegis_omarchy_paths }}"
+  register: aegis_omarchy_stats
+
+- name: Record the Omarchy install path
+  ansible.builtin.set_fact:
+    aegis_omarchy_path: >-
+      {{ (aegis_omarchy_stats.results
+          | selectattr('stat.exists')
+          | selectattr('stat.isdir')
+          | map(attribute='item')
+          | list
+          | first) | default('') }}
+
+- name: Assert Omarchy is installed
+  ansible.builtin.assert:
+    that:
+      - aegis_omarchy_path | length > 0
+    fail_msg: >-
+      No Omarchy install found in {{ aegis_omarchy_paths | join(', ') }}.
+      Install Omarchy first, or set aegis_require_omarchy=false to test on plain Arch.
+    quiet: true
+  when: aegis_require_omarchy | bool
+
+- name: Read the Omarchy version
+  ansible.builtin.slurp:
+    src: "{{ aegis_omarchy_path }}/version"
+  register: aegis_omarchy_version_file
+  failed_when: false
+  when: aegis_omarchy_path | length > 0
+
+- name: Report the baseline being hardened
+  ansible.builtin.debug:
+    msg: >-
+      Omarchy {{ (aegis_omarchy_version_file.content | default('') | b64decode | trim) or 'not found' }}
+      at {{ aegis_omarchy_path or 'n/a' }}; kernel {{ ansible_facts['kernel'] }}.
+      Roles were written against the upstream baseline in docs/upstream-baseline.md.

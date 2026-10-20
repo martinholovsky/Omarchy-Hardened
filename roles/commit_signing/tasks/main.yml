@@ -1,0 +1,8 @@
+---
+# STUB — PRD 3.3. Not implemented yet; changes nothing on the host.
+# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-08).
+- name: Report that the commit_signing role is not implemented yet
+  ansible.builtin.debug:
+    msg: >-
+      commit_signing: not implemented (PRD 3.3, waiting on D-08). Will require signed
+      commits (SSH/FIDO2 key) in the user's git config. Nothing was changed.

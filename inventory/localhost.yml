@@ -1,0 +1,6 @@
+---
+# The playbook only ever targets the machine it runs on.
+aegis:
+  hosts:
+    localhost:
+      ansible_connection: local

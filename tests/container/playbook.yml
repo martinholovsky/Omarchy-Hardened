@@ -1,0 +1,16 @@
+---
+# Container test: the roles that can run without a real kernel, PAM stack or
+# netfilter. Driven by tests/container/run.sh — not meant to be run by hand.
+- name: Apply the container-safe roles
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  vars:
+    aegis_require_omarchy: false
+    aegis_sysctl_apply: false # /proc/sys is read-only in a container
+  roles:
+    - preflight
+    - sysctl
+    - pam_faillock
+    - pacman_integrity

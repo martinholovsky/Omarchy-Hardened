@@ -1,0 +1,56 @@
+---
+# Omarchy-Hardened (codename Aegis) — local hardening playbook.
+#
+# Run a dry run first, always:
+#   ansible-playbook omarchy-harden.yml --check --diff --ask-become-pass
+#
+# Every role is tagged with its PRD section, so a single area can be applied on
+# its own (e.g. `--tags auth`). Roles that are still stubs only report what they
+# will do; see README.md for the status of each.
+- name: Harden an Omarchy / Arch Linux workstation
+  hosts: aegis
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Run preflight checks
+      ansible.builtin.import_role:
+        name: preflight
+      tags: [always]
+
+  roles:
+    # 3.1 Kernel & memory (P0)
+    - role: sysctl
+      tags: [kernel, sysctl, p0]
+    - role: kernel
+      tags: [kernel, p0]
+    - role: hardened_malloc
+      tags: [kernel, malloc, p0]
+
+    # 3.2 Authentication & access control (P0)
+    - role: pam_faillock
+      tags: [auth, faillock, p0]
+    - role: fido2
+      tags: [auth, fido2, p0]
+
+    # 3.3 Application, plugin & agent isolation (P1)
+    - role: apparmor
+      tags: [isolation, apparmor, p1]
+    - role: flatpak
+      tags: [isolation, flatpak, p1]
+    - role: agent_containment
+      tags: [isolation, agents, p1]
+    - role: commit_signing
+      tags: [isolation, signing, p1]
+
+    # 3.4 Network & zero trust (P1)
+    - role: firewall
+      tags: [network, firewall, p1]
+    - role: opensnitch
+      tags: [network, opensnitch, p1]
+    - role: overlay_network
+      tags: [network, overlay, p1]
+
+    # 3.5 Supply chain & updates (P2)
+    - role: pacman_integrity
+      tags: [supply-chain, pacman, p2]

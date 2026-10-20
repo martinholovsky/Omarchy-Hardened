@@ -1,0 +1,11 @@
+---
+profile: production
+exclude_paths:
+  - .collections/
+  - .venv/
+  - .github/
+skip_list:
+  # Every user-facing knob is namespaced aegis_<area>_* so a user tunes one
+  # family of variables across all roles; that prefix is what prevents
+  # collisions, not the role name.
+  - var-naming[no-role-prefix]

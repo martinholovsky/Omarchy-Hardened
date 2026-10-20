@@ -1,0 +1,8 @@
+---
+# STUB — PRD 3.1. Not implemented yet; changes nothing on the host.
+# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-02).
+- name: Report that the kernel role is not implemented yet
+  ansible.builtin.debug:
+    msg: >-
+      kernel: not implemented (PRD 3.1, waiting on D-02). Will install linux-hardened
+      alongside linux-omarchy and add a Limine boot entry. Nothing was changed.

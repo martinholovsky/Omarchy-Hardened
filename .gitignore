@@ -1,0 +1,6 @@
+# Collections installed by `ansible-galaxy collection install -r requirements.yml`
+/.collections/
+*.retry
+.venv/
+__pycache__/
+.DS_Store

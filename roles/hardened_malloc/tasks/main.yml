@@ -1,0 +1,8 @@
+---
+# STUB — PRD 3.1. Not implemented yet; changes nothing on the host.
+# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-03).
+- name: Report that the hardened_malloc role is not implemented yet
+  ansible.builtin.debug:
+    msg: >-
+      hardened_malloc: not implemented (PRD 3.1, waiting on D-03). Will install
+      hardened_malloc and preload it for an opt-in allowlist. Nothing was changed.

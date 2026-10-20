@@ -1,0 +1,97 @@
+---
+- name: Set the faillock defaults in faillock.conf
+  ansible.builtin.lineinfile:
+    path: "{{ aegis_faillock_conf }}"
+    regexp: '^\s*#?\s*{{ item.key }}\s*='
+    line: "{{ item.key }} = {{ item.value }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  loop:
+    - { key: deny, value: "{{ aegis_faillock_deny }}" }
+    - { key: unlock_time, value: "{{ aegis_faillock_unlock_time }}" }
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Find the PAM files that carry inline faillock arguments
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ aegis_faillock_pam_files }}"
+  register: aegis_faillock_pam_stats
+
+- name: Select the PAM files present on this host
+  ansible.builtin.set_fact:
+    aegis_faillock_present_pam_files: >-
+      {{ aegis_faillock_pam_stats.results
+         | selectattr('stat.exists')
+         | map(attribute='item')
+         | list }}
+
+- name: Rewrite inline deny= on pam_faillock lines
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: '^(\s*auth\s.*pam_faillock\.so\b.*\s)deny=\d+'
+    replace: '\g<1>deny={{ aegis_faillock_deny }}'
+    backup: true
+  loop: "{{ aegis_faillock_present_pam_files }}"
+
+- name: Rewrite inline unlock_time= on pam_faillock lines
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: '^(\s*auth\s.*pam_faillock\.so\b.*\s)unlock_time=\d+'
+    replace: '\g<1>unlock_time={{ aegis_faillock_unlock_time }}'
+    backup: true
+  loop: "{{ aegis_faillock_present_pam_files }}"
+
+# Verification. A regex that stops matching after an upstream change would make
+# the two tasks above silent no-ops, so read the files back and check the values
+# that will actually be in force.
+- name: Read back the PAM files
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop: "{{ aegis_faillock_present_pam_files }}"
+  register: aegis_faillock_pam_contents
+  when: not ansible_check_mode
+
+- name: Assert no pam_faillock line overrides the hardened values
+  vars:
+    aegis_faillock_lines: >-
+      {{ item.content | b64decode | regex_findall('(?m)^\s*auth\s.*pam_faillock\.so.*$') }}
+    aegis_faillock_inline: >-
+      {{ aegis_faillock_lines | join('\n') | regex_findall('(deny|unlock_time)=(\d+)') }}
+  ansible.builtin.assert:
+    that:
+      - aegis_faillock_lines | length > 0
+      - aegis_faillock_inline
+        | rejectattr('0', 'equalto', 'deny') | map(attribute='1') | map('int')
+        | reject('equalto', aegis_faillock_unlock_time | int) | list | length == 0
+      - aegis_faillock_inline
+        | selectattr('0', 'equalto', 'deny') | map(attribute='1') | map('int')
+        | reject('equalto', aegis_faillock_deny | int) | list | length == 0
+    fail_msg: >-
+      {{ item.item }} still carries inline faillock values other than
+      deny={{ aegis_faillock_deny }} unlock_time={{ aegis_faillock_unlock_time }}
+      (found {{ aegis_faillock_inline }}), or has no pam_faillock line at all.
+    quiet: true
+  loop: "{{ aegis_faillock_pam_contents.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode
+
+- name: Read back faillock.conf
+  ansible.builtin.slurp:
+    src: "{{ aegis_faillock_conf }}"
+  register: aegis_faillock_conf_content
+  when: not ansible_check_mode
+
+- name: Assert faillock.conf holds the hardened values
+  vars:
+    aegis_conf_text: "{{ aegis_faillock_conf_content.content | b64decode }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_conf_text is search('(?m)^deny = ' ~ aegis_faillock_deny ~ '$')
+      - aegis_conf_text is search('(?m)^unlock_time = ' ~ aegis_faillock_unlock_time ~ '$')
+    quiet: true
+  when: not ansible_check_mode

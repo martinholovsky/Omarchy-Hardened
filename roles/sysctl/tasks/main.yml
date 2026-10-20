@@ -1,0 +1,45 @@
+---
+- name: Refuse the unprivileged user namespace switch until D-01 is decided
+  ansible.builtin.assert:
+    that:
+      - not (aegis_sysctl_disable_unprivileged_userns | bool)
+    fail_msg: >-
+      aegis_sysctl_disable_unprivileged_userns is not implemented: it conflicts
+      with the Flatpak/bubblewrap sandboxing in PRD 3.3. See docs/open-decisions.md D-01.
+    quiet: true
+
+- name: Write the hardened sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value | string }}"
+    sysctl_file: "{{ aegis_sysctl_file }}"
+    state: present
+    sysctl_set: "{{ aegis_sysctl_apply | bool }}"
+    reload: "{{ aegis_sysctl_apply | bool }}"
+  loop: "{{ aegis_sysctl_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+
+- name: Read back the live kernel values
+  ansible.builtin.command:
+    cmd: sysctl -n {{ item.key }}
+  loop: "{{ aegis_sysctl_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: aegis_sysctl_live
+  changed_when: false
+  check_mode: false
+  when: aegis_sysctl_apply | bool
+
+- name: Assert the running kernel holds every hardened value
+  ansible.builtin.assert:
+    that:
+      - item.stdout | trim == item.item.value | string
+    fail_msg: "{{ item.item.key }} is {{ item.stdout | trim }}, expected {{ item.item.value }}"
+    quiet: true
+  loop: "{{ aegis_sysctl_live.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - aegis_sysctl_apply | bool
+    - not ansible_check_mode

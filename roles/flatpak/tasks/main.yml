@@ -1,0 +1,8 @@
+---
+# STUB — PRD 3.3. Not implemented yet; changes nothing on the host.
+# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-06).
+- name: Report that the flatpak role is not implemented yet
+  ansible.builtin.debug:
+    msg: >-
+      flatpak: not implemented (PRD 3.3, waiting on D-06). Will move network-facing apps
+      to Flatpak with tightened permissions. Nothing was changed.

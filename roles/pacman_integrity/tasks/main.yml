@@ -1,0 +1,45 @@
+---
+# Audit only — this role changes nothing. It fails the run when pacman would
+# accept packages without a trusted signature.
+
+- name: Read pacman.conf
+  ansible.builtin.slurp:
+    src: "{{ aegis_pacman_conf }}"
+  register: aegis_pacman_conf_raw
+
+- name: Parse SigLevel per section
+  vars:
+    aegis_lines: "{{ aegis_pacman_conf_raw.content | b64decode | split('\n') }}"
+  ansible.builtin.set_fact:
+    aegis_pacman_siglevels: >-
+      {%- set ns = namespace(section='options', out=[]) -%}
+      {%- for raw in aegis_lines -%}
+        {%- set line = raw | regex_replace('#.*$', '') | trim -%}
+        {%- if line is match('^\[.+\]$') -%}
+          {%- set ns.section = line[1:-1] -%}
+        {%- elif line is match('^SigLevel\s*=') -%}
+          {%- set ns.out = ns.out + [{'section': ns.section, 'value': line.split('=', 1)[1] | trim}] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.out }}
+
+- name: Assert the global SigLevel requires signatures
+  ansible.builtin.assert:
+    that:
+      - aegis_pacman_siglevels | selectattr('section', 'equalto', 'options') | list | length == 1
+      - (aegis_pacman_siglevels | selectattr('section', 'equalto', 'options') | first).value is search('\\bRequired\\b')
+    fail_msg: "The [options] SigLevel must be set once and include Required (found {{ aegis_pacman_siglevels }})."
+    quiet: true
+
+- name: Assert no repository weakens signature checking
+  ansible.builtin.assert:
+    that:
+      - item.value is not search('\\b(Package)?(Never|Optional|TrustAll)\\b')
+    fail_msg: >-
+      [{{ item.section }}] has SigLevel = {{ item.value }}, which accepts unsigned
+      or untrusted packages. Fix it, or add "{{ item.section }}" to
+      aegis_pacman_siglevel_exceptions if you accept the risk.
+    quiet: true
+  loop: "{{ aegis_pacman_siglevels | rejectattr('section', 'in', aegis_pacman_siglevel_exceptions) | list }}"
+  loop_control:
+    label: "{{ item.section }}"

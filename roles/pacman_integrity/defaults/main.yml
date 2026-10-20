@@ -1,0 +1,13 @@
+---
+aegis_pacman_conf: /etc/pacman.conf
+
+# Repositories allowed to weaken signature checking. Empty by default: any
+# SigLevel containing Never, Optional or TrustAll (or their Package* forms)
+# fails the run. DatabaseOptional is Arch's default and is accepted.
+# Limitation: repositories defined in files pulled in with Include= are not
+# parsed yet.
+#
+# Known case: on Intel T2 Macs Omarchy appends [arch-mact2] with
+# `SigLevel = Never` (install/hardware/pacman.sh). Add "arch-mact2" here only
+# if you accept unsigned packages from that repo.
+aegis_pacman_siglevel_exceptions: []

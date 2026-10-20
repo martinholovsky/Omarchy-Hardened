@@ -1,0 +1,9 @@
+---
+# Container test for the firewall role; needs NET_ADMIN (see run.sh).
+- name: Apply the firewall role
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  roles:
+    - firewall

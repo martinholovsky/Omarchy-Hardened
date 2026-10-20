@@ -1,0 +1,8 @@
+---
+# Pinned exactly; bump deliberately (Dependabot does not track Galaxy).
+# Versions verified on galaxy.ansible.com 2026-10-20.
+collections:
+  - name: ansible.posix
+    version: "2.2.2"
+  - name: community.general
+    version: "13.5.0"

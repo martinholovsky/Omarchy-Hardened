@@ -1,0 +1,36 @@
+---
+# Install once per clone: `pre-commit install --hook-type pre-commit --hook-type pre-push`
+# Third-party hooks are pinned by commit SHA (tag in the comment).
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-executables-have-shebangs
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: \.md$
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: 745eface02aef23e168a8afb6b5737818efbea95 # v0.11.0.1
+    hooks:
+      - id: shellcheck
+  # Linters run from uv.lock so local and CI use the same versions.
+  - repo: local
+    hooks:
+      - id: yamllint
+        name: yamllint
+        entry: uv run --frozen yamllint --strict
+        language: system
+        types: [yaml]
+      - id: ansible-lint
+        name: ansible-lint
+        entry: >-
+          bash -c 'uv run --frozen ansible-galaxy collection install -r requirements.yml >/dev/null
+          && uv run --frozen ansible-lint'
+        language: system
+        pass_filenames: false
+        files: \.(ya?ml)$

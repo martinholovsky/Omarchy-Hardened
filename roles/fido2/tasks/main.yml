@@ -1,0 +1,8 @@
+---
+# STUB — PRD 3.2. Not implemented yet; changes nothing on the host.
+# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-04).
+- name: Report that the fido2 role is not implemented yet
+  ansible.builtin.debug:
+    msg: >-
+      fido2: not implemented (PRD 3.2, waiting on D-04). Will enrol FIDO2 for LUKS
+      (systemd-cryptenroll) and sudo (pam_u2f). Nothing was changed.
