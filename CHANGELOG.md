@@ -30,3 +30,12 @@ SemVer once 1.0 ships.
   and uv.
 - Docs: verified upstream baseline, open security decisions D-01 to D-12,
   ADR 0001.
+- Research: a review of Securix-Linux re-checked against 2026 kernels (192
+  settings classified) and a review of secureblue at `5be4f13`, merged into
+  `docs/roadmap.md`. D-01 now records the verified facts: no
+  `bubblewrap-suid` on Arch, and no mainline AppArmor userns-restrict sysctl.
+
+### Changed
+
+- `SECURITY.md`: GitHub private vulnerability reporting is not available on
+  private repos, so the report link is replaced until the repo goes public.

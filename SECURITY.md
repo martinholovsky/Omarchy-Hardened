@@ -6,9 +6,10 @@ protected than the output claims.
 
 ## Reporting
 
-Please report vulnerabilities privately through
-[GitHub private vulnerability reporting](https://github.com/martinholovsky/Omarchy-Hardened/security/advisories/new),
-not in a public issue.
+While the repository is private, report vulnerabilities to the owner
+directly, not in an issue. GitHub's private vulnerability reporting is not
+available on private repositories (the API returns 404). Turn it on when the
+repo goes public, and link it here.
 
 Especially wanted: any case where the playbook reports success but a setting
 is not actually in force, for example an Omarchy change that makes a role's

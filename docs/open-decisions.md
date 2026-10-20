@@ -12,25 +12,33 @@ Status: **Open** · **Decided** · **Deferred**
 ## D-01 — Unprivileged user namespaces vs Flatpak/browser sandboxes (Open)
 
 PRD 3.1 says "disable unprivileged user namespaces where possible". PRD 3.3
-moves apps to Flatpak/bubblewrap, and Chromium/Electron sandboxes also use user
-namespaces. On the mainline kernel the only switch is
-`user.max_user_namespaces=0`, which breaks all of them. `linux-hardened` adds
-`kernel.unprivileged_userns_clone`. Flatpak then needs the setuid
-`bubblewrap-suid` package, which is a different risk: a setuid binary instead of
-an exposed kernel surface.
+moves apps to Flatpak/bubblewrap, and Chromium/Electron, Steam and Claude
+Code's bubblewrap sandbox all create user namespaces too.
 
-Options: (a) leave namespaces on and contain the risk with AppArmor (the Ubuntu
-24.04 approach, `kernel.apparmor_restrict_unprivileged_userns`); (b)
-`linux-hardened` + `unprivileged_userns_clone=0` + `bubblewrap-suid`; (c) leave
-it alone.
-**Unverified, check before deciding:** whether
-`apparmor_restrict_unprivileged_userns` exists outside Ubuntu's kernel patches
-(it may not exist on `linux-omarchy` or `linux-hardened`), and whether
-`bubblewrap-suid` is in the Arch repos or only in the AUR.
-**Recommendation (provisional):** (a) if that sysctl is available, otherwise
-(c) until the `apparmor` role exists.
-`sysctl` refuses `aegis_sysctl_disable_unprivileged_userns=true` until this is
-decided.
+Verified 2026-10-20:
+
+- The global switches break all of the above: `user.max_user_namespaces=0`
+  (any kernel) and `kernel.unprivileged_userns_clone=0` (`linux-hardened`).
+- `bubblewrap-suid` is in neither the Arch repos nor the AUR (archlinux.org
+  package search and AUR RPC both return 0 results), so Fedora's "setuid bwrap"
+  fallback is not available.
+- Ubuntu's `apparmor_restrict_unprivileged_userns` is **not** in mainline
+  (`security/apparmor/lsm.c` on torvalds/master, 72 KB, 0 matches). Mainline
+  AppArmor only mediates `userns` for processes that already run under a
+  profile.
+- secureblue (commit `5be4f13`) also leaves userns on in the kernel. It uses an
+  SELinux policy (`harden_userns.cil`) that denies `user_namespace create` to
+  every domain except an allowlist (bwrap, flatpak, container runtimes, its
+  browser, passt, thumbnailers). This needs SELinux type enforcement and does
+  not port to Arch/AppArmor as-is.
+
+Options: (a) keep userns on; deny `userns` in AppArmor profiles for the
+high-risk processes we confine (AI agents, untrusted-input parsers), and add
+systemd `RestrictNamespaces=` / seccomp to agent units; (b) `linux-hardened` +
+`unprivileged_userns_clone=0` and accept a broken Flatpak/browser sandbox; (c)
+leave it alone.
+**Recommendation:** (a). (b) contradicts PRD 3.3. `sysctl` refuses
+`aegis_sysctl_disable_unprivileged_userns=true` until this is decided.
 
 ## D-02 — Kernel: replace `linux-omarchy` or install alongside it (Open)
 
