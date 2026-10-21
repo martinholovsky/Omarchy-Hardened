@@ -9,7 +9,7 @@ Status: **Open** · **Decided** · **Deferred**
 
 ---
 
-## D-01 — Unprivileged user namespaces vs Flatpak/browser sandboxes (Open)
+## D-01 — Unprivileged user namespaces vs Flatpak/browser sandboxes (Decided 2026-10-21: (a))
 
 PRD 3.1 says "disable unprivileged user namespaces where possible". PRD 3.3
 moves apps to Flatpak/bubblewrap, and Chromium/Electron, Steam and Claude
@@ -40,7 +40,13 @@ leave it alone.
 **Recommendation:** (a). (b) contradicts PRD 3.3. `sysctl` refuses
 `aegis_sysctl_disable_unprivileged_userns=true` until this is decided.
 
-## D-02 — Kernel: replace `linux-omarchy` or install alongside it (Open)
+**Decided (owner, 2026-10-21): (a).** Unprivileged user namespaces stay on
+globally. They are denied only for the processes we confine: the agent wrapper
+(D-07, rootless Podman with no new user namespaces inside) and AppArmor
+profiles that deny `userns` (D-05). `aegis_sysctl_disable_unprivileged_userns`
+keeps refusing `true`.
+
+## D-02 — Kernel: replace `linux-omarchy` or install alongside it (Decided 2026-10-21: alongside, opt-in default)
 
 Omarchy ships its own `linux-omarchy`, not Arch `linux`. `linux-hardened` lags
 mainline and has no Omarchy-specific patches. Out-of-tree modules (NVIDIA, T2)
@@ -48,13 +54,23 @@ need `-headers` and DKMS. **Recommendation:** install `linux-hardened`
 *alongside* `linux-omarchy`, add a Limine entry, make it the default only
 after one clean boot, and keep `linux-omarchy` as the fallback entry.
 
-## D-03 — hardened_malloc scope (Open)
+**Decided (owner, 2026-10-21):** install `linux-hardened` alongside, with its
+own Limine entry. `linux-omarchy` stays the default. The role never changes
+the default boot entry; switching is the owner's manual step after a clean
+boot.
+
+## D-03 — hardened_malloc scope (Deferred 2026-10-21)
 
 Preloading it system-wide (`/etc/ld.so.preload`) breaks or slows some apps
 (Electron, JIT runtimes, some games). **Recommendation:** an opt-in per-app
 allowlist through wrapper or `LD_PRELOAD` drop-ins, not a global preload.
 
-## D-04 — FIDO2 for LUKS and sudo: recovery path (Open)
+**Deferred (owner, 2026-10-21).** It is only available from the AUR, where it
+was flagged out of date on 2026-02-23. Building it from a root playbook is a
+supply-chain risk that outweighs the gain. Revisit if it reaches the official
+repos. The role stays a stub.
+
+## D-04 — FIDO2 for LUKS and sudo: recovery path (Decided 2026-10-21: audit + second factor for sudo)
 
 Requiring a hardware key at boot and for sudo locks you out when the key is
 lost. Before this role does anything it needs: at least two enrolled keys, a
@@ -63,40 +79,74 @@ TTY/root console keeps a password fallback. **Recommendation:** two keys
 required at enrolment, recovery passphrase kept, `pam_u2f` as `required` for
 `sudo` only (not login) in phase 1.
 
-## D-05 — AppArmor enforce vs complain (Open)
+**Decided (owner, 2026-10-21).** Omarchy's `omarchy-setup-security-fido2`
+adds `auth sufficient pam_u2f.so` to sudo and polkit (verified at `dde0d12`),
+so there the key *replaces* the password. The role always reports FIDO2
+status. Once `/etc/fido2/fido2` holds at least two keys, it makes `pam_u2f`
+`required` for sudo: key **and** password. Login, the TTY and polkit keep
+their current behaviour, and LUKS is not touched. With fewer than two keys it
+changes nothing.
+
+## D-05 — AppArmor enforce vs complain (Decided 2026-10-21: enable, complain first)
 
 **Recommendation:** ship profiles in complain mode first, collect denials for a
 week, then switch to enforce one profile at a time.
 
-## D-06 — Which apps move to Flatpak (Open)
+**Decided (owner, 2026-10-21).** Enable AppArmor by adding it to `lsm=`
+through a separate Limine cmdline drop-in. Profiles load in complain mode.
+Enforcing is a later per-profile variable.
+
+## D-06 — Which apps move to Flatpak (Decided 2026-10-21: no moves; verified remote + audit)
 
 Omarchy installs browsers and chat clients as native packages, and some
 Omarchy integrations call them by path. Decide the list.
 
-## D-07 — AI agent containment boundary (Open)
+**Decided (owner, 2026-10-21).** No native app is moved or removed. If
+Flatpak is present, Flathub is restricted to `--subset=verified`, and the
+permissions of installed Flatpaks are audited (host or home filesystem,
+`devices=all`, session-bus access).
+
+## D-07 — AI agent containment boundary (Decided 2026-10-21: rootless Podman)
 
 Choose between Distrobox (convenient, but by default shares `$HOME` and is a
 weak boundary), a rootless Podman container with no home mount, or a microVM.
 **Recommendation:** rootless Podman, project directory bind-mounted only,
 egress through OpenSnitch rules.
 
-## D-08 — Commit signing key type (Open)
+**Decided (owner, 2026-10-21).** A wrapper runs an agent in a rootless Podman
+container. Only the project directory is bind-mounted. There is no `$HOME`,
+all capabilities are dropped, and new privileges are disabled. Egress control
+comes from D-09. It is opt-in per invocation and changes nothing else.
+
+## D-08 — Commit signing key type (Decided 2026-10-21: SSH, ed25519-sk)
 
 SSH signing key on a FIDO2 token (`ed25519-sk`) or GPG. **Recommendation:**
 `ed25519-sk`, which works with the same keys as D-04.
 
-## D-09 — OpenSnitch default action (Open)
+**Decided (owner, 2026-10-21).** git `gpg.format=ssh`, for a key the owner
+names (recommended: `ed25519-sk` on the D-04 tokens), plus an
+`allowed_signers` file. The role never generates keys.
+
+## D-09 — OpenSnitch default action (Decided 2026-10-21: install, allow by default, pre-seeded rules)
 
 Default-deny makes every new connection prompt, which gets noisy. Decide
 deny vs ask, and the rule set to pre-seed (pacman mirrors, Omarchy update
 host, Tailscale).
 
-## D-10 — Overlay network: Tailscale or plain WireGuard (Open)
+**Decided (owner, 2026-10-21).** Install and enable OpenSnitch with the
+default action `allow`: visibility first. Rules are pre-seeded for pacman
+mirrors, Omarchy hosts and Tailscale. Moving to `deny` is a variable.
+
+## D-10 — Overlay network: Tailscale or plain WireGuard (Decided 2026-10-21: Tailscale via Omarchy)
 
 Tailscale adds a coordination server you have to trust; WireGuard needs manual
 key distribution.
 
-## D-11 — Drift after `omarchy-update` (Open)
+**Decided (owner, 2026-10-21).** Use Omarchy's
+`omarchy-install-service-tailscale`. The role reports whether Tailscale is
+up, and on opt-in allows SSH on `tailscale0` only. Logging in stays manual.
+
+## D-11 — Drift after `omarchy-update` (Decided 2026-10-21: check-mode hook that warns)
 
 Omarchy's update scripts rewrite PAM files (see
 [upstream-baseline.md](upstream-baseline.md)). Options: document "re-run after
@@ -104,6 +154,11 @@ update" (current), a pacman `PostTransaction` hook that runs the playbook in
 check mode and warns, or a hook that re-applies. **Recommendation:** a
 check-mode hook that warns. Re-applying automatically from a pacman hook is too
 much hidden behaviour.
+
+**Decided (owner, 2026-10-21).** A pacman `PostTransaction` hook starts a
+unit that runs the playbook in `--check` mode. If anything would change, it
+warns through the journal and a desktop notification. It never re-applies
+anything by itself.
 
 ## D-12 — Licence (Decided: Apache-2.0)
 
