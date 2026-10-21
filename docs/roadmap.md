@@ -31,9 +31,10 @@ fixed by owner decision:
 
 ## Tier 1: low Omarchy risk, extends existing roles (implemented 2026-10-21)
 
-Items 1–4 and 7–9 are implemented. Items 5 and 6, plus the `sysrq` and ASLR
-parts of 1 and 3, are wired up behind D-15 to D-19 and default to Omarchy's
-current behaviour. #9's golden-file CI is replaced by planted-problem tests;
+All items are implemented. Items 5 and 6, and the `sysrq` and ASLR parts of 1
+and 3, followed owner decisions D-15 to D-19 (2026-10-21): `sysrq=16` pinned,
+ASLR at maximum, `oops_limit=100` with no `warn_limit`, faillock `audit` off,
+`even_deny_root` on. #9's golden-file CI is replaced by planted-problem tests;
 a full golden file would break whenever `pacman -Syu` in the test image
 changes the package set.
 

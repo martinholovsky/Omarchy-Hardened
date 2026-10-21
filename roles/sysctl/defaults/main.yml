@@ -63,19 +63,21 @@ aegis_sysctl_ipv6_settings:
   net.ipv6.conf.all.use_tempaddr: 2
   net.ipv6.conf.default.use_tempaddr: 2
 
-# --- Waiting on a decision (docs/open-decisions.md). Each default leaves
-# Omarchy's current behaviour unchanged. ---
+# --- Owner decisions D-15 to D-17 (2026-10-21, docs/open-decisions.md) ---
 
-# D-15: null leaves systemd's value (16 = sync only). Set 0 to disable SysRq.
-aegis_sysctl_sysrq: null
+# D-15: pin systemd's value, so a change is caught: 16 = only the emergency
+# sync key. null = leave whatever the system sets; 0 = SysRq off.
+aegis_sysctl_sysrq: 16
 
-# D-16: raise vm.mmap_rnd_bits / mmap_rnd_compat_bits to the x86_64 kernel
-# maximum (32 / 16; Arch defaults 28 / 8). Ignored on other architectures.
-aegis_sysctl_mmap_rnd_max: false
+# D-16: vm.mmap_rnd_bits / mmap_rnd_compat_bits at the x86_64 kernel maximum
+# (32 / 16; Arch defaults 28 / 8). Ignored on other architectures. If an
+# ASan/TSan build crashes at startup, try false first.
+aegis_sysctl_mmap_rnd_max: true
 
-# D-17: null leaves the kernel defaults (oops_limit 10000, warn_limit 0 =
-# unlimited).
-aegis_sysctl_oops_limit: null
+# D-17: panic after 100 oopses since boot (kernel default 10000). warn_limit
+# stays unset (0 = never), because routine NVIDIA/Wi-Fi WARNs would eventually
+# reboot the desktop.
+aegis_sysctl_oops_limit: 100
 aegis_sysctl_warn_limit: null
 
 # Check-only: fail if the running kernel allows mappings below this address.

@@ -143,29 +143,28 @@ is planned).
 
 ## Decisions from roadmap Tier 1 (opened 2026-10-21)
 
-Settings that change the system default to Omarchy's current behaviour until
-decided. Audit-only checks default to the recommendation, because they change
-nothing on the host.
+All seven were decided by the owner on 2026-10-21, each with the
+recommendation, and are now the defaults.
 
-### D-15 — `kernel.sysrq` (Open; default: leave systemd's 16)
+### D-15 — `kernel.sysrq` (Decided: pin 16)
 
 Options: (a) leave 16 (systemd default: only the emergency *sync* key works);
 (b) 0 (all SysRq off, as Kicksecure and secureblue do); (c) 4 (keyboard control
 incl. SAK).
 **Recommendation: (a).** 16 exposes nothing an attacker at the keyboard can
 abuse, and sync before a forced power-off can save data. 0 gains almost
-nothing on a single-user laptop. Set `aegis_sysctl_sysrq: 0` to choose (b).
+nothing on a single-user laptop. Implemented as `aegis_sysctl_sysrq: 16`, so the value is pinned and verified.
 
-### D-16 — ASLR entropy to the maximum (Open; default: off)
+### D-16 — ASLR entropy to the maximum (Decided: raise on x86_64)
 
 `vm.mmap_rnd_bits` 28 → 32 and `vm.mmap_rnd_compat_bits` 8 → 16 (Arch config:
 min 28/8, max 32/16, verified). Options: (a) raise on x86_64; (b) leave.
 **Recommendation: (a)**, with one caveat for a developer machine: after Ubuntu
 raised to 32 bits, older ASan/TSan builds crashed. Current toolchains are
 believed fixed, but this is unverified here. If a sanitizer crashes, lowering
-this is the first thing to try. Set `aegis_sysctl_mmap_rnd_max: true`.
+this is the first thing to try (`aegis_sysctl_mmap_rnd_max: false`).
 
-### D-17 — `oops_limit` / `warn_limit` (Open; default: kernel defaults)
+### D-17 — `oops_limit` / `warn_limit` (Decided: oops_limit=100, warn_limit unset)
 
 The kernel panics after this many oopses or WARNs since boot (defaults:
 oops_limit 10000, warn_limit 0 = never). Options: (a) `oops_limit=100`,
@@ -174,19 +173,18 @@ oops_limit 10000, warn_limit 0 = never). Options: (a) `oops_limit=100`,
 **Recommendation: (a).** A hundred oopses means the kernel is already broken,
 so stopping is right. WARNs are routine for NVIDIA and Wi-Fi drivers, though,
 and a WARN limit would reboot the desktop after a long uptime. Revisit
-`warn_limit` with the late-boot mechanism (roadmap 18i). Set
-`aegis_sysctl_oops_limit: 100`.
+`warn_limit` with the late-boot mechanism (roadmap 18i).
 
-### D-18 — faillock `audit` (Open; default: off)
+### D-18 — faillock `audit` (Decided: off)
 
 `audit` logs the user name of failed attempts against accounts that do not
 exist. Options: (a) off; (b) on.
 **Recommendation: (a).** On a single-user desktop the "unknown user" case is
 almost always the owner typing their **password into the user-name prompt**
 (TTY login), which `audit` writes to the journal. That is worse than the
-enumeration signal it adds. Set `aegis_faillock_audit: true` for (b).
+enumeration signal it adds.
 
-### D-19 — lock root too (`even_deny_root`) (Open; default: off)
+### D-19 — lock root too (`even_deny_root`) (Decided: even_deny_root now; locking root's password later)
 
 Omarchy sets **root's password to the user's password** at install
 (`install/provisioning/setup-form.sh:161`, `bin/omarchy-provision-owner:811`).
@@ -198,10 +196,12 @@ through `su` by a wheel member (root never locks). Options:
 `sulogin` (rescue shell) does not use PAM, so a faillock lock does not block
 rescue. (b) is stronger, because a stolen user password then no longer works
 at a root prompt. It needs the rescue-shell question settled first, together
-with the Limine editor lock (roadmap 18c). Set
-`aegis_faillock_even_deny_root: true`.
+with the Limine editor lock (roadmap 18c).
+Verified in the test image: after 10 failed `su` attempts the right root
+password is refused, and `faillock --user root --reset` restores access. A
+mutant with the option off fails that check.
 
-### D-20 — severity of dangerous group membership (Open; default: recommendation)
+### D-20 — severity of dangerous group membership (Decided: FAIL docker/libvirt/disk, WARN input)
 
 `docker`, `libvirt` and `disk` members are root without a password (any
 process running as the user, including an AI agent, can get a root shell).
@@ -212,7 +212,7 @@ docker/libvirt/disk, WARN for input; (b) WARN for all; (c) off.
 **Recommendation: (a).** Choosing root-equivalent access should be an explicit,
 recorded act: add `groups.docker` to `aegis_audit_skip`.
 
-### D-21 — severity of package-file drift (Open; default: recommendation, WARN)
+### D-21 — severity of package-file drift (Decided: WARN until a clean real-install run, then FAIL)
 
 `pacman -Qkk` reports package files whose mode, owner or content changed. In
 the test image it also reports noise: pseudo-filesystem mount points (now

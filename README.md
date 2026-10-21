@@ -16,8 +16,8 @@ you cannot recover.
 | Role | PRD | Status | What it changes |
 |---|---|---|---|
 | `preflight` | — | ✅ implemented | Nothing. Refuses non-Arch hosts, finds the Omarchy install, prints the baseline |
-| `sysctl` | 3.1 | ✅ implemented | Renders `/etc/sysctl.d/99-zz-aegis-hardened.conf` from one variable: the PRD set (`dmesg_restrict`, `kptr_restrict`, `kexec_load_disabled`, `yama.ptrace_scope`) plus roadmap Tier 1 (BPF, perf, userfaultfd, ldisc, `protected_fifos/regular=2`, `suid_dumpable=0`, IPv4/IPv6 redirect and source-route off, loose `rp_filter`, syncookies, rfc1337, IPv6 privacy addresses). Applies it, re-applies on runtime drift, reads every value back, and asserts `vm.mmap_min_addr >= 65536` |
-| `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count), `unlock_time=900` (Omarchy: 120 s) and a persistent tally dir in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack; routes `su` through `system-auth`, restricted to wheel; then verifies |
+| `sysctl` | 3.1 | ✅ implemented | Renders `/etc/sysctl.d/99-zz-aegis-hardened.conf` from one variable: the PRD set (`dmesg_restrict`, `kptr_restrict`, `kexec_load_disabled`, `yama.ptrace_scope`) plus roadmap Tier 1 (BPF, perf, userfaultfd, ldisc, `protected_fifos/regular=2`, `suid_dumpable=0`, IPv4/IPv6 redirect and source-route off, loose `rp_filter`, syncookies, rfc1337, IPv6 privacy addresses), plus decisions D-15 to D-17 (`sysrq=16`, ASLR `mmap_rnd_bits=32`/`compat=16`, `oops_limit=100`). Applies it, re-applies on runtime drift, reads every value back, and asserts `vm.mmap_min_addr >= 65536` |
+| `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count), `unlock_time=900` (Omarchy: 120 s) and a persistent tally dir in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack; routes `su` through `system-auth`, restricted to wheel; locks root too (`even_deny_root`, D-19); then verifies |
 | `firewall` | 3.4 | ✅ implemented | ufw default-deny incoming; removes LocalSend (53317) and the opt-in SSH rule; keeps Docker DNS (configurable) |
 | `pacman_integrity` | 3.5 | ✅ audit only | Emits findings: weak `SigLevel` (including `Include=` files), non-HTTPS mirrors, last full upgrade older than 7 days, setuid files no package owns, world-writable and unowned files, `pacman -Qkk` drift, NOPASSWD sudoers rules, members of docker/libvirt/disk/input |
 | `audit_report` | — | ✅ implemented | Runs last: prints every finding, writes `/var/lib/aegis/audit.jsonl` (0600), fails on any FAIL not listed in `aegis_audit_skip` |
@@ -71,6 +71,7 @@ Tags: `p0` `p1` `p2`, area tags (`kernel`, `auth`, `isolation`, `network`,
 - **window:** within 900 s (`fail_interval`, pam_faillock's default)
 - **lockout:** 15 minutes (`unlock_time = 900`)
 - **counter:** shared by console, sudo, `su` and the lock screen. SSH counts too, but only for password logins; Omarchy's opt-in sshd is key-only.
+- **root:** locks after the same 10 failures, also for 15 minutes (`even_deny_root`). Omarchy gives root your password, so this caps guessing at a root prompt. The rescue shell (`sulogin`) does not use PAM, so a lock cannot block recovery.
 - **unlock:** wait 15 minutes, or run `faillock --user "$USER" --reset` as root.
 
 Keep a second logged-in TTY open the first time you apply it.
@@ -78,9 +79,8 @@ Keep a second logged-in TTY open the first time you apply it.
 **What `pam_faillock` also changes:** failure records live in
 `/var/lib/faillock`, so a lockout survives a reboot. `su`/`su-l` now
 authenticate through `system-auth`, so they are counted too, and only members
-of `wheel` may use `su`. Root is not locked out unless `even_deny_root` is
-enabled (roadmap #6), so failed `su` attempts against root are counted and
-logged but do not lock root.
+of `wheel` may use `su`. Root is locked too after 10 failures
+(`even_deny_root`, decision D-19).
 
 **Audit findings:** every run ends with a summary and writes
 `/var/lib/aegis/audit.jsonl`. A FAIL stops the run. If you accept a FAIL (for
@@ -101,7 +101,7 @@ uv sync                                    # locked ansible-core, ansible-lint, 
 uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
-tests/container/run.sh                     # 25 checks in a pinned Arch image
+tests/container/run.sh                     # 26 checks in a pinned Arch image
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,

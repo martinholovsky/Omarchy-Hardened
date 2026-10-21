@@ -61,6 +61,17 @@ SemVer once 1.0 ships.
   - The container suite grows to 25 checks, including planted-problem negatives for every audit and a `--check --diff` run.
   - New CI job `sysctl-apply` applies the role to a live kernel and checks idempotence and drift repair. Locally it refuses unless `AEGIS_ALLOW_HOST_SYSCTL=1`.
 
+- Owner decisions D-15 to D-21 applied with the recommended options:
+  - `kernel.sysrq=16` pinned
+  - `vm.mmap_rnd_bits=32` / `mmap_rnd_compat_bits=16` on x86_64
+  - `kernel.oops_limit=100`, `warn_limit` unset
+  - faillock `audit` off
+  - `even_deny_root` on, with `root_unlock_time=900`
+  - docker/libvirt/disk membership is a FAIL, input a WARN
+  - package drift is a WARN
+
+  The container test checks that root locks after 10 `su` failures and unlocks with `faillock --reset` (26 checks).
+
 ### Changed
 
 - `SECURITY.md`: GitHub private vulnerability reporting is not available on

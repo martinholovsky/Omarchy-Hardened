@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=25
+checks_total=26
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -86,13 +86,15 @@ for key in $keys; do
 done
 pass "all $(wc -l <<<"$keys") sysctl keys exist ($(wc -l < /out/netns-only-keys) net.* keys deferred to the host-netns check)"
 
-for key in kernel.sysrq kernel.oops_limit kernel.warn_limit vm.mmap_rnd_bits; do
-  ! grep -q "^$key=" "$sysctl_file" || fail "decision-gated key $key written by default"
+# Owner decisions D-15..D-17; warn_limit deliberately unset.
+for kv in kernel.sysrq=16 kernel.oops_limit=100 vm.mmap_rnd_bits=32 vm.mmap_rnd_compat_bits=16; do
+  grep -qx "$kv" "$sysctl_file" || fail "decided setting $kv missing"
 done
+! grep -q '^kernel.warn_limit=' "$sysctl_file" || fail "kernel.warn_limit written although D-17 leaves it unset"
 if ! { grep -qx 'fs.protected_regular=2' "$sysctl_file" && grep -qx 'net.ipv4.conf.all.rp_filter=2' "$sysctl_file"; }; then
   fail "Tier 1 sysctls missing"
 fi
-pass "Tier 1 sysctls written; decision-gated keys absent by default"
+pass "Tier 1 sysctls and decisions D-15..D-17 written; warn_limit unset"
 
 expect_finding pacman.siglevel.global PASS
 expect_finding pacman.mirror_transport PASS
@@ -122,6 +124,14 @@ pass "su refused for a non-wheel user"
 
 su_as alice 'Aegis-root-pw1' || fail "wheel user could not su with the right password"
 pass "su works for a wheel user"
+
+# D-19: after deny (10) consecutive failures root itself is locked, so even
+# the right password is refused until root_unlock_time or a reset.
+for _ in $(seq 10); do su_as alice 'wrong-password' && fail "su accepted a wrong password"; done
+su_as alice 'Aegis-root-pw1' && fail "root not locked after 10 failures (even_deny_root)"
+faillock --user root --reset
+su_as alice 'Aegis-root-pw1' || fail "root still locked after faillock --reset"
+pass "even_deny_root: root locks after 10 su failures; faillock --reset unlocks"
 
 echo "--- dry run (--check --diff), as the README tells users to start with"
 ansible-playbook tests/container/playbook.yml --check --diff >/tmp/check.log 2>&1 \
@@ -213,17 +223,18 @@ expect_finding groups.docker ACCEPTED
 gpasswd -d alice docker >/dev/null
 pass "docker membership fails the audit; aegis_audit_skip accepts it"
 
-echo "--- faillock decision flags apply when enabled and are removed by default"
+echo "--- faillock flags follow their variables (defaults: D-18 audit off, D-19 even_deny_root on)"
 ansible-playbook tests/container/playbook.yml \
-  -e '{"aegis_faillock_audit": true, "aegis_faillock_even_deny_root": true}' >/dev/null
-if ! { grep -qx 'audit' /etc/security/faillock.conf && grep -qx 'even_deny_root' /etc/security/faillock.conf \
-  && grep -qx 'root_unlock_time = 900' /etc/security/faillock.conf; }; then
-  fail "faillock audit/even_deny_root not written when enabled"
+  -e '{"aegis_faillock_audit": true, "aegis_faillock_even_deny_root": false}' >/dev/null
+if ! { grep -qx 'audit' /etc/security/faillock.conf && ! grep -Eqx 'even_deny_root|root_unlock_time = 900' /etc/security/faillock.conf; }; then
+  fail "faillock flags did not follow the overrides"
 fi
 ansible-playbook tests/container/playbook.yml >/dev/null
-! grep -Eqx 'audit|even_deny_root|root_unlock_time = 900' /etc/security/faillock.conf \
-  || fail "faillock flags not removed by the default run"
-pass "faillock audit/even_deny_root toggle cleanly"
+if ! { ! grep -qx 'audit' /etc/security/faillock.conf && grep -qx 'even_deny_root' /etc/security/faillock.conf \
+  && grep -qx 'root_unlock_time = 900' /etc/security/faillock.conf; }; then
+  fail "default run did not restore audit=off, even_deny_root=on"
+fi
+pass "faillock audit/even_deny_root toggle cleanly and default to D-18/D-19"
 
 echo "--- firewall: seed Omarchy's rule set, then harden it"
 bash "$FIX/firewall.sh"
