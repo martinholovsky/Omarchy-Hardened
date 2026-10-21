@@ -1,6 +1,6 @@
 # Roadmap: hardening backlog
 
-This backlog merges the two research reviews:
+This backlog merges four research reviews:
 
 - [research/securix-linux-review.md](research/securix-linux-review.md): the
   owner's Securix-Linux, a Gentoo hardened-sources/grsecurity server distro,
@@ -9,9 +9,13 @@ This backlog merges the two research reviews:
   at `5be4f13`.
 - [research/kicksecure-security-misc-review.md](research/kicksecure-security-misc-review.md):
   Kicksecure security-misc at `9535bf8`.
+- [research/snowflakeos-review.md](research/snowflakeos-review.md):
+  SnowflakeOS (NixOS-based) at `snowflakeos-modules@0a5e0a3`. It has almost no
+  hardening of its own; it contributes five audit checks (18k–18o).
 
-Both were checked against Omarchy at `dde0d12`. **Nothing here is implemented
-yet.** Each item changes security posture, so it needs the owner's go-ahead.
+All were checked against Omarchy at `dde0d12`. Tier 0 and Tier 1 are
+implemented; nothing from Tier 2 on is. Each item changes security posture, so
+it needs the owner's go-ahead.
 Items that wait on a recorded decision point to `open-decisions.md`.
 
 "Both" means the two reviews recommend the item independently.
@@ -78,6 +82,21 @@ changes the package set.
 | 18h | Narrow setuid strip (`chfn`, `chsh`, `newgrp`, `gpasswd`, `expiry`, `chage`) re-applied by a pacman `PostTransaction` hook | `pacman_integrity` |
 | 18i | Set `oops_limit`/`warn_limit` late (after `graphical.target`), with a cmdline escape hatch, so boot-time driver noise does not count | `sysctl` |
 | 18j | If `slab_debug` is ever enabled, `hash_pointers=always` is **mandatory**: `slab_debug` turns off pointer hashing otherwise | `kernel` |
+
+### Added from the SnowflakeOS review
+
+All five are audit-only findings, so none can change the desktop. Each one
+needs a planted-problem test. 18k is the only one that suggests a later setting,
+and that setting would need its own decision. The "Omarchy 4.0.6" facts were
+measured on the VM test install (see the review).
+
+| # | Item | Proposed role |
+|---|---|---|
+| 18k | Firmware-update check: INFO when `fwupd` is not installed (the case on Omarchy 4.0.6, which installs it only through `omarchy-update-firmware`); otherwise report pending updates and whether `fwupd-refresh.timer` is on. Never flash firmware; enabling the timer would need a variable that defaults to off | `pacman_integrity` |
+| 18l | `/tmp` stays tmpfs with `nosuid,nodev` (`findmnt -no FSTYPE,OPTIONS /tmp`). Omarchy 4.0.6 already has this, so the check guards against it regressing. It overlaps #17 | `pacman_integrity` |
+| 18m | polkit check: WARN on any `rules.d` rule returning `polkit.Result.YES` without an `action.id` condition. On Omarchy 4.0.6, `/etc/polkit-1/rules.d/` is empty and the 7 package rules in `/usr/share/polkit-1/rules.d/` must not trip it | `pacman_integrity` |
+| 18n | Autologin needs encryption: WARN if `/etc/sddm.conf.d/*` sets `[Autologin] User=` while `/` is not on a `crypto_LUKS` device. This is Omarchy's own installer rule, checked after install | `pacman_integrity` |
+| 18o | Password hash strength: WARN on `$6$` (SHA-512) hashes for root or human accounts when `login.defs` says YESCRYPT. Log the prefix only, never the hash. **This fires on a default Omarchy 4.0.6 install**: both root and the user were `$6$`. The fix is to run `passwd` once, which is the user's call. The playbook must not reset passwords | `pacman_integrity` |
 
 **Resolved:** coredump `Storage=none` keeps `omarchy-crash-watch` working,
 because crashes and backtraces are still journalled (`coredump.conf(5)`). It

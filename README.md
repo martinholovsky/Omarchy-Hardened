@@ -34,8 +34,8 @@ you cannot recover.
 Immutability (PRD 3.6) is aspirational and has no role yet.
 
 Next candidates, ranked by risk to Omarchy, are in [docs/roadmap.md](docs/roadmap.md).
-That list merges a 2026 re-check of Securix-Linux and reviews of secureblue
-and Kicksecure security-misc.
+That list merges a 2026 re-check of Securix-Linux and reviews of secureblue,
+Kicksecure security-misc and SnowflakeOS.
 
 The PRD's picture of Omarchy differs from the real thing in two places: SSH is
 **not** opened by default (it is opt-in), and the kernel is `linux-omarchy`,
@@ -139,8 +139,8 @@ docs/PRD.md               requirements
 docs/upstream-baseline.md what Omarchy really ships (verified)
 docs/open-decisions.md    security decisions each stub is waiting on
 docs/operating-notes.md   before/after a run: effects, rollback, untested areas, VM test
-docs/roadmap.md           ranked backlog (Securix-Linux + secureblue reviews)
-docs/research/            the source reviews (Securix-Linux, secureblue, Kicksecure)
+docs/roadmap.md           ranked backlog merged from the reviews below
+docs/research/            the source reviews (Securix-Linux, secureblue, Kicksecure, SnowflakeOS)
 docs/adr/                 architecture decisions
 ```
 

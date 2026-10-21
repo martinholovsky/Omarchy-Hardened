@@ -76,6 +76,14 @@ SemVer once 1.0 ships.
   settings and rollback, being locked out, verified vs untested areas, and a
   VirtualBox VM test plan (community-reported settings, not yet tried).
 
+- Research: a SnowflakeOS review (`docs/research/snowflakeos-review.md`,
+  `snowflakeos-modules@0a5e0a3`). It has almost no hardening of its own. Five
+  audit-only checks go into the roadmap as 18k–18o: fwupd, tmpfs `/tmp`,
+  blanket polkit grants, autologin without encryption, and weak password
+  hashes. On a live Omarchy 4.0.6 install, `login.defs` says YESCRYPT but the
+  installer left `$6$` (SHA-512) hashes for root and the user, so 18o would
+  fire on a default install.
+
 ### Changed
 
 - `SECURITY.md`: GitHub private vulnerability reporting is not available on
