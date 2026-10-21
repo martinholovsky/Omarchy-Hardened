@@ -6,7 +6,8 @@ Guidance for coding agents working in this repository.
 
 An Ansible playbook (`omarchy-harden.yml`) that hardens an Omarchy / Arch Linux
 workstation. Requirements: `docs/PRD.md`. Verified upstream behaviour:
-`docs/upstream-baseline.md`. Pending security decisions: `docs/open-decisions.md`.
+`docs/upstream-baseline.md`. Pending security decisions: `docs/open-decisions.md`. What a run changes for
+the user, how to undo it, and what is untested: `docs/operating-notes.md`.
 
 ## Rules
 
@@ -45,4 +46,5 @@ If you add a check to `tests/container/inside.sh`, bump `checks_total`.
 ## Docs
 
 Update `README.md` (role status table), `CHANGELOG.md`, and the affected
-`docs/` file in the same change as the code.
+`docs/` file in the same change as the code. A change the user will notice,
+or one that cannot be undone, also goes in `docs/operating-notes.md`.

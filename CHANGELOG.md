@@ -72,6 +72,10 @@ SemVer once 1.0 ships.
 
   The container test checks that root locks after 10 `su` failures and unlocks with `faillock --reset` (26 checks).
 
+- `docs/operating-notes.md`: what a run changes for the user, one-way
+  settings and rollback, being locked out, verified vs untested areas, and a
+  VirtualBox VM test plan (community-reported settings, not yet tried).
+
 ### Changed
 
 - `SECURITY.md`: GitHub private vulnerability reporting is not available on
