@@ -1,0 +1,5 @@
+# Managed by Omarchy-Hardened (sysctl role). Local edits are overwritten.
+# Source of truth: roles/sysctl/defaults/main.yml (or your overrides).
+{% for key, value in aegis_sysctl_effective | dictsort %}
+{{ key }}={{ value }}
+{% endfor %}

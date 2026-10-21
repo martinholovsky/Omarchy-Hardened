@@ -32,3 +32,16 @@ aegis_faillock_su_files:
   - /etc/pam.d/su
   - /etc/pam.d/su-l
 aegis_faillock_su_wheel_only: true
+
+# --- Waiting on a decision (docs/open-decisions.md). Defaults leave Omarchy's
+# behaviour unchanged. ---
+
+# D-18: `audit` logs the user name when the user does not exist. That includes
+# a password typed into the user-name prompt.
+aegis_faillock_audit: false
+
+# D-19: also lock root after `deny` failures (su, console). Omarchy sets root's
+# password to the user's password at install. root_unlock_time defaults to
+# unlock_time.
+aegis_faillock_even_deny_root: false
+aegis_faillock_root_unlock_time: "{{ aegis_faillock_unlock_time }}"

@@ -1,0 +1,73 @@
+---
+# Runs last. Prints every finding, writes them to aegis_audit_file, and fails
+# the run on any FAIL that is not in aegis_audit_skip.
+
+- name: Apply the accepted-risk list
+  ansible.builtin.set_fact:
+    aegis_findings_final: >-
+      {%- set out = [] -%}
+      {%- for f in aegis_findings | default([]) -%}
+        {%- if f.status == 'FAIL' and f.id in aegis_audit_skip -%}
+          {%- set _ = out.append(f | combine({'status': 'ACCEPTED'})) -%}
+        {%- else -%}
+          {%- set _ = out.append(f) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Create the audit directory
+  ansible.builtin.file:
+    path: "{{ aegis_audit_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: aegis_findings_final | length > 0
+
+- name: Write the findings (JSON lines)
+  ansible.builtin.copy:
+    dest: "{{ aegis_audit_file }}"
+    content: |
+      {% for f in aegis_findings_final %}
+      {{ f | to_json(sort_keys=true) }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0600"
+  # The report records what was observed (file counts move whenever /var
+  # does), not configuration, so rewriting it is not reported as a change.
+  # That keeps "changed=0" meaning "no configuration changed".
+  changed_when: false
+  when: aegis_findings_final | length > 0
+
+- name: Show the audit summary
+  vars:
+    aegis_counts: >-
+      {%- set c = {} -%}
+      {%- for s in ['FAIL', 'WARN', 'ACCEPTED', 'INFO', 'PASS'] -%}
+        {%- set _ = c.update({s: aegis_findings_final | selectattr('status', 'equalto', s) | list | length}) -%}
+      {%- endfor -%}
+      {{ c }}
+  ansible.builtin.debug:
+    msg: >-
+      {{ ['Audit: ' ~ (aegis_counts.items() | map('join', '=') | join(' '))]
+         + (aegis_findings_final | rejectattr('status', 'equalto', 'PASS')
+            | map(attribute='status') | zip(aegis_findings_final | rejectattr('status', 'equalto', 'PASS')
+                                           | map(attribute='id'),
+                                           aegis_findings_final | rejectattr('status', 'equalto', 'PASS')
+                                           | map(attribute='detail'))
+            | map('join', ' | ') | list) }}
+  when: aegis_findings_final | length > 0
+
+- name: Fail on findings that are not accepted
+  vars:
+    aegis_fails: "{{ aegis_findings_final | selectattr('status', 'equalto', 'FAIL') | list }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_fails | length == 0
+    fail_msg: >-
+      {{ aegis_fails | length }} audit finding(s) FAIL:
+      {{ aegis_fails | map(attribute='id') | zip(aegis_fails | map(attribute='detail'))
+         | map('join', ': ') | join(' || ') }}.
+      Fix them, or add the id to aegis_audit_skip to accept the risk.
+    quiet: true

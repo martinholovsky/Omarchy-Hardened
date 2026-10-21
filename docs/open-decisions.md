@@ -140,3 +140,86 @@ is planned).
   `system-auth`, and `pam_wheel use_uid` is enabled. Open follow-up: whether
   to set `even_deny_root` (roadmap #6) so that repeated `su` failures lock root
   as well. That also locks root's console login for `unlock_time`.
+
+## Decisions from roadmap Tier 1 (opened 2026-10-21)
+
+Settings that change the system default to Omarchy's current behaviour until
+decided. Audit-only checks default to the recommendation, because they change
+nothing on the host.
+
+### D-15 — `kernel.sysrq` (Open; default: leave systemd's 16)
+
+Options: (a) leave 16 (systemd default: only the emergency *sync* key works);
+(b) 0 (all SysRq off, as Kicksecure and secureblue do); (c) 4 (keyboard control
+incl. SAK).
+**Recommendation: (a).** 16 exposes nothing an attacker at the keyboard can
+abuse, and sync before a forced power-off can save data. 0 gains almost
+nothing on a single-user laptop. Set `aegis_sysctl_sysrq: 0` to choose (b).
+
+### D-16 — ASLR entropy to the maximum (Open; default: off)
+
+`vm.mmap_rnd_bits` 28 → 32 and `vm.mmap_rnd_compat_bits` 8 → 16 (Arch config:
+min 28/8, max 32/16, verified). Options: (a) raise on x86_64; (b) leave.
+**Recommendation: (a)**, with one caveat for a developer machine: after Ubuntu
+raised to 32 bits, older ASan/TSan builds crashed. Current toolchains are
+believed fixed, but this is unverified here. If a sanitizer crashes, lowering
+this is the first thing to try. Set `aegis_sysctl_mmap_rnd_max: true`.
+
+### D-17 — `oops_limit` / `warn_limit` (Open; default: kernel defaults)
+
+The kernel panics after this many oopses or WARNs since boot (defaults:
+oops_limit 10000, warn_limit 0 = never). Options: (a) `oops_limit=100`,
+`warn_limit` unset; (b) both 100 (secureblue); (c) both 1 (Kicksecure);
+(d) leave.
+**Recommendation: (a).** A hundred oopses means the kernel is already broken,
+so stopping is right. WARNs are routine for NVIDIA and Wi-Fi drivers, though,
+and a WARN limit would reboot the desktop after a long uptime. Revisit
+`warn_limit` with the late-boot mechanism (roadmap 18i). Set
+`aegis_sysctl_oops_limit: 100`.
+
+### D-18 — faillock `audit` (Open; default: off)
+
+`audit` logs the user name of failed attempts against accounts that do not
+exist. Options: (a) off; (b) on.
+**Recommendation: (a).** On a single-user desktop the "unknown user" case is
+almost always the owner typing their **password into the user-name prompt**
+(TTY login), which `audit` writes to the journal. That is worse than the
+enumeration signal it adds. Set `aegis_faillock_audit: true` for (b).
+
+### D-19 — lock root too (`even_deny_root`) (Open; default: off)
+
+Omarchy sets **root's password to the user's password** at install
+(`install/provisioning/setup-form.sh:161`, `bin/omarchy-provision-owner:811`).
+Without `even_deny_root`, root can be guessed without limit on a TTY or
+through `su` by a wheel member (root never locks). Options:
+(a) `even_deny_root` with `root_unlock_time = 900`; (b) lock the root password
+(`passwd -l root`; roadmap #26); (c) leave.
+**Recommendation: (a) now, (b) later.** (a) is cheap and reversible.
+`sulogin` (rescue shell) does not use PAM, so a faillock lock does not block
+rescue. (b) is stronger, because a stolen user password then no longer works
+at a root prompt. It needs the rescue-shell question settled first, together
+with the Limine editor lock (roadmap 18c). Set
+`aegis_faillock_even_deny_root: true`.
+
+### D-20 — severity of dangerous group membership (Open; default: recommendation)
+
+`docker`, `libvirt` and `disk` members are root without a password (any
+process running as the user, including an AI agent, can get a root shell).
+`input` members can read every keystroke, bypassing Wayland isolation. Omarchy
+adds `docker` only through its opt-in `omarchy-setup-security-sudoless-docker`,
+and `input` through gaming and ydotool helpers. Options: (a) FAIL for
+docker/libvirt/disk, WARN for input; (b) WARN for all; (c) off.
+**Recommendation: (a).** Choosing root-equivalent access should be an explicit,
+recorded act: add `groups.docker` to `aegis_audit_skip`.
+
+### D-21 — severity of package-file drift (Open; default: recommendation, WARN)
+
+`pacman -Qkk` reports package files whose mode, owner or content changed. In
+the test image it also reports noise: pseudo-filesystem mount points (now
+ignored) and a few group-id mismatches (`/usr/bin/wall`, `/usr/bin/write`,
+`/var/games`) that may be specific to the container. Options: (a) WARN until
+the output has been checked on a real Omarchy install, then FAIL;
+(b) FAIL now.
+**Recommendation: (a).** A FAIL that fires on a clean install trains you to
+skip the audit. Set `aegis_integrity_drift_severity: FAIL` once the first real
+run is clean.

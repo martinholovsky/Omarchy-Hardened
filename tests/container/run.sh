@@ -13,8 +13,23 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 command -v podman >/dev/null 2>&1 || { echo "error: podman is required" >&2; exit 2; }
 
+out_dir="$repo_root/tests/container/.out"
+rm -rf "$out_dir" && mkdir -p "$out_dir"
+
 # NET_ADMIN/NET_RAW let ufw program netfilter inside the container.
-exec podman run --rm --platform linux/amd64 \
+podman run --rm --platform linux/amd64 \
   --cap-add NET_ADMIN --cap-add NET_RAW \
-  -v "$repo_root:/src:ro" \
+  -v "$repo_root:/src:ro" -v "$out_dir:/out" \
   "$IMAGE" bash /src/tests/container/inside.sh
+
+# Keys that exist only in the initial network namespace, checked read-only in
+# a container that shares the host's (no capabilities, nothing is written).
+deferred=$(wc -l < "$out_dir/netns-only-keys" | tr -d ' ')
+if [[ $deferred -gt 0 ]]; then
+  podman run --rm --platform linux/amd64 --network=host --cap-drop=ALL \
+    -v "$out_dir:/out:ro" "$IMAGE" sh -c '
+      while read -r key; do
+        [ -e "/proc/sys/$(echo "$key" | tr . /)" ] || { echo "FAIL: sysctl key $key missing in init netns" >&2; exit 1; }
+      done < /out/netns-only-keys'
+fi
+echo "PASS: $deferred deferred net.* sysctl key(s) exist in the initial network namespace"

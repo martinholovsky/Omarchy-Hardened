@@ -14,3 +14,7 @@
     - sysctl
     - pam_faillock
     - pacman_integrity
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report

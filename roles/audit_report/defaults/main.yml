@@ -1,0 +1,9 @@
+---
+# Finding IDs whose FAIL you accept. They are reported as ACCEPTED instead of
+# failing the run (e.g. "groups.docker" if you chose sudoless Docker).
+aegis_audit_skip: []
+
+# Findings from the latest run, one JSON object per line. Root-only, because
+# it lists file paths and group members.
+aegis_audit_dir: /var/lib/aegis
+aegis_audit_file: "{{ aegis_audit_dir }}/audit.jsonl"

@@ -1,13 +1,71 @@
 ---
+# Audit only: this role changes nothing on the host. Every check emits a
+# finding (PASS / INFO / WARN / FAIL); the audit_report role prints them,
+# writes /var/lib/aegis/audit.jsonl and fails the run on any FAIL that is not
+# in aegis_audit_skip.
+
 aegis_pacman_conf: /etc/pacman.conf
+aegis_pacman_log: /var/log/pacman.log
 
 # Repositories allowed to weaken signature checking. Empty by default: any
-# SigLevel containing Never, Optional or TrustAll (or their Package* forms)
-# fails the run. DatabaseOptional is Arch's default and is accepted.
-# Limitation: repositories defined in files pulled in with Include= are not
-# parsed yet.
+# SigLevel containing Never, Optional or TrustAll (or their Package* forms) is
+# a FAIL. DatabaseOptional is Arch's default and is accepted. SigLevel lines
+# from Include= files count too.
 #
 # Known case: on Intel T2 Macs Omarchy appends [arch-mact2] with
 # `SigLevel = Never` (install/hardware/pacman.sh). Add "arch-mact2" here only
 # if you accept unsigned packages from that repo.
 aegis_pacman_siglevel_exceptions: []
+
+# Mirrors must use https:// (file:// is allowed for local repositories).
+# Omarchy's mirrorlist templates are all https (7/7 at dde0d12).
+aegis_pacman_allowed_server_schemes: [https, file]
+
+# WARN when the last `pacman -Syu` is older than this many days.
+aegis_pacman_max_upgrade_age_days: 7
+
+# --- Integrity sweep ---
+aegis_integrity_roots: [/usr, /etc, /opt, /var, /boot, /srv, /root]
+# Walking every home directory (node_modules, caches) can take minutes. nosuid
+# on /home (roadmap #17) is the durable control; enable this for a one-off
+# sweep.
+aegis_integrity_scan_home: false
+aegis_integrity_excludes:
+  - /var/lib/docker       # container image layers carry their own setuid files
+  - /var/lib/containers
+  - /var/lib/machines
+  - /var/cache/pacman/pkg
+  - /var/tmp              # sticky scratch space; user files land here
+aegis_integrity_max_report: 50
+aegis_integrity_max_files: 2000000
+# Setuid/setgid files that no package owns but you accept (full paths).
+aegis_integrity_setuid_allow: []
+# Files whose world-writable bit you accept (full paths).
+aegis_integrity_world_writable_allow: []
+
+# D-21: severity for package files whose mode/owner or content differs from
+# the package database (`pacman -Qkk`). WARN until validated on a real Omarchy
+# install; FAIL afterwards.
+aegis_integrity_drift_severity: WARN
+aegis_integrity_check_package_files: true
+# Path prefixes whose package drift is ignored: pseudo-filesystem mount points
+# always differ from the package's record (seen in the test image).
+aegis_integrity_drift_ignore: [/proc, /sys, /dev, /run, /tmp]
+
+# Omarchy's narrow, command-restricted NOPASSWD drop-ins (etc/sudoers.d at
+# dde0d12). They are reported as INFO; any other NOPASSWD rule, and any
+# `NOPASSWD: ALL`, is a WARN.
+aegis_sudoers_known_nopasswd_files:
+  - /etc/sudoers.d/omarchy-dns
+  - /etc/sudoers.d/omarchy-locale-generate
+  - /etc/sudoers.d/omarchy-theme-browser
+  - /etc/sudoers.d/omarchy-tzupdate
+
+# D-20: group membership that grants root or keystroke access, and the
+# severity when it has members. docker/libvirt/disk are root-equivalent;
+# input reads every keystroke and bypasses Wayland's isolation.
+aegis_audit_dangerous_groups:
+  docker: FAIL
+  libvirt: FAIL
+  disk: FAIL
+  input: WARN

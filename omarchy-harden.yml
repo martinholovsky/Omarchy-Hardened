@@ -53,4 +53,10 @@
 
     # 3.5 Supply chain & updates (P2)
     - role: pacman_integrity
-      tags: [supply-chain, pacman, p2]
+      tags: [supply-chain, pacman, audit, p2]
+
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report
+      tags: [always]

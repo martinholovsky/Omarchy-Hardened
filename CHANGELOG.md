@@ -44,6 +44,23 @@ SemVer once 1.0 ships.
   The container test drives real `su` logins with `expect`. Mutation runs
   (su coverage off, wheel restriction off) each fail the suite.
 
+- Roadmap Tier 1:
+  - `sysctl` renders its drop-in from one variable, now about 30 keys: BPF, perf, userfaultfd, ldisc, fs protections, `suid_dumpable`, IPv4/IPv6 redirects and source routing, loose `rp_filter`, syncookies, rfc1337, IPv6 privacy addresses.
+  - `sysctl` re-applies on runtime drift and asserts `mmap_min_addr >= 65536`.
+  - `pam_faillock` gains `audit`, `even_deny_root` and `root_unlock_time`.
+  - `pacman_integrity` becomes a findings-based audit:
+    - SigLevel, now following `Include=`
+    - HTTPS mirrors and upgrade age
+    - unowned setuid, world-writable and unowned files
+    - `pacman -Qkk` drift
+    - NOPASSWD sudoers rules
+    - dangerous groups
+  - New `audit_report` role: summary, `/var/lib/aegis/audit.jsonl`, `aegis_audit_skip`.
+  - Settings with a trade-off (D-15 to D-19) default to Omarchy's behaviour; D-20 and D-21 are audit-only.
+- Tests:
+  - The container suite grows to 25 checks, including planted-problem negatives for every audit and a `--check --diff` run.
+  - New CI job `sysctl-apply` applies the role to a live kernel and checks idempotence and drift repair. Locally it refuses unless `AEGIS_ALLOW_HOST_SYSCTL=1`.
+
 ### Changed
 
 - `SECURITY.md`: GitHub private vulnerability reporting is not available on

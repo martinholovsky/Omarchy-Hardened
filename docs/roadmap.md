@@ -29,7 +29,13 @@ fixed by owner decision:
   limits `su` to wheel. Root itself still only locks once `even_deny_root`
   (#6) is enabled.
 
-## Tier 1: low Omarchy risk, extends existing roles
+## Tier 1: low Omarchy risk, extends existing roles (implemented 2026-10-21)
+
+Items 1–4 and 7–9 are implemented. Items 5 and 6, plus the `sysrq` and ASLR
+parts of 1 and 3, are wired up behind D-15 to D-19 and default to Omarchy's
+current behaviour. #9's golden-file CI is replaced by planted-problem tests;
+a full golden file would break whenever `pacman -Syu` in the test image
+changes the package set.
 
 | # | Item | Role | Source |
 |---|---|---|---|

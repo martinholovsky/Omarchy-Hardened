@@ -36,6 +36,27 @@
   loop_control:
     label: "{{ item.key }}"
 
+- name: Set the faillock flag options (audit, even_deny_root)
+  ansible.builtin.lineinfile:
+    path: "{{ aegis_faillock_conf }}"
+    regexp: '^\s*{{ item.key }}\s*$'
+    line: "{{ item.key }}"
+    state: "{{ 'present' if item.value | bool else 'absent' }}"
+    backup: true
+  loop:
+    - { key: audit, value: "{{ aegis_faillock_audit }}" }
+    - { key: even_deny_root, value: "{{ aegis_faillock_even_deny_root }}" }
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+
+- name: Set root_unlock_time
+  ansible.builtin.lineinfile:
+    path: "{{ aegis_faillock_conf }}"
+    regexp: '^\s*#?\s*root_unlock_time\s*='
+    line: "root_unlock_time = {{ aegis_faillock_root_unlock_time }}"
+    state: "{{ 'present' if aegis_faillock_even_deny_root | bool else 'absent' }}"
+    backup: true
+
 - name: Find the PAM files that carry inline faillock arguments
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -120,6 +141,8 @@
       - aegis_conf_text is search('(?m)^deny = ' ~ aegis_faillock_deny ~ '$')
       - aegis_conf_text is search('(?m)^unlock_time = ' ~ aegis_faillock_unlock_time ~ '$')
       - aegis_conf_text is search('(?m)^dir = ' ~ aegis_faillock_dir ~ '$')
+      - (aegis_conf_text is search('(?m)^audit$')) == (aegis_faillock_audit | bool)
+      - (aegis_conf_text is search('(?m)^even_deny_root$')) == (aegis_faillock_even_deny_root | bool)
     quiet: true
   when: not ansible_check_mode
 

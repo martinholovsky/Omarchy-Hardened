@@ -16,10 +16,11 @@ you cannot recover.
 | Role | PRD | Status | What it changes |
 |---|---|---|---|
 | `preflight` | — | ✅ implemented | Nothing. Refuses non-Arch hosts, finds the Omarchy install, prints the baseline |
-| `sysctl` | 3.1 | ✅ implemented | Writes `/etc/sysctl.d/99-zz-aegis-hardened.conf`: `dmesg_restrict=1`, `kptr_restrict=2`, `kexec_load_disabled=1`, `yama.ptrace_scope=1`, then reads the live values back |
+| `sysctl` | 3.1 | ✅ implemented | Renders `/etc/sysctl.d/99-zz-aegis-hardened.conf` from one variable: the PRD set (`dmesg_restrict`, `kptr_restrict`, `kexec_load_disabled`, `yama.ptrace_scope`) plus roadmap Tier 1 (BPF, perf, userfaultfd, ldisc, `protected_fifos/regular=2`, `suid_dumpable=0`, IPv4/IPv6 redirect and source-route off, loose `rp_filter`, syncookies, rfc1337, IPv6 privacy addresses). Applies it, re-applies on runtime drift, reads every value back, and asserts `vm.mmap_min_addr >= 65536` |
 | `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count), `unlock_time=900` (Omarchy: 120 s) and a persistent tally dir in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack; routes `su` through `system-auth`, restricted to wheel; then verifies |
 | `firewall` | 3.4 | ✅ implemented | ufw default-deny incoming; removes LocalSend (53317) and the opt-in SSH rule; keeps Docker DNS (configurable) |
-| `pacman_integrity` | 3.5 | ✅ audit only | Fails the run if any repo's `SigLevel` accepts unsigned or untrusted packages |
+| `pacman_integrity` | 3.5 | ✅ audit only | Emits findings: weak `SigLevel` (including `Include=` files), non-HTTPS mirrors, last full upgrade older than 7 days, setuid files no package owns, world-writable and unowned files, `pacman -Qkk` drift, NOPASSWD sudoers rules, members of docker/libvirt/disk/input |
+| `audit_report` | — | ✅ implemented | Runs last: prints every finding, writes `/var/lib/aegis/audit.jsonl` (0600), fails on any FAIL not listed in `aegis_audit_skip` |
 | `kernel` | 3.1 | ⏳ stub | `linux-hardened` alongside `linux-omarchy` (D-02) |
 | `hardened_malloc` | 3.1 | ⏳ stub | Per-app opt-in (D-03) |
 | `fido2` | 3.2 | ⏳ stub | FIDO2 for LUKS + sudo (D-04) |
@@ -64,9 +65,15 @@ Tags: `p0` `p1` `p2`, area tags (`kernel`, `auth`, `isolation`, `network`,
 `supply-chain`), and one tag per role. All the tunables are in each role's
 `defaults/main.yml` and are named `aegis_<area>_*`.
 
-**Before applying `auth`:** after ten wrong passwords you are locked out for
-15 minutes. SSH, console, sudo and the lock screen share one counter. Keep a second logged-in TTY open
-the first time. `faillock --user "$USER" --reset` (as root) clears a lockout.
+**Before applying `auth`:** the lockout policy is:
+
+- **threshold:** 10 consecutive failures
+- **window:** within 900 s (`fail_interval`, pam_faillock's default)
+- **lockout:** 15 minutes (`unlock_time = 900`)
+- **counter:** shared by console, sudo, `su` and the lock screen. SSH counts too, but only for password logins; Omarchy's opt-in sshd is key-only.
+- **unlock:** wait 15 minutes, or run `faillock --user "$USER" --reset` as root.
+
+Keep a second logged-in TTY open the first time you apply it.
 
 **What `pam_faillock` also changes:** failure records live in
 `/var/lib/faillock`, so a lockout survives a reboot. `su`/`su-l` now
@@ -74,6 +81,12 @@ authenticate through `system-auth`, so they are counted too, and only members
 of `wheel` may use `su`. Root is not locked out unless `even_deny_root` is
 enabled (roadmap #6), so failed `su` attempts against root are counted and
 logged but do not lock root.
+
+**Audit findings:** every run ends with a summary and writes
+`/var/lib/aegis/audit.jsonl`. A FAIL stops the run. If you accept a FAIL (for
+example you chose sudoless Docker), add its id to `aegis_audit_skip`, e.g.
+`-e '{"aegis_audit_skip": ["groups.docker"]}'`. It is then reported as
+ACCEPTED.
 
 **After every `omarchy-update`:** run the playbook again. Omarchy's update
 scripts rewrite some PAM files (D-11).
@@ -88,19 +101,27 @@ uv sync                                    # locked ansible-core, ansible-lint, 
 uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
-tests/container/run.sh                     # 15 checks in a pinned Arch image
+tests/container/run.sh                     # 25 checks in a pinned Arch image
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,
 using snippets vendored from Omarchy at a pinned commit. It then runs the
 roles, checks the result with `grep`, `ufw status`, `faillock` and real `su`
-logins driven by `expect` (not with the roles' own asserts), runs everything a second time to prove idempotence, and checks that
-an unsigned repository fails the audit. The kernel `sysctl` apply step and
-anything boot- or hardware-related cannot run in a container; those still need
-a VM test.
+logins driven by `expect` (not with the roles' own asserts). It then runs
+everything a second time to prove idempotence. Each audit check is also
+exercised with a planted problem: an unsigned repo, a weak `SigLevel` inside
+an `Include=` file, a plain-HTTP mirror, an unowned setuid binary, a modified
+package binary, docker group membership. It also checks that every sysctl key
+exists on a real kernel. Keys visible only in the host network namespace are
+checked in a second, read-only container.
 
-CI (`.github/workflows/ci.yml`) runs the same lint, a full-history gitleaks
-scan, and the container test.
+Applying sysctls to a live kernel changes the host, some settings until reboot,
+so `tests/container/sysctl-apply.sh` refuses to run unless
+`AEGIS_ALLOW_HOST_SYSCTL=1`. CI runs it on a throwaway VM. Boot- and
+hardware-related roles still need a VM test.
+
+CI (`.github/workflows/ci.yml`) runs the lint, a full-history gitleaks scan,
+the container test, and the live sysctl apply.
 
 ## Layout
 

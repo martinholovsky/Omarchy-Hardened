@@ -1,45 +1,172 @@
 ---
-# Audit only — this role changes nothing. It fails the run when pacman would
-# accept packages without a trusted signature.
+# Audit only. Each block appends findings to aegis_findings; nothing here
+# fails the run directly (audit_report does that, after printing everything).
 
-- name: Read pacman.conf
-  ansible.builtin.slurp:
-    src: "{{ aegis_pacman_conf }}"
-  register: aegis_pacman_conf_raw
+- name: Parse pacman.conf, its Include= files and pacman.log
+  aegis_pacman_conf:
+    path: "{{ aegis_pacman_conf }}"
+    log_path: "{{ aegis_pacman_log }}"
+  register: aegis_pacman
 
-- name: Parse SigLevel per section
+- name: Record pacman signature findings
   vars:
-    aegis_lines: "{{ aegis_pacman_conf_raw.content | b64decode | split('\n') }}"
+    aegis_weak_re: '\b(Package)?(Never|Optional|TrustAll)\b'
+    aegis_options: "{{ aegis_pacman.sections | selectattr('name', 'equalto', 'options') | list }}"
+    aegis_global: "{{ (aegis_options | first).siglevel if aegis_options else [] }}"
+    aegis_repos: "{{ aegis_pacman.sections | selectattr('siglevel') | list }}"
   ansible.builtin.set_fact:
-    aegis_pacman_siglevels: >-
-      {%- set ns = namespace(section='options', out=[]) -%}
-      {%- for raw in aegis_lines -%}
-        {%- set line = raw | regex_replace('#.*$', '') | trim -%}
-        {%- if line is match('^\[.+\]$') -%}
-          {%- set ns.section = line[1:-1] -%}
-        {%- elif line is match('^SigLevel\s*=') -%}
-          {%- set ns.out = ns.out + [{'section': ns.section, 'value': line.split('=', 1)[1] | trim}] -%}
-        {%- endif -%}
+    aegis_findings: >-
+      {%- set out = [] -%}
+      {%- if aegis_global | length == 1 and aegis_global[0] is search('\\bRequired\\b') -%}
+        {%- set _ = out.append({'id': 'pacman.siglevel.global', 'status': 'PASS',
+              'detail': '[options] SigLevel = ' ~ aegis_global[0]}) -%}
+      {%- else -%}
+        {%- set _ = out.append({'id': 'pacman.siglevel.global', 'status': 'FAIL',
+              'detail': '[options] SigLevel must be set once and include Required (found '
+                        ~ (aegis_global | to_json) ~ ')'}) -%}
+      {%- endif -%}
+      {%- for repo in aegis_repos -%}
+        {%- for value in repo.siglevel if value is search(aegis_weak_re) -%}
+          {%- set excepted = repo.name in aegis_pacman_siglevel_exceptions -%}
+          {%- set _ = out.append({'id': 'pacman.siglevel.' ~ repo.name,
+                'status': 'INFO' if excepted else 'FAIL',
+                'detail': '[' ~ repo.name ~ '] has SigLevel = ' ~ value
+                          ~ (' (accepted via aegis_pacman_siglevel_exceptions)' if excepted
+                             else ', which accepts unsigned or untrusted packages')}) -%}
+        {%- endfor -%}
       {%- endfor -%}
-      {{ ns.out }}
+      {%- if aegis_pacman.include_errors -%}
+        {%- set _ = out.append({'id': 'pacman.include', 'status': 'WARN',
+              'detail': aegis_pacman.include_errors | join('; ')}) -%}
+      {%- endif -%}
+      {{ (aegis_findings | default([])) + out }}
 
-- name: Assert the global SigLevel requires signatures
-  ansible.builtin.assert:
-    that:
-      - aegis_pacman_siglevels | selectattr('section', 'equalto', 'options') | list | length == 1
-      - (aegis_pacman_siglevels | selectattr('section', 'equalto', 'options') | first).value is search('\\bRequired\\b')
-    fail_msg: "The [options] SigLevel must be set once and include Required (found {{ aegis_pacman_siglevels }})."
-    quiet: true
+- name: Record mirror transport and upgrade-age findings
+  vars:
+    aegis_servers: "{{ aegis_pacman.sections | map(attribute='servers') | flatten }}"
+    aegis_scheme_re: "^({{ aegis_pacman_allowed_server_schemes | join('|') }})://"
+    aegis_bad_servers: "{{ aegis_servers | reject('search', aegis_scheme_re) | list }}"
+    aegis_age: "{{ aegis_pacman.upgrade_age_days }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'pacman.mirror_transport',
+            'status': 'FAIL' if aegis_bad_servers else ('PASS' if aegis_servers else 'WARN'),
+            'detail': ('non-' ~ (aegis_pacman_allowed_server_schemes | join('/')) ~ ' servers: '
+                       ~ (aegis_bad_servers | join(', ')))
+                      if aegis_bad_servers
+                      else (aegis_servers | length | string) ~ ' Server entries, all '
+                           ~ (aegis_pacman_allowed_server_schemes | join('/'))},
+           {'id': 'pacman.upgrade_age',
+            'status': 'WARN' if (aegis_age is none
+                                 or (aegis_age | int) > aegis_pacman_max_upgrade_age_days) else 'PASS',
+            'detail': ('no full system upgrade found in ' ~ aegis_pacman_log) if aegis_age is none
+                      else ('last full upgrade ' ~ aegis_pacman.last_full_upgrade ~ ' (' ~ aegis_age
+                            ~ ' days ago; limit ' ~ aegis_pacman_max_upgrade_age_days ~ ')')}
+         ] }}
 
-- name: Assert no repository weakens signature checking
-  ansible.builtin.assert:
-    that:
-      - item.value is not search('\\b(Package)?(Never|Optional|TrustAll)\\b')
-    fail_msg: >-
-      [{{ item.section }}] has SigLevel = {{ item.value }}, which accepts unsigned
-      or untrusted packages. Fix it, or add "{{ item.section }}" to
-      aegis_pacman_siglevel_exceptions if you accept the risk.
-    quiet: true
-  loop: "{{ aegis_pacman_siglevels | rejectattr('section', 'in', aegis_pacman_siglevel_exceptions) | list }}"
-  loop_control:
-    label: "{{ item.section }}"
+- name: Run the integrity sweep (read-only)
+  aegis_integrity_scan:
+    roots: "{{ aegis_integrity_roots + (['/home'] if aegis_integrity_scan_home | bool else []) }}"
+    excludes: "{{ aegis_integrity_excludes }}"
+    max_report: "{{ aegis_integrity_max_report }}"
+    max_files: "{{ aegis_integrity_max_files }}"
+    check_package_files: "{{ aegis_integrity_check_package_files }}"
+    drift_ignore: "{{ aegis_integrity_drift_ignore }}"
+  register: aegis_scan
+
+- name: Record integrity findings
+  vars:
+    aegis_setuid_unowned: >-
+      {{ aegis_scan.setuid | rejectattr('package_owned')
+         | rejectattr('path', 'in', aegis_integrity_setuid_allow) | list }}
+    aegis_setuid_owned: "{{ aegis_scan.setuid | selectattr('package_owned') | map(attribute='path') | list }}"
+    aegis_ww: >-
+      {{ (aegis_scan.world_writable_files + aegis_scan.world_writable_dirs)
+         | reject('in', aegis_integrity_world_writable_allow) | list }}
+    aegis_denominator: "{{ aegis_scan.files_scanned }} files scanned in {{ aegis_integrity_roots | join(' ') }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'integrity.scan_coverage',
+            'status': 'WARN' if (aegis_scan.truncated or aegis_scan.walk_errors) else 'PASS',
+            'detail': aegis_denominator
+                      ~ (' (TRUNCATED at ' ~ aegis_integrity_max_files ~ ')' if aegis_scan.truncated else '')
+                      ~ ('; unreadable: ' ~ (aegis_scan.walk_errors | join(', ')) if aegis_scan.walk_errors else '')},
+           {'id': 'integrity.setuid_unowned',
+            'status': 'FAIL' if aegis_setuid_unowned else 'PASS',
+            'detail': ('setuid/setgid files no package owns: '
+                       ~ (aegis_setuid_unowned | map(attribute='path') | join(', ')))
+                      if aegis_setuid_unowned else 'none (' ~ aegis_denominator ~ ')'},
+           {'id': 'integrity.setuid_inventory', 'status': 'INFO',
+            'detail': (aegis_setuid_owned | length | string) ~ ' package-owned setuid/setgid files: '
+                      ~ (aegis_setuid_owned | join(', '))},
+           {'id': 'integrity.world_writable',
+            'status': 'WARN' if aegis_ww else 'PASS',
+            'detail': ('world-writable files or non-sticky dirs (' ~ aegis_scan.world_writable_count
+                       ~ ' total): ' ~ (aegis_ww | join(', '))) if aegis_ww else 'none'},
+           {'id': 'integrity.unowned_files',
+            'status': 'WARN' if aegis_scan.unowned_count > 0 else 'PASS',
+            'detail': (aegis_scan.unowned_count | string) ~ ' files with no matching user or group'
+                      ~ (': ' ~ (aegis_scan.unowned | join(', ')) if aegis_scan.unowned else '')}
+         ] }}
+
+- name: Record package drift findings
+  when: aegis_integrity_check_package_files | bool
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'integrity.package_drift_permissions',
+            'status': aegis_integrity_drift_severity if aegis_scan.drift_permissions_count > 0 else 'PASS',
+            'detail': (aegis_scan.drift_permissions_count | string) ~ ' package files with changed mode/owner'
+                      ~ (': ' ~ (aegis_scan.drift_permissions | map(attribute='path') | join(', '))
+                         if aegis_scan.drift_permissions else '')
+                      ~ ' (' ~ aegis_scan.package_files_known ~ ' package files known)'},
+           {'id': 'integrity.package_drift_content',
+            'status': aegis_integrity_drift_severity if aegis_scan.drift_content_count > 0 else 'PASS',
+            'detail': (aegis_scan.drift_content_count | string) ~ ' package files with changed size/content'
+                      ~ (': ' ~ (aegis_scan.drift_content | map(attribute='path') | join(', '))
+                         if aegis_scan.drift_content else '')}
+         ] }}
+
+- name: Record sudoers NOPASSWD findings
+  vars:
+    aegis_known: >-
+      {{ aegis_scan.nopasswd | selectattr('file', 'in', aegis_sudoers_known_nopasswd_files)
+         | rejectattr('all_commands') | list }}
+    aegis_other: >-
+      {{ aegis_scan.nopasswd | reject('in', aegis_known) | list }}
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'sudoers.nopasswd_known', 'status': 'INFO',
+            'detail': (aegis_known | length | string) ~ ' command-restricted NOPASSWD rules in Omarchy drop-ins: '
+                      ~ (aegis_known | map(attribute='file') | unique | join(', '))},
+           {'id': 'sudoers.nopasswd_other',
+            'status': 'WARN' if aegis_other else 'PASS',
+            'detail': ('NOPASSWD rules outside the known set (' ~ (aegis_scan.sudoers_files | length)
+                       ~ ' sudoers files read): '
+                       ~ (aegis_other | map(attribute='file') | zip(aegis_other | map(attribute='text'))
+                          | map('join', ': ') | join(' | ')))
+                      if aegis_other else (aegis_scan.sudoers_files | length | string) ~ ' sudoers files read, none'}
+         ] }}
+
+- name: Read the group database
+  ansible.builtin.getent:
+    database: group
+
+- name: Record dangerous group membership
+  vars:
+    aegis_groups: "{{ ansible_facts['getent_group'] }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {%- set out = [] -%}
+      {%- for name, severity in aegis_audit_dangerous_groups | dictsort -%}
+        {%- set members = (aegis_groups[name][2] | default('')).split(',') | select | list
+                          if name in aegis_groups else [] -%}
+        {%- set _ = out.append({'id': 'groups.' ~ name,
+              'status': severity if members else 'PASS',
+              'detail': ('members of ' ~ name ~ ': ' ~ (members | join(', '))) if members
+                        else (name ~ ': no members' if name in aegis_groups else name ~ ': group absent')}) -%}
+      {%- endfor -%}
+      {{ (aegis_findings | default([])) + out }}

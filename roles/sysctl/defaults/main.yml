@@ -8,16 +8,79 @@ aegis_sysctl_file: /etc/sysctl.d/99-zz-aegis-hardened.conf
 # container sets this false because /proc/sys is read-only there.
 aegis_sysctl_apply: true
 
-# PRD 3.1. Every key here must exist on the running kernel, or the apply step
-# fails — on purpose, so a value that silently does nothing is not reported as
-# applied.
+# The whole file is rendered from the settings below, and the live read-back
+# checks the same keys, so the file and the check cannot drift apart. Every
+# key must exist on the running kernel, or the apply step fails — on purpose,
+# so a value that silently does nothing is not reported as applied.
 aegis_sysctl_settings:
+  # PRD 3.1
   kernel.dmesg_restrict: 1
   kernel.kptr_restrict: 2
   # One-way until the next reboot: kexec stays disabled even if this file is
   # removed.
   kernel.kexec_load_disabled: 1
   kernel.yama.ptrace_scope: 1
+  # Roadmap #1. Arch builds BPF_UNPRIV_DEFAULT_OFF=y (runtime value 2); 1 also
+  # makes it impossible to re-enable without a reboot.
+  kernel.unprivileged_bpf_disabled: 1
+  net.core.bpf_jit_harden: 2
+  # 2 is the highest level mainline defines; 3 exists only on linux-hardened.
+  kernel.perf_event_paranoid: 2
+  dev.tty.ldisc_autoload: 0
+  vm.unprivileged_userfaultfd: 0
+  # Roadmap #2. systemd's 50-default.conf sets fifos/regular to 1.
+  fs.protected_fifos: 2
+  fs.protected_regular: 2
+  # systemd-coredump sets 2 (root-only dumps of setuid programs); 0 stops
+  # setuid/privileged processes from dumping at all. Normal apps still reach
+  # systemd-coredump, so omarchy-crash-watch keeps working.
+  fs.suid_dumpable: 0
+  # Roadmap #4. Omarchy's arp_ignore=1 / arp_announce=2 fix is left alone.
+  net.ipv4.conf.all.send_redirects: 0
+  net.ipv4.conf.default.send_redirects: 0
+  net.ipv4.conf.all.accept_redirects: 0
+  net.ipv4.conf.default.accept_redirects: 0
+  net.ipv4.conf.all.secure_redirects: 0
+  net.ipv4.conf.default.secure_redirects: 0
+  net.ipv4.conf.all.accept_source_route: 0
+  net.ipv4.conf.default.accept_source_route: 0
+  # Loose mode (systemd's default). Strict mode (1) drops asymmetric traffic
+  # on WireGuard/Tailscale and docked laptops.
+  net.ipv4.conf.all.rp_filter: 2
+  net.ipv4.conf.default.rp_filter: 2
+  net.ipv4.tcp_syncookies: 1
+  net.ipv4.tcp_rfc1337: 1
+
+# Written only when the kernel has IPv6 (/proc/sys/net/ipv6 exists), so a
+# machine booted with ipv6.disable=1 does not fail the run.
+aegis_sysctl_ipv6_settings:
+  net.ipv6.conf.all.accept_redirects: 0
+  net.ipv6.conf.default.accept_redirects: 0
+  net.ipv6.conf.all.accept_source_route: 0
+  net.ipv6.conf.default.accept_source_route: 0
+  # IPv6 privacy (temporary) addresses. NetworkManager falls back to this
+  # value when a connection leaves ipv6.ip6-privacy unset.
+  net.ipv6.conf.all.use_tempaddr: 2
+  net.ipv6.conf.default.use_tempaddr: 2
+
+# --- Waiting on a decision (docs/open-decisions.md). Each default leaves
+# Omarchy's current behaviour unchanged. ---
+
+# D-15: null leaves systemd's value (16 = sync only). Set 0 to disable SysRq.
+aegis_sysctl_sysrq: null
+
+# D-16: raise vm.mmap_rnd_bits / mmap_rnd_compat_bits to the x86_64 kernel
+# maximum (32 / 16; Arch defaults 28 / 8). Ignored on other architectures.
+aegis_sysctl_mmap_rnd_max: false
+
+# D-17: null leaves the kernel defaults (oops_limit 10000, warn_limit 0 =
+# unlimited).
+aegis_sysctl_oops_limit: null
+aegis_sysctl_warn_limit: null
+
+# Check-only: fail if the running kernel allows mappings below this address.
+# Arch builds DEFAULT_MMAP_MIN_ADDR=65536; Securix's 4096 would weaken it.
+aegis_sysctl_mmap_min_addr_floor: 65536
 
 # Disabling unprivileged user namespaces breaks Flatpak/bubblewrap and browser
 # sandboxes, which the PRD also relies on (3.3). Left off until that conflict

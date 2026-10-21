@@ -8,22 +8,71 @@
       with the Flatpak/bubblewrap sandboxing in PRD 3.3. See docs/open-decisions.md D-01.
     quiet: true
 
-- name: Write the hardened sysctl settings
-  ansible.posix.sysctl:
-    name: "{{ item.key }}"
-    value: "{{ item.value | string }}"
-    sysctl_file: "{{ aegis_sysctl_file }}"
-    state: present
-    sysctl_set: "{{ aegis_sysctl_apply | bool }}"
-    reload: "{{ aegis_sysctl_apply | bool }}"
-  loop: "{{ aegis_sysctl_settings | dict2items }}"
+- name: Check whether the kernel has IPv6
+  ansible.builtin.stat:
+    path: /proc/sys/net/ipv6
+  register: aegis_sysctl_ipv6
+
+- name: Build the effective settings
+  vars:
+    aegis_sysctl_optional: >-
+      {{ {}
+         | combine({'kernel.sysrq': aegis_sysctl_sysrq} if aegis_sysctl_sysrq is not none else {})
+         | combine({'kernel.oops_limit': aegis_sysctl_oops_limit} if aegis_sysctl_oops_limit is not none else {})
+         | combine({'kernel.warn_limit': aegis_sysctl_warn_limit} if aegis_sysctl_warn_limit is not none else {})
+         | combine({'vm.mmap_rnd_bits': 32, 'vm.mmap_rnd_compat_bits': 16}
+                   if (aegis_sysctl_mmap_rnd_max | bool and ansible_facts['architecture'] == 'x86_64') else {}) }}
+  ansible.builtin.set_fact:
+    aegis_sysctl_effective: >-
+      {{ aegis_sysctl_settings
+         | combine(aegis_sysctl_ipv6_settings if aegis_sysctl_ipv6.stat.exists else {})
+         | combine(aegis_sysctl_optional) }}
+
+- name: Write the hardened sysctl drop-in
+  ansible.builtin.template:
+    src: aegis-hardened.conf.j2
+    dest: "{{ aegis_sysctl_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: aegis_sysctl_written
+
+- name: Read the live kernel values
+  ansible.builtin.command:
+    cmd: sysctl -n {{ item.key }}
+  loop: "{{ aegis_sysctl_effective | dict2items }}"
   loop_control:
-    label: "{{ item.key }}={{ item.value }}"
+    label: "{{ item.key }}"
+  register: aegis_sysctl_before
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: aegis_sysctl_apply | bool
+
+# Apply when the file changed, or when a live value differs from it (someone
+# changed it at runtime). Keys removed from the settings disappear from the
+# file, but the kernel keeps their old values until the next reboot.
+- name: Apply the drop-in to the running kernel
+  ansible.builtin.command:
+    cmd: sysctl --load={{ aegis_sysctl_file }}
+  changed_when: true
+  when:
+    - aegis_sysctl_apply | bool
+    - aegis_sysctl_written is changed
+      or (aegis_sysctl_before.results
+          | rejectattr('skipped', 'defined')
+          | selectattr('rc', 'ne', 0) | list | length > 0)
+      or (aegis_sysctl_before.results
+          | rejectattr('skipped', 'defined')
+          | map(attribute='stdout') | map('trim') | list)
+         != (aegis_sysctl_before.results
+             | rejectattr('skipped', 'defined')
+             | map(attribute='item') | map(attribute='value') | map('string') | list)
 
 - name: Read back the live kernel values
   ansible.builtin.command:
     cmd: sysctl -n {{ item.key }}
-  loop: "{{ aegis_sysctl_settings | dict2items }}"
+  loop: "{{ aegis_sysctl_effective | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
   register: aegis_sysctl_live
@@ -43,3 +92,17 @@
   when:
     - aegis_sysctl_apply | bool
     - not ansible_check_mode
+
+- name: Read vm.mmap_min_addr
+  ansible.builtin.slurp:
+    src: /proc/sys/vm/mmap_min_addr
+  register: aegis_sysctl_mmap_min_addr
+
+- name: Assert NULL-page mappings stay blocked
+  ansible.builtin.assert:
+    that:
+      - (aegis_sysctl_mmap_min_addr.content | b64decode | trim | int) >= aegis_sysctl_mmap_min_addr_floor
+    fail_msg: >-
+      vm.mmap_min_addr is {{ aegis_sysctl_mmap_min_addr.content | b64decode | trim }},
+      below {{ aegis_sysctl_mmap_min_addr_floor }}; something lowered it.
+    quiet: true

@@ -57,3 +57,15 @@ jobs:
         run: podman --version
       - name: Run roles against Omarchy's baseline in Arch Linux
         run: tests/container/run.sh
+
+  sysctl-apply:
+    # Changes the runner's kernel settings (some until reboot); fine on a
+    # throwaway CI VM, never run locally.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Apply the sysctl role to the live kernel
+        run: sudo AEGIS_ALLOW_HOST_SYSCTL=1 tests/container/sysctl-apply.sh

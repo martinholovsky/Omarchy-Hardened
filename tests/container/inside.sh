@@ -4,8 +4,23 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=15
+checks_total=25
 checks_passed=0
+
+# Status of one finding in the latest audit file, or "MISSING".
+finding() {
+  python3 -I -c 'import json,sys
+for line in open("/var/lib/aegis/audit.jsonl"):
+    f = json.loads(line)
+    if f["id"] == sys.argv[1]:
+        print(f["status"]); break
+else:
+    print("MISSING")' "$1"
+}
+expect_finding() { # id status
+  local got; got=$(finding "$1")
+  [[ $got == "$2" ]] || { cat /var/lib/aegis/audit.jsonl; fail "finding $1 is $got, expected $2"; }
+}
 
 pass() { checks_passed=$((checks_passed + 1)); echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -54,6 +69,40 @@ for kv in kernel.dmesg_restrict=1 kernel.kptr_restrict=2 kernel.kexec_load_disab
 done
 pass "sysctl file holds all 4 settings"
 
+# Every key Aegis writes must name a real sysctl, or the apply step on a real
+# host would fail; check against this (mainline) kernel's /proc/sys.
+sysctl_file=/etc/sysctl.d/99-zz-aegis-hardened.conf
+keys=$(grep -E '^[a-z]' "$sysctl_file" | cut -d= -f1)
+[[ $(wc -l <<<"$keys") -ge 25 ]] || fail "sysctl file has fewer than 25 keys"
+# Some net.* keys (e.g. net.core.bpf_jit_harden) exist only in the initial
+# network namespace, which this container does not have. Those are handed to
+# run.sh, which checks them in a second container on the host namespace.
+: > /out/netns-only-keys
+for key in $keys; do
+  if [[ ! -e /proc/sys/${key//.//} ]]; then
+    [[ $key == net.* ]] || fail "sysctl key $key does not exist on this kernel"
+    echo "$key" >> /out/netns-only-keys
+  fi
+done
+pass "all $(wc -l <<<"$keys") sysctl keys exist ($(wc -l < /out/netns-only-keys) net.* keys deferred to the host-netns check)"
+
+for key in kernel.sysrq kernel.oops_limit kernel.warn_limit vm.mmap_rnd_bits; do
+  ! grep -q "^$key=" "$sysctl_file" || fail "decision-gated key $key written by default"
+done
+if ! { grep -qx 'fs.protected_regular=2' "$sysctl_file" && grep -qx 'net.ipv4.conf.all.rp_filter=2' "$sysctl_file"; }; then
+  fail "Tier 1 sysctls missing"
+fi
+pass "Tier 1 sysctls written; decision-gated keys absent by default"
+
+expect_finding pacman.siglevel.global PASS
+expect_finding pacman.mirror_transport PASS
+expect_finding pacman.upgrade_age PASS
+expect_finding integrity.setuid_unowned PASS
+expect_finding integrity.scan_coverage PASS
+grep -q '"id": "integrity.scan_coverage"' /var/lib/aegis/audit.jsonl || fail "audit file lacks scan coverage"
+[[ $(stat -c %a /var/lib/aegis/audit.jsonl) == 600 ]] || fail "audit file is not 0600"
+pass "audit file written (0600) with clean-system findings"
+
 echo "--- su: real logins against the hardened stack"
 echo 'root:Aegis-root-pw1' | chpasswd
 useradd -m -G wheel alice
@@ -74,6 +123,11 @@ pass "su refused for a non-wheel user"
 su_as alice 'Aegis-root-pw1' || fail "wheel user could not su with the right password"
 pass "su works for a wheel user"
 
+echo "--- dry run (--check --diff), as the README tells users to start with"
+ansible-playbook tests/container/playbook.yml --check --diff >/tmp/check.log 2>&1 \
+  || { cat /tmp/check.log; fail "--check --diff run failed"; }
+pass "--check --diff run succeeds"
+
 echo "--- second run (idempotence)"
 out=$(ansible-playbook tests/container/playbook.yml)
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "second run was not idempotent"; }
@@ -93,6 +147,7 @@ grep -qx 'deny = 10' /etc/security/faillock.conf || fail "default deny not resto
 pass "deny rewrite applies a non-default count and restores 10"
 
 echo "--- negative: an unsigned repository must fail the audit"
+cp /etc/pacman.conf /etc/pacman.conf.aegis-orig
 # shellcheck disable=SC2016 # $arch is pacman's placeholder, written literally
 printf '\n[evil]\nServer = https://example.invalid/$arch\nSigLevel = Never\n' >> /etc/pacman.conf
 if ansible-playbook tests/container/playbook.yml >/tmp/neg.log 2>&1; then
@@ -105,6 +160,70 @@ echo "--- negative: the exception list lets a named repo through"
 ansible-playbook tests/container/playbook.yml -e '{"aegis_pacman_siglevel_exceptions": ["evil"]}' >/dev/null \
   || fail "exception for [evil] was not honoured"
 pass "pacman_integrity honours aegis_pacman_siglevel_exceptions"
+cp /etc/pacman.conf.aegis-orig /etc/pacman.conf
+
+audit_must_fail() { # id description
+  if ansible-playbook tests/container/playbook.yml >/tmp/neg.log 2>&1; then
+    cat /tmp/neg.log; fail "$2 did not fail the run"
+  fi
+  expect_finding "$1" FAIL
+}
+
+echo "--- negative: a weak SigLevel inside an Include= file"
+printf '\n[inc]\nInclude = /etc/pacman.d/aegis-test-inc\n' >> /etc/pacman.conf
+printf 'Server = https://example.invalid/inc\nSigLevel = TrustAll\n' > /etc/pacman.d/aegis-test-inc
+audit_must_fail pacman.siglevel.inc "SigLevel = TrustAll in an included file"
+cp /etc/pacman.conf.aegis-orig /etc/pacman.conf
+pass "SigLevel from an Include= file is audited"
+
+echo "--- negative: a plain-HTTP mirror"
+cp /etc/pacman.d/mirrorlist /tmp/mirrorlist.orig
+# shellcheck disable=SC2016 # pacman placeholders, written literally
+printf 'Server = http://mirror.example.invalid/$repo/os/$arch\n' >> /etc/pacman.d/mirrorlist
+audit_must_fail pacman.mirror_transport "a plain-HTTP mirror"
+cp /tmp/mirrorlist.orig /etc/pacman.d/mirrorlist
+pass "plain-HTTP mirror fails the audit"
+
+echo "--- negative: a setuid binary no package owns"
+install -m 4755 /usr/bin/true /usr/local/bin/aegis-test-suid
+audit_must_fail integrity.setuid_unowned "an unowned setuid binary"
+grep -q '/usr/local/bin/aegis-test-suid' /var/lib/aegis/audit.jsonl || fail "unowned setuid path not reported"
+rm -f /usr/local/bin/aegis-test-suid
+pass "unowned setuid binary fails the audit"
+
+echo "--- package drift: a modified binary is reported (WARN by default, FAIL when chosen)"
+cp -a /usr/bin/false /tmp/false.orig
+printf 'aegis' >> /usr/bin/false
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "drift at WARN severity failed the run"
+expect_finding integrity.package_drift_content WARN
+grep -q '/usr/bin/false' /var/lib/aegis/audit.jsonl || fail "modified /usr/bin/false not named"
+if ansible-playbook tests/container/playbook.yml -e aegis_integrity_drift_severity=FAIL >/dev/null 2>&1; then
+  fail "drift at FAIL severity did not fail the run"
+fi
+cp -a /tmp/false.orig /usr/bin/false
+pass "package drift detected; severity follows aegis_integrity_drift_severity"
+
+echo "--- negative: docker group membership, then accepted via aegis_audit_skip"
+groupadd -f docker
+gpasswd -a alice docker >/dev/null
+audit_must_fail groups.docker "docker group membership"
+ansible-playbook tests/container/playbook.yml -e '{"aegis_audit_skip": ["groups.docker"]}' >/dev/null \
+  || fail "aegis_audit_skip did not accept groups.docker"
+expect_finding groups.docker ACCEPTED
+gpasswd -d alice docker >/dev/null
+pass "docker membership fails the audit; aegis_audit_skip accepts it"
+
+echo "--- faillock decision flags apply when enabled and are removed by default"
+ansible-playbook tests/container/playbook.yml \
+  -e '{"aegis_faillock_audit": true, "aegis_faillock_even_deny_root": true}' >/dev/null
+if ! { grep -qx 'audit' /etc/security/faillock.conf && grep -qx 'even_deny_root' /etc/security/faillock.conf \
+  && grep -qx 'root_unlock_time = 900' /etc/security/faillock.conf; }; then
+  fail "faillock audit/even_deny_root not written when enabled"
+fi
+ansible-playbook tests/container/playbook.yml >/dev/null
+! grep -Eqx 'audit|even_deny_root|root_unlock_time = 900' /etc/security/faillock.conf \
+  || fail "faillock flags not removed by the default run"
+pass "faillock audit/even_deny_root toggle cleanly"
 
 echo "--- firewall: seed Omarchy's rule set, then harden it"
 bash "$FIX/firewall.sh"

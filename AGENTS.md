@@ -20,6 +20,12 @@ workstation. Requirements: `docs/PRD.md`. Verified upstream behaviour:
   A task that can silently match nothing — `lineinfile`/`replace` regexes —
   must be followed by such a check.
 - Roles must be idempotent and must work under `--check --diff`.
+- Audit-only checks append findings (`{id, status, detail}`, status
+  PASS/INFO/WARN/FAIL) to `aegis_findings` and never fail directly;
+  `audit_report` decides. Every new check needs a planted-problem test in
+  `tests/container/inside.sh` that proves it fires.
+- A setting with a real trade-off ships behind a variable that defaults to
+  Omarchy's current behaviour, with an Open entry in `docs/open-decisions.md`.
 - Variables are named `aegis_<area>_*` (see `.ansible-lint` for why the
   role-prefix rule is skipped).
 - Pin everything: collections in `requirements.yml`, Python tooling in

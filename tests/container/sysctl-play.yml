@@ -1,0 +1,9 @@
+---
+# Used only by tests/container/sysctl-apply.sh (real kernel, throwaway VM).
+- name: Apply the sysctl role to the live kernel
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  roles:
+    - sysctl
