@@ -45,9 +45,10 @@ aegis_integrity_setuid_allow: []
 aegis_integrity_world_writable_allow: []
 
 # D-21: severity for package files whose mode/owner or content differs from
-# the package database (`pacman -Qkk`). WARN until validated on a real Omarchy
-# install; FAIL afterwards.
-aegis_integrity_drift_severity: WARN
+# the package database (`pacman -Qkk`) and is not accepted under D-22. FAIL
+# since a default Omarchy 4.0.6 install showed no unaccepted drift
+# (2026-10-21, tests/vm). Add a file you accept to aegis_integrity_drift_expected.
+aegis_integrity_drift_severity: FAIL
 aegis_integrity_check_package_files: true
 # Path prefixes whose package drift is ignored: pseudo-filesystem mount points
 # always differ from the package's record (seen in the test image).

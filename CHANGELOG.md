@@ -95,6 +95,8 @@ SemVer once 1.0 ships.
   are reported as INFO in `integrity.package_drift_accepted`, not as drift.
   Default entries: utempter, `/var/log/journal`, `powerprofilesctl`. All were
   verified on an Omarchy 4.0.6 install.
+- D-21: package drift now **fails** the run by default, because a default
+  Omarchy 4.0.6 VM install produces none that D-22 does not accept.
 - Container test: 32 checks. New ones cover drift reported once per file,
   tightened versus loosened permissions, exact matching of expected entries,
   the upgrade-age install fallback, and the sudoers NOPASSWD check.

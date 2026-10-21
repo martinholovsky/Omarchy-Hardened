@@ -212,7 +212,7 @@ docker/libvirt/disk, WARN for input; (b) WARN for all; (c) off.
 **Recommendation: (a).** Choosing root-equivalent access should be an explicit,
 recorded act: add `groups.docker` to `aegis_audit_skip`.
 
-### D-21 — severity of package-file drift (Decided: WARN until a clean real-install run, then FAIL)
+### D-21 — severity of package-file drift (Decided: FAIL since 2026-10-21)
 
 `pacman -Qkk` reports package files whose mode, owner or content changed. In
 the test image it also reports noise: pseudo-filesystem mount points (now
@@ -267,3 +267,8 @@ The recommendation was (a). **The owner chose (b).** It is implemented as:
 Accepted files are listed in the INFO finding
 `integrity.package_drift_accepted`, so they stay visible.
 D-21 moves to FAIL once a default VM install shows no unaccepted drift.
+
+**Done on 2026-10-21.** A VM run from the `pre-aegis` snapshot gave 0
+permission drift and 0 content drift, with 6 changes accepted. The default is
+now `aegis_integrity_drift_severity: FAIL`. The container test keeps WARN,
+because its image has drift a real install does not.

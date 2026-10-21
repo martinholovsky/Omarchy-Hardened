@@ -91,7 +91,8 @@ of `wheel` may use `su`. Root is locked too after 10 failures
 `/var/lib/aegis/audit.jsonl`. A FAIL stops the run. If you accept a FAIL (for
 example you chose sudoless Docker), add its id to `aegis_audit_skip`, e.g.
 `-e '{"aegis_audit_skip": ["groups.docker"]}'`. It is then reported as
-ACCEPTED.
+ACCEPTED. Package files that differ from their package also FAIL (D-21).
+The benign changes a default Omarchy install makes are accepted (D-22).
 
 **After every `omarchy-update`:** run the playbook again. Omarchy's update
 scripts rewrite some PAM files (D-11).
