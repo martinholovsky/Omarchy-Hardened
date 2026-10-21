@@ -98,11 +98,15 @@ from a root shell.
 - **Read the findings.** The summary is printed at the end, and the full list
   is in `/var/lib/aegis/audit.jsonl`. That file is mode 0600, so read it with
   `sudo`. It lists the file paths the scan found.
-- **Package drift (D-21) is a WARN for now.** After the first run on a real
-  install, review every `integrity.package_drift_*` path and separate expected
-  changes from real ones. Then set `aegis_integrity_drift_severity: FAIL`.
+- **Package drift (D-21) is a WARN for now.** The causes found on a default
+  Omarchy install are accepted as INFO (`integrity.package_drift_accepted`,
+  D-22). This covers changes listed in `aegis_integrity_drift_expected`, and
+  permission changes that only remove bits. Anything else in
+  `integrity.package_drift_*` deserves a look. If you accept it, add it to the
+  list with its exact `-Qkk` reasons and a `why`.
 - **`pacman.upgrade_age` warns** when the last `pacman -Syu` is more than 7 days
-  old (`aegis_pacman_max_upgrade_age_days`).
+  old (`aegis_pacman_max_upgrade_age_days`). Before the first `-Syu`, the age
+  counts from the install, which is the first `pacman.log` entry.
 - **Re-run after every `omarchy-update`.** Omarchy's update scripts rewrite
   PAM files (D-11), and nothing warns you when that happens yet. A re-run puts
   the settings back and verifies them. `--check --diff` shows what the update

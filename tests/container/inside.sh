@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=26
+checks_total=32
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -212,6 +212,79 @@ if ansible-playbook tests/container/playbook.yml -e aegis_integrity_drift_severi
 fi
 cp -a /tmp/false.orig /usr/bin/false
 pass "package drift detected; severity follows aegis_integrity_drift_severity"
+
+# pacman -Qkk prints one line per reason (size, checksum, mtime); the finding
+# must still name the file once and count it once.
+echo "--- package drift: a file with several mismatches is listed once"
+printf 'aegis' >> /usr/bin/false
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "drift run failed"
+drift=$(grep '"id": "integrity.package_drift_content"' /var/lib/aegis/audit.jsonl)
+[[ $(grep -o '/usr/bin/false' <<<"$drift" | wc -l) -eq 1 ]] || { echo "$drift"; fail "/usr/bin/false listed more than once"; }
+grep -q '"1 package files with changed size/content' <<<"$drift" || { echo "$drift"; fail "drift count is per reason, not per file"; }
+cp -a /tmp/false.orig /usr/bin/false
+pass "a file with several -Qkk reasons is reported once"
+
+# D-22: drift that only removes permission bits is accepted (INFO); drift that
+# adds any is not. /usr/bin/false ships as 0755 root:root. The image has drift
+# of its own (/var/games, wall, write), so check where this file lands rather
+# than the finding's status.
+finding_line() { grep "\"id\": \"$1\"" /var/lib/aegis/audit.jsonl; }
+echo "--- D-22: tightened permissions are accepted, loosened ones are not"
+chmod 0700 /usr/bin/false
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "tightened-drift run failed"
+if finding_line integrity.package_drift_permissions | grep -q '/usr/bin/false' \
+  || ! finding_line integrity.package_drift_accepted | grep -q '/usr/bin/false - permissions only tightened'; then
+  cat /var/lib/aegis/audit.jsonl; fail "tightened /usr/bin/false not accepted"
+fi
+chmod 0775 /usr/bin/false
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "loosened-drift run failed"
+if ! finding_line integrity.package_drift_permissions | grep -q '/usr/bin/false' \
+  || finding_line integrity.package_drift_accepted | grep -q '/usr/bin/false'; then
+  cat /var/lib/aegis/audit.jsonl; fail "loosened /usr/bin/false was accepted"
+fi
+chmod 0755 /usr/bin/false
+pass "0700 on a 0755 package file is accepted; 0775 is drift"
+
+echo "--- D-22: an expected-drift entry matches its exact reasons only"
+expected='{"aegis_integrity_drift_expected": [{"path": "/usr/bin/false", "why": "test",
+  "reasons": ["Modification time mismatch", "Size mismatch", "SHA256 checksum mismatch"]}]}'
+printf 'aegis' >> /usr/bin/false
+ansible-playbook tests/container/playbook.yml -e "$expected" >/dev/null || fail "expected-drift run failed"
+expect_finding integrity.package_drift_content PASS
+grep -q '/usr/bin/false - test' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "listed drift not accepted"; }
+pass "listed content drift is accepted as INFO"
+
+chmod 0700 /usr/bin/false
+ansible-playbook tests/container/playbook.yml -e "$expected" >/dev/null || fail "expected-drift run failed"
+expect_finding integrity.package_drift_content WARN
+cp -a /tmp/false.orig /usr/bin/false
+pass "an extra change on a listed file is still drift"
+
+echo "--- upgrade age: before the first -Syu it counts from the install"
+cp /var/log/pacman.log /tmp/pacman.log.orig
+log_line() { printf "[%s] [PACMAN] Running 'pacman -r /mnt -Sy base'\n" "$(date -u -d "$1" +%Y-%m-%dT%H:%M:%S+0000)"; }
+log_line '-2 days' > /var/log/pacman.log
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "upgrade-age run failed"
+expect_finding pacman.upgrade_age PASS
+grep -q 'no full upgrade since the first' /var/lib/aegis/audit.jsonl || fail "install-time fallback not reported"
+log_line '-30 days' > /var/log/pacman.log
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "upgrade-age run failed"
+expect_finding pacman.upgrade_age WARN
+cp /tmp/pacman.log.orig /var/log/pacman.log
+pass "a 2-day-old install passes and a 30-day-old one never upgraded warns"
+
+echo "--- sudoers: an unknown NOPASSWD rule warns; Omarchy's asdcontrol drop-in does not"
+mkdir -p /etc/sudoers.d
+printf '%s\n' 'ALL ALL=(ALL) !/usr/bin/asdcontrol' \
+  '%wheel ALL=(root) NOPASSWD: /usr/bin/asdcontrol ^/dev/(usb/)?hiddev[0-9]+$' > /etc/sudoers.d/50-asdcontrol
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "sudoers run failed"
+expect_finding sudoers.nopasswd_other PASS
+printf 'alice ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/aegis-test
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "sudoers run failed"
+expect_finding sudoers.nopasswd_other WARN
+grep -q 'aegis-test' /var/lib/aegis/audit.jsonl || fail "planted sudoers file not named"
+rm -f /etc/sudoers.d/aegis-test /etc/sudoers.d/50-asdcontrol
+pass "unknown NOPASSWD rule warns; asdcontrol drop-in is known"
 
 echo "--- negative: docker group membership, then accepted via aegis_audit_skip"
 groupadd -f docker

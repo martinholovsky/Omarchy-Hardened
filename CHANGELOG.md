@@ -90,7 +90,24 @@ SemVer once 1.0 ships.
   through the LUKS prompt, and checks that nothing reverted. First run on
   Omarchy 4.0.6 / `linux-omarchy 7.2.8-9` passed.
 
+- `pacman_integrity` (D-22, owner's choice (b)): known-benign package drift and
+  permission changes that only tighten (checked against the package `mtree`)
+  are reported as INFO in `integrity.package_drift_accepted`, not as drift.
+  Default entries: utempter, `/var/log/journal`, `powerprofilesctl`. All were
+  verified on an Omarchy 4.0.6 install.
+- Container test: 32 checks. New ones cover drift reported once per file,
+  tightened versus loosened permissions, exact matching of expected entries,
+  the upgrade-age install fallback, and the sudoers NOPASSWD check.
+
 ### Changed
+
+- `pacman_integrity`:
+  - A file with several `-Qkk` reasons is listed and counted once. It used to
+    appear once per reason.
+  - `pacman.upgrade_age` no longer warns on a fresh install. The Omarchy
+    installer never runs `-Syu`, so the age counts from the first log entry.
+  - `/etc/sudoers.d/50-asdcontrol`, from Omarchy's base `asdcontrol` package
+    and restricted by regex, is added to the known NOPASSWD files.
 
 - `SECURITY.md`: GitHub private vulnerability reporting is not available on
   private repos, so the report link is replaced until the repo goes public.

@@ -50,10 +50,21 @@ upgrade_age_days:
   description: Whole days since last_full_upgrade, or null.
   type: int
   returned: always
+first_log_entry:
+  description: >-
+    ISO timestamp of the first line in pacman.log (on a fresh install, the
+    install itself), or null. Used when no full upgrade has run yet.
+  type: str
+  returned: always
+first_log_age_days:
+  description: Whole days since first_log_entry, or null.
+  type: int
+  returned: always
 """
 
 MAX_INCLUDE_DEPTH = 10
 UPGRADE_RE = re.compile(r"^\[([^\]]+)\] \[PACMAN\] starting full system upgrade")
+STAMP_RE = re.compile(r"^\[([^\]]+)\] ")
 
 
 def _strip(line: str) -> str:
@@ -98,24 +109,36 @@ def _parse(path, section, sections, errors, seen, depth):
     return section
 
 
-def _last_upgrade(log_path):
-    last = None
+def _age_days(stamp):
+    if stamp is None:
+        return None
+    try:
+        when = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return None
+    return (datetime.datetime.now(datetime.timezone.utc) - when).days
+
+
+def _log_times(log_path):
+    """Return (last full upgrade, first log entry) timestamps from pacman.log.
+
+    The Omarchy installer runs `pacman -r /mnt -Sy ...`, never -Syu, so a fresh
+    install has no upgrade line; its first entry dates the install instead.
+    """
+    last = first = None
     try:
         with open(log_path, encoding="utf-8", errors="replace") as handle:
             for line in handle:
+                if first is None:
+                    stamp = STAMP_RE.match(line)
+                    if stamp:
+                        first = stamp.group(1)
                 match = UPGRADE_RE.match(line)
                 if match:
                     last = match.group(1)
     except FileNotFoundError:
-        return None, None
-    if last is None:
-        return None, None
-    try:
-        stamp = datetime.datetime.strptime(last, "%Y-%m-%dT%H:%M:%S%z")
-    except ValueError:
-        return last, None
-    age = datetime.datetime.now(datetime.timezone.utc) - stamp
-    return last, age.days
+        pass
+    return last, first
 
 
 def main():
@@ -132,13 +155,15 @@ def main():
         _parse(module.params["path"], "options", sections, errors, frozenset(), 0)
     except OSError as exc:
         module.fail_json(msg=f"cannot read {module.params['path']}: {exc}")
-    last, age = _last_upgrade(module.params["log_path"])
+    last, first = _log_times(module.params["log_path"])
     module.exit_json(
         changed=False,
         sections=[{"name": name, **data} for name, data in sections.items()],
         include_errors=errors,
         last_full_upgrade=last,
-        upgrade_age_days=age,
+        upgrade_age_days=_age_days(last),
+        first_log_entry=first,
+        first_log_age_days=_age_days(first),
     )
 
 

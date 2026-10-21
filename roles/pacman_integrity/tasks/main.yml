@@ -47,6 +47,10 @@
     aegis_scheme_re: "^({{ aegis_pacman_allowed_server_schemes | join('|') }})://"
     aegis_bad_servers: "{{ aegis_servers | reject('search', aegis_scheme_re) | list }}"
     aegis_age: "{{ aegis_pacman.upgrade_age_days }}"
+    # A fresh install has no -Syu line yet (the installer runs pacman -Sy), so
+    # count from the first log entry, i.e. the install, instead of warning.
+    aegis_first_age: "{{ aegis_pacman.first_log_age_days }}"
+    aegis_eff_age: "{{ aegis_age if aegis_age is not none else aegis_first_age }}"
   ansible.builtin.set_fact:
     aegis_findings: >-
       {{ (aegis_findings | default([])) + [
@@ -58,11 +62,16 @@
                       else (aegis_servers | length | string) ~ ' Server entries, all '
                            ~ (aegis_pacman_allowed_server_schemes | join('/'))},
            {'id': 'pacman.upgrade_age',
-            'status': 'WARN' if (aegis_age is none
-                                 or (aegis_age | int) > aegis_pacman_max_upgrade_age_days) else 'PASS',
-            'detail': ('no full system upgrade found in ' ~ aegis_pacman_log) if aegis_age is none
-                      else ('last full upgrade ' ~ aegis_pacman.last_full_upgrade ~ ' (' ~ aegis_age
-                            ~ ' days ago; limit ' ~ aegis_pacman_max_upgrade_age_days ~ ')')}
+            'status': 'WARN' if (aegis_eff_age is none
+                                 or (aegis_eff_age | int) > aegis_pacman_max_upgrade_age_days) else 'PASS',
+            'detail': ('last full upgrade ' ~ aegis_pacman.last_full_upgrade ~ ' (' ~ aegis_age
+                       ~ ' days ago; limit ' ~ aegis_pacman_max_upgrade_age_days ~ ')')
+                      if aegis_age is not none
+                      else (('no full upgrade since the first ' ~ aegis_pacman_log ~ ' entry, '
+                             ~ aegis_pacman.first_log_entry ~ ' (the install; ' ~ aegis_first_age
+                             ~ ' days ago; limit ' ~ aegis_pacman_max_upgrade_age_days ~ ')')
+                            if aegis_first_age is not none
+                            else 'no dated entries in ' ~ aegis_pacman_log)}
          ] }}
 
 - name: Run the integrity sweep (read-only)
@@ -73,6 +82,8 @@
     max_files: "{{ aegis_integrity_max_files }}"
     check_package_files: "{{ aegis_integrity_check_package_files }}"
     drift_ignore: "{{ aegis_integrity_drift_ignore }}"
+    drift_expected: "{{ aegis_integrity_drift_expected }}"
+    drift_tightened_is_accepted: "{{ aegis_integrity_drift_tightened_is_accepted }}"
   register: aegis_scan
 
 - name: Record integrity findings
@@ -126,7 +137,13 @@
             'status': aegis_integrity_drift_severity if aegis_scan.drift_content_count > 0 else 'PASS',
             'detail': (aegis_scan.drift_content_count | string) ~ ' package files with changed size/content'
                       ~ (': ' ~ (aegis_scan.drift_content | map(attribute='path') | join(', '))
-                         if aegis_scan.drift_content else '')}
+                         if aegis_scan.drift_content else '')},
+           {'id': 'integrity.package_drift_accepted', 'status': 'INFO',
+            'detail': (aegis_scan.drift_accepted_count | string) ~ ' known or tightened changes accepted (D-22)'
+                      ~ (': ' ~ (aegis_scan.drift_accepted | map(attribute='path')
+                                 | zip(aegis_scan.drift_accepted | map(attribute='why'))
+                                 | map('join', ' - ') | join('; '))
+                         if aegis_scan.drift_accepted else '')}
          ] }}
 
 - name: Record sudoers NOPASSWD findings
