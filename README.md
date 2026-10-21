@@ -122,8 +122,9 @@ checked in a second, read-only container.
 
 Applying sysctls to a live kernel changes the host, some settings until reboot,
 so `tests/container/sysctl-apply.sh` refuses to run unless
-`AEGIS_ALLOW_HOST_SYSCTL=1`. CI runs it on a throwaway VM. Boot- and
-hardware-related roles still need a VM test.
+`AEGIS_ALLOW_HOST_SYSCTL=1`. CI runs it on a throwaway VM. `tests/vm/` runs the
+playbook against a real Omarchy install in VirtualBox, including a reboot
+through the LUKS prompt (see `tests/vm/README.md`).
 
 CI (`.github/workflows/ci.yml`) runs the lint, a full-history gitleaks scan,
 the container test, and the live sysctl apply.
@@ -134,6 +135,7 @@ the container test, and the live sysctl apply.
 omarchy-harden.yml        entry playbook
 roles/<name>/             one role per PRD item (defaults/ + tasks/)
 tests/container/          container test harness
+tests/vm/                 VirtualBox test against a real Omarchy install
 tests/fixtures/omarchy/   upstream snippets (MIT, pinned commit)
 docs/PRD.md               requirements
 docs/upstream-baseline.md what Omarchy really ships (verified)

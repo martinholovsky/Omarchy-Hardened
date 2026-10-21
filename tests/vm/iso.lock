@@ -1,0 +1,9 @@
+# Omarchy ISO the VM test installs (sourced by tests/vm/create.sh).
+# Before a version goes in here, check its OpenPGP signature against
+# AEGIS_ISO_SIGNER. That is the key Omarchy's own source pins
+# (bin/omarchy-update-keyring at dde0d12). The SHA-256 below is the value that
+# was checked.
+AEGIS_ISO_VERSION=4.0.6
+AEGIS_ISO_URL=https://iso.omarchy.org/omarchy-4.0.6.iso
+AEGIS_ISO_SHA256=b542db5fecc37395d9af6654a8146ebed225f275ae4d5a6fcf432e40afe7bb88
+AEGIS_ISO_SIGNER=40DFB630FF42BCFFB047046CF0134EE680CAC571

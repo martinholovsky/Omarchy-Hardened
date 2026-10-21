@@ -5,20 +5,20 @@ undo, and what has not been tested yet. The settings are in each role's
 `defaults/main.yml`. The decisions behind them are in
 [open-decisions.md](open-decisions.md).
 
-Last reviewed: 2026-10-21, at commit `44b5126`.
+Last reviewed: 2026-10-21, after the first VM run.
 
 ## 1. What has and has not been verified
 
 | Area | Verified how | Not verified |
 |---|---|---|
-| sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift | On `linux-omarchy`, the kernel Omarchy ships. A key missing there fails the run (on purpose) |
-| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested | The graphical login, the lock screen (`hyprlock`), `sudo` from a Hyprland terminal |
+| sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift. **VM (2026-10-21):** applied on Omarchy 4.0.6 / `linux-omarchy 7.2.8-9`, all keys present, values still in force after a reboot | Real hardware |
+| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot | The lock screen (`hyprlock`) lockout and its persistence across a reboot, `sudo` from a Hyprland terminal |
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
-| Audit | Each check fires on a planted problem in the container | A real Omarchy install's false-positive rate, especially `pacman -Qkk` drift (D-21) |
-| Boot | Nothing | Anything that needs a reboot to show: the persistent faillock tally, sysctl load order at boot |
+| Audit | Each check fires on a planted problem in the container. **VM:** first findings from a real install (4 WARN), reviewed in [open-decisions.md](open-decisions.md) D-21 | Long-lived installs with more packages |
+| Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
 
-Until a VM run (section 6) has been done, treat every first run on real
-hardware as a test.
+The VM run (section 6) has been done; real hardware has not. Treat the first
+run on a real machine as a test.
 
 ## 2. Before the first run
 
@@ -123,27 +123,27 @@ community guide, [omarchy discussion #176](https://github.com/omacom/omarchy/dis
 In VirtualBox, Omarchy changes only one thing: `install/user/hardware/vm-no-animations.sh`
 turns off animations when `systemd-detect-virt --vm` is true.
 
-Settings reported in discussion #176. These are community reports for Omarchy
-3.x, the newest dated 2026-02-25, and are **not tested here**:
+The test is scripted in [tests/vm/](../tests/vm/README.md). It ran on 2026-10-21
+with VirtualBox 7.2.22 and the signed Omarchy 4.0.6 ISO. The settings below
+started as community reports in discussion #176 and are now **tested here**:
 
 - 8 GB RAM, 4 vCPU, 40 GB disk
 - Graphics controller **VBoxVGA**, 3D acceleration **off**. With VMSVGA,
   Alacritty and Ghostty were reported not to start.
 - Paravirtualization **KVM**, nested paging on, PAE/NX on
-- **EFI:** the original guide said to leave it off. That guide predates
-  Omarchy's switch to Limine with a UKI, so this needs checking. Try EFI first,
-  so the VM boots the same way as an Omarchy install on hardware (Limine + UKI,
-  see [upstream-baseline.md](upstream-baseline.md)).
-- Afterwards, set the display resolution with
-  `VBoxManage setextradata "<vm>" "CustomVideoMode1" "1920x1080x24"`, and use
-  1x scaling in `monitors.conf`.
-- Known problems: the Super key is often captured by the host, and Hyprland's
-  shortcuts depend on it. `hyprlock` crashed in one older report. The
-  playbook itself runs fine from a terminal.
+- **EFI on** works (the original guide's "EFI off" is outdated). The VM boots
+  the same way as a real install: Limine and a UKI, with LUKS on by default.
+- Measured problems and workarounds are in [tests/vm/README.md](../tests/vm/README.md):
+  - letting the window resize the guest garbled the display
+  - a live snapshot froze the guest
+  - ejecting the ISO before "Reboot Now" hung the installer
+  - `ufw limit 22/tcp` drops rapid SSH reconnects
+- The Super key works when sent from the host as scancodes.
 
-A VM run passes when:
+A VM run passes when the following hold. Steps 1, 2, 5 and 6 are automated by
+`tests/vm/run.sh` and passed; steps 3 and 4 are still manual and not yet done.
 
-1. Take a snapshot `pre-aegis`, then apply with `--tags sysctl,auth,network`.
+1. Take a snapshot `pre-aegis`, then apply the playbook.
 2. Reboot, then check `sysctl kernel.sysrq vm.mmap_rnd_bits kernel.oops_limit`.
    This proves `linux-omarchy` has the keys and that the boot order puts ours
    last.

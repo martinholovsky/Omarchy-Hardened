@@ -1,0 +1,5 @@
+---
+# Overrides for the VM test only. The test reaches the guest over SSH, so the
+# firewall role must keep Omarchy's `ufw limit 22/tcp` rule. The container
+# test covers removing it.
+aegis_firewall_remove_ssh: false

@@ -1,0 +1,8 @@
+---
+# The VirtualBox test VM, reached through the NAT forward that create.sh sets
+# up (127.0.0.1 only). run.sh supplies the user, key and become password.
+aegis:
+  hosts:
+    aegis-vm:
+      ansible_host: 127.0.0.1
+      ansible_port: "{{ lookup('ansible.builtin.env', 'AEGIS_VM_SSH_PORT', default='2222') }}"

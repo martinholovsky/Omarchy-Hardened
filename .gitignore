@@ -5,3 +5,4 @@
 __pycache__/
 .DS_Store
 /tests/container/.out/
+/tests/vm/.state/

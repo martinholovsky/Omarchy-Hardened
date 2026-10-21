@@ -84,6 +84,12 @@ SemVer once 1.0 ships.
   installer left `$6$` (SHA-512) hashes for root and the user, so 18o would
   fire on a default install.
 
+- VM test (`tests/vm/`): creates a VirtualBox VM from the signed Omarchy ISO,
+  pinned in `iso.lock` with its SHA-256 and signer. The test installs it,
+  applies the playbook over SSH (127.0.0.1 only), checks idempotence, reboots
+  through the LUKS prompt, and checks that nothing reverted. First run on
+  Omarchy 4.0.6 / `linux-omarchy 7.2.8-9` passed.
+
 ### Changed
 
 - `SECURITY.md`: GitHub private vulnerability reporting is not available on
