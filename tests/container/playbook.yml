@@ -9,6 +9,10 @@
   vars:
     aegis_require_omarchy: false
     aegis_sysctl_apply: false # /proc/sys is read-only in a container
+    # The image has package drift of its own (/srv/ftp, /var/games, wall,
+    # write) that a real install does not, so drift only warns here. The
+    # default (FAIL) is exercised by tests/vm/.
+    aegis_integrity_drift_severity: WARN
   roles:
     - preflight
     - sysctl

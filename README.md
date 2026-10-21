@@ -19,7 +19,7 @@ you cannot recover.
 | `sysctl` | 3.1 | ✅ implemented | Renders `/etc/sysctl.d/99-zz-aegis-hardened.conf` from one variable: the PRD set (`dmesg_restrict`, `kptr_restrict`, `kexec_load_disabled`, `yama.ptrace_scope`) plus roadmap Tier 1 (BPF, perf, userfaultfd, ldisc, `protected_fifos/regular=2`, `suid_dumpable=0`, IPv4/IPv6 redirect and source-route off, loose `rp_filter`, syncookies, rfc1337, IPv6 privacy addresses), plus decisions D-15 to D-17 (`sysrq=16`, ASLR `mmap_rnd_bits=32`/`compat=16`, `oops_limit=100`). Applies it, re-applies on runtime drift, reads every value back, and asserts `vm.mmap_min_addr >= 65536` |
 | `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count), `unlock_time=900` (Omarchy: 120 s) and a persistent tally dir in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack; routes `su` through `system-auth`, restricted to wheel; locks root too (`even_deny_root`, D-19); then verifies |
 | `firewall` | 3.4 | ✅ implemented | ufw default-deny incoming; removes LocalSend (53317) and the opt-in SSH rule; keeps Docker DNS (configurable) |
-| `pacman_integrity` | 3.5 | ✅ audit only | Emits findings: weak `SigLevel` (including `Include=` files), non-HTTPS mirrors, last full upgrade older than 7 days, setuid files no package owns, world-writable and unowned files, `pacman -Qkk` drift, NOPASSWD sudoers rules, members of docker/libvirt/disk/input |
+| `pacman_integrity` | 3.5 | ✅ audit only | Emits findings: weak `SigLevel` (including `Include=` files), non-HTTPS mirrors, last full upgrade older than 7 days, setuid files no package owns, world-writable and unowned files, `pacman -Qkk` drift (known-benign and permission-tightening changes reported as INFO, D-22), NOPASSWD sudoers rules, members of docker/libvirt/disk/input |
 | `audit_report` | — | ✅ implemented | Runs last: prints every finding, writes `/var/lib/aegis/audit.jsonl` (0600), fails on any FAIL not listed in `aegis_audit_skip` |
 | `kernel` | 3.1 | ⏳ stub | `linux-hardened` alongside `linux-omarchy` (D-02) |
 | `hardened_malloc` | 3.1 | ⏳ stub | Per-app opt-in (D-03) |
@@ -91,7 +91,8 @@ of `wheel` may use `su`. Root is locked too after 10 failures
 `/var/lib/aegis/audit.jsonl`. A FAIL stops the run. If you accept a FAIL (for
 example you chose sudoless Docker), add its id to `aegis_audit_skip`, e.g.
 `-e '{"aegis_audit_skip": ["groups.docker"]}'`. It is then reported as
-ACCEPTED.
+ACCEPTED. Package files that differ from their package also FAIL (D-21).
+The benign changes a default Omarchy install makes are accepted (D-22).
 
 **After every `omarchy-update`:** run the playbook again. Omarchy's update
 scripts rewrite some PAM files (D-11).
@@ -106,7 +107,7 @@ uv sync                                    # locked ansible-core, ansible-lint, 
 uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
-tests/container/run.sh                     # 26 checks in a pinned Arch image
+tests/container/run.sh                     # 32 checks in a pinned Arch image
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,

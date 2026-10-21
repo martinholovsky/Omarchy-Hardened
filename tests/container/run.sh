@@ -17,10 +17,23 @@ out_dir="$repo_root/tests/container/.out"
 rm -rf "$out_dir" && mkdir -p "$out_dir"
 
 # NET_ADMIN/NET_RAW let ufw program netfilter inside the container.
-podman run --rm --platform linux/amd64 \
+# Run detached and wait in a retry loop: on macOS the client's API connection
+# to the podman machine was seen to drop mid-run ("wait for container: EOF"),
+# which killed an attached run although the container was fine.
+cid=$(podman run -d --platform linux/amd64 \
   --cap-add NET_ADMIN --cap-add NET_RAW \
   -v "$repo_root:/src:ro" -v "$out_dir:/out" \
-  "$IMAGE" bash /src/tests/container/inside.sh
+  "$IMAGE" bash /src/tests/container/inside.sh)
+trap 'podman rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+rc=''
+for _ in $(seq 120); do
+  if rc=$(podman wait "$cid" 2>/dev/null); then break; fi
+  rc=''
+  sleep 5
+done
+podman logs "$cid" 2>&1
+[[ -n $rc ]] || { echo "error: lost track of test container $cid" >&2; exit 2; }
+[[ $rc -eq 0 ]] || exit "$rc"
 
 # Keys that exist only in the initial network namespace, checked read-only in
 # a container that shares the host's (no capabilities, nothing is written).

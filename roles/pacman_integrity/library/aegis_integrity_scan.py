@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import glob
 import grp
+import gzip
 import os
 import pwd
 import re
@@ -30,11 +32,26 @@ options:
   sudoers_paths: {type: list, elements: path, default: [/etc/sudoers, /etc/sudoers.d]}
   check_package_files: {type: bool, default: true}
   drift_ignore: {type: list, elements: path, default: []}
+  drift_expected:
+    description:
+      - Known, benign drift. Each item has C(path), C(reasons) (the exact set of
+        C(pacman -Qkk) reasons allowed) and C(why). A file whose reasons match
+        exactly is reported in drift_accepted instead of counting as drift.
+    type: list
+    elements: dict
+    default: []
+  drift_tightened_is_accepted:
+    description:
+      - Accept permission-only drift that removes mode bits without adding any
+        and keeps owner and group, judged against the package's mtree.
+    type: bool
+    default: true
 """
 
 QKK_RE = re.compile(r"^warning: (\S+): (/.*) \((.+)\)$")
 PERM_REASONS = ("Permissions mismatch", "UID mismatch", "GID mismatch")
 CONTENT_REASONS = ("Size mismatch", "checksum mismatch", "Symlink path mismatch")
+MTREE_OCTAL_RE = re.compile(r"\\([0-7]{3})")
 # sudo skips files in sudoers.d whose name ends in '~' or contains a '.'.
 SUDOERS_SKIP_RE = re.compile(r"(~$|\.)")
 
@@ -138,13 +155,76 @@ def _nopasswd(paths):
     return {"sudoers_files": files, "nopasswd": found}
 
 
-def _package_drift(cap, ignore):
+def _mtree_unescape(token):
+    # mtree escapes unusual bytes as \ooo; rebuild the bytes, then decode.
+    raw = MTREE_OCTAL_RE.sub(lambda m: chr(int(m.group(1), 8)), token)
+    return raw.encode("latin-1").decode("utf-8", errors="replace")
+
+
+def _mtree(pkg):
+    """Return {path: (mode, uid, gid)} from the package's local mtree, or {}."""
+    result = subprocess.run(
+        ["pacman", "-Q", "--", pkg], capture_output=True, text=True, timeout=60, check=False
+    )
+    fields = result.stdout.split()
+    if result.returncode != 0 or len(fields) != 2:
+        return {}
+    candidates = glob.glob(os.path.join("/var/lib/pacman/local", glob.escape(f"{pkg}-{fields[1]}"), "mtree"))
+    if not candidates:
+        return {}
+    out, defaults = {}, {}
+    try:
+        with gzip.open(candidates[0], "rt", encoding="latin-1") as handle:
+            for line in handle:
+                tokens = line.split()
+                if not tokens or tokens[0].startswith("#"):
+                    continue
+                keys = dict(t.split("=", 1) for t in tokens[1:] if "=" in t)
+                if tokens[0] == "/set":
+                    defaults.update(keys)
+                    continue
+                if tokens[0] == "/unset":
+                    for name in tokens[1:]:
+                        defaults.pop(name, None)
+                    continue
+                attrs = {**defaults, **keys}
+                if not {"mode", "uid", "gid"} <= attrs.keys():
+                    continue
+                path = "/" + _mtree_unescape(tokens[0]).removeprefix("./")
+                out[path] = (int(attrs["mode"], 8), int(attrs["uid"]), int(attrs["gid"]))
+    except (OSError, ValueError, EOFError):
+        return {}
+    return out
+
+
+def _only_tightened(pkg, path, found, cache):
+    """True when the only change is mode bits removed, owner and group kept."""
+    if set(found) != {"Permissions mismatch"}:
+        return False
+    if pkg not in cache:
+        cache[pkg] = _mtree(pkg)
+    expected = cache[pkg].get(path)
+    if expected is None:
+        return False
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    mode, uid, gid = expected
+    actual = stat.S_IMODE(st.st_mode)
+    return (st.st_uid, st.st_gid) == (uid, gid) and actual & ~mode == 0 and actual != mode
+
+
+def _package_drift(cap, ignore, expected, tightened_ok):
     ignore = tuple(ignore)
+    known = {item["path"]: item for item in expected}
 
     result = subprocess.run(
         ["pacman", "-Qkk"], capture_output=True, text=True, timeout=1800, check=False
     )
-    perms, content, other = [], [], 0
+    # pacman prints one line per reason ("GID mismatch", "Permissions
+    # mismatch", ...), so group by path: each list names a file once.
+    reasons: dict[tuple[str, str], list[str]] = {}
     for line in (result.stdout + "\n" + result.stderr).splitlines():
         match = QKK_RE.match(line.strip())
         if not match:
@@ -152,12 +232,25 @@ def _package_drift(cap, ignore):
         pkg, path, reason = match.groups()
         if path in ignore or path.startswith(tuple(p.rstrip("/") + "/" for p in ignore)):
             continue
-        entry = {"package": pkg, "path": path, "reason": reason}
-        if any(r in reason for r in PERM_REASONS):
+        reasons.setdefault((pkg, path), []).append(reason)
+    perms, content, accepted, other = [], [], [], 0
+    mtrees: dict[str, dict] = {}
+    for (pkg, path), found in reasons.items():
+        entry = {"package": pkg, "path": path, "reasons": found}
+        item = known.get(path)
+        if item is not None and set(item.get("reasons", [])) == set(found):
+            accepted.append({**entry, "why": item.get("why", "")})
+            continue
+        if tightened_ok and _only_tightened(pkg, path, found, mtrees):
+            accepted.append({**entry, "why": "permissions only tightened (package mtree)"})
+            continue
+        is_perm = any(r in reason for reason in found for r in PERM_REASONS)
+        is_content = any(r in reason for reason in found for r in CONTENT_REASONS)
+        if is_perm:
             perms.append(entry)
-        elif any(r in reason for r in CONTENT_REASONS):
+        if is_content:
             content.append(entry)
-        else:
+        if not (is_perm or is_content):
             other += 1
     return {
         "drift_permissions": perms[:cap],
@@ -165,6 +258,8 @@ def _package_drift(cap, ignore):
         "drift_content": content[:cap],
         "drift_content_count": len(content),
         "drift_other_count": other,
+        "drift_accepted": accepted[:cap],
+        "drift_accepted_count": len(accepted),
     }
 
 
@@ -181,6 +276,8 @@ def main():
             },
             "check_package_files": {"type": "bool", "default": True},
             "drift_ignore": {"type": "list", "elements": "path", "default": []},
+            "drift_expected": {"type": "list", "elements": "dict", "default": []},
+            "drift_tightened_is_accepted": {"type": "bool", "default": True},
         },
         supports_check_mode=True,
     )
@@ -195,7 +292,10 @@ def main():
     result.update(_nopasswd(params["sudoers_paths"]))
     result["package_files_known"] = len(owned)
     if params["check_package_files"]:
-        result.update(_package_drift(params["max_report"], params["drift_ignore"]))
+        result.update(_package_drift(
+            params["max_report"], params["drift_ignore"],
+            params["drift_expected"], params["drift_tightened_is_accepted"],
+        ))
     module.exit_json(changed=False, **result)
 
 

@@ -14,7 +14,7 @@ Last reviewed: 2026-10-21, after the first VM run.
 | sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift. **VM (2026-10-21):** applied on Omarchy 4.0.6 / `linux-omarchy 7.2.8-9`, all keys present, values still in force after a reboot | Real hardware |
 | PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot | The lock screen (`hyprlock`) lockout and its persistence across a reboot, `sudo` from a Hyprland terminal |
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
-| Audit | Each check fires on a planted problem in the container. **VM:** first findings from a real install (4 WARN), reviewed in [open-decisions.md](open-decisions.md) D-21 | Long-lived installs with more packages |
+| Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22, a default install gives 0 WARN and 0 FAIL | Long-lived installs with more packages |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
 
 The VM run (section 6) has been done; real hardware has not. Treat the first
@@ -44,6 +44,9 @@ run on a real machine as a test.
   ```
 
   The same applies to `libvirt` and `disk`. `input` only warns.
+- **Package drift fails the run** (D-21). If you changed a package file
+  yourself, the audit names it. Either restore it (`pacman -S <package>`) or
+  accept it in `aegis_integrity_drift_expected` with its exact reasons.
 - **On an Intel T2 Mac**, Omarchy adds `[arch-mact2]` with `SigLevel = Never`,
   and the audit fails. Add `arch-mact2` to `aegis_pacman_siglevel_exceptions`
   only if you accept unsigned packages from that repository.
@@ -98,11 +101,15 @@ from a root shell.
 - **Read the findings.** The summary is printed at the end, and the full list
   is in `/var/lib/aegis/audit.jsonl`. That file is mode 0600, so read it with
   `sudo`. It lists the file paths the scan found.
-- **Package drift (D-21) is a WARN for now.** After the first run on a real
-  install, review every `integrity.package_drift_*` path and separate expected
-  changes from real ones. Then set `aegis_integrity_drift_severity: FAIL`.
+- **Package drift (D-21) fails the run.** The causes found on a default
+  Omarchy install are accepted as INFO (`integrity.package_drift_accepted`,
+  D-22). This covers changes listed in `aegis_integrity_drift_expected`, and
+  permission changes that only remove bits. Anything else in
+  `integrity.package_drift_*` deserves a look. If you accept it, add it to the
+  list with its exact `-Qkk` reasons and a `why`.
 - **`pacman.upgrade_age` warns** when the last `pacman -Syu` is more than 7 days
-  old (`aegis_pacman_max_upgrade_age_days`).
+  old (`aegis_pacman_max_upgrade_age_days`). Before the first `-Syu`, the age
+  counts from the install, which is the first `pacman.log` entry.
 - **Re-run after every `omarchy-update`.** Omarchy's update scripts rewrite
   PAM files (D-11), and nothing warns you when that happens yet. A re-run puts
   the settings back and verifies them. `--check --diff` shows what the update

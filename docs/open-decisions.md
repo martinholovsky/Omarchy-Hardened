@@ -212,7 +212,7 @@ docker/libvirt/disk, WARN for input; (b) WARN for all; (c) off.
 **Recommendation: (a).** Choosing root-equivalent access should be an explicit,
 recorded act: add `groups.docker` to `aegis_audit_skip`.
 
-### D-21 — severity of package-file drift (Decided: WARN until a clean real-install run, then FAIL)
+### D-21 — severity of package-file drift (Decided: FAIL since 2026-10-21)
 
 `pacman -Qkk` reports package files whose mode, owner or content changed. In
 the test image it also reports noise: pseudo-filesystem mount points (now
@@ -223,3 +223,52 @@ the output has been checked on a real Omarchy install, then FAIL;
 **Recommendation: (a).** A FAIL that fires on a clean install trains you to
 skip the audit. Set `aegis_integrity_drift_severity: FAIL` once the first real
 run is clean.
+
+**First real-install run (2026-10-21, VM, Omarchy 4.0.6).** Not clean yet. Every
+reported file has a verified, benign cause:
+
+| File | `-Qkk` reasons | Cause |
+|---|---|---|
+| `/etc/cups/classes.conf`, `/etc/cups/printers.conf` | Permissions (0600; package 0640) | cupsd rewrites them more strictly |
+| `/boot` | Permissions (0700; `filesystem` ships 0755) | stricter than the package |
+| `/usr/lib/utempter/utempter` | GID, Permissions (2755 root:utmp) | `/usr/lib/tmpfiles.d/libutempter.conf`: `z /usr/lib/utempter/utempter 2755 root utmp` |
+| `/var/log/journal` | GID (setgid, `systemd-journal`) | systemd tmpfiles |
+| `/usr/bin/powerprofilesctl` | Size, SHA256, mtime | Omarchy's `install/config/fix-powerprofilesctl-shebang.sh:3` rewrites the shebang. Lines 2 onward have the same SHA-256 as `power-profiles-daemon-0.30-1` from archive.archlinux.org; only line 1 differs |
+
+Switching to FAIL now would fail every default install. How to accept these
+cases is D-22.
+
+### D-22 — accepting known package drift (Decided 2026-10-21: (b))
+
+D-21 can only move to FAIL once a default install produces no drift findings.
+The causes above are benign, but some way of accepting them is needed.
+
+- **(a) Exact expected-drift list.** A variable lists path, the exact `-Qkk`
+  reasons allowed and why. A match is reported as INFO. Any extra reason (for
+  example new content on top of a known permission change) still counts.
+  **Residual risk:** once accepted, a later tampering of
+  `/usr/bin/powerprofilesctl` is hidden among the INFO findings. Changing a
+  root-owned file in `/usr/bin` already needs root, so this hides
+  post-compromise tampering of one non-setuid script.
+- **(b) (a), plus automatic INFO for permission drift that only tightens.**
+  The expected mode, uid and gid come from pacman's `mtree`. This would cover
+  cups and `/boot` without listing them. It means more code, and it needs its
+  own tests.
+- **(c) Keep WARN for good.** No new mechanism, but drift never fails the run.
+
+The recommendation was (a). **The owner chose (b).** It is implemented as:
+
+- `aegis_integrity_drift_expected`: utempter, `/var/log/journal` and
+  `powerprofilesctl`, with their exact reason sets.
+- `aegis_integrity_drift_tightened_is_accepted: true`: this covers cups and
+  `/boot`. Owner and group must match the package's `mtree`, and no mode bit
+  may be added.
+
+Accepted files are listed in the INFO finding
+`integrity.package_drift_accepted`, so they stay visible.
+D-21 moves to FAIL once a default VM install shows no unaccepted drift.
+
+**Done on 2026-10-21.** A VM run from the `pre-aegis` snapshot gave 0
+permission drift and 0 content drift, with 6 changes accepted. The default is
+now `aegis_integrity_drift_severity: FAIL`. The container test keeps WARN,
+because its image has drift a real install does not.
