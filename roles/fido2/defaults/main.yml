@@ -1,0 +1,11 @@
+---
+# D-04 (decided 2026-10-21). Omarchy's omarchy-setup-security-fido2 adds
+# `auth sufficient pam_u2f.so cue authfile=/etc/fido2/fido2` to sudo (and
+# polkit): the key then replaces the password. This role makes it a second
+# factor for sudo only: `required` (key AND password), but only once every
+# wheel member has at least aegis_fido2_min_keys keys enrolled, so losing one
+# key cannot lock you out. Login, TTY, polkit and LUKS are not touched.
+aegis_fido2_sudo_second_factor: true
+aegis_fido2_min_keys: 2
+aegis_fido2_authfile: /etc/fido2/fido2
+aegis_fido2_sudo_pam: /etc/pam.d/sudo

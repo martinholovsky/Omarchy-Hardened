@@ -93,4 +93,19 @@ aegis_audit_dangerous_groups:
   docker: FAIL
   libvirt: FAIL
   disk: FAIL
+  # systemd's empower.rules grants this group every polkit action; run0
+  # --empower adds members only for one command, so a permanent one is root.
+  empower: FAIL
   input: WARN
+
+# --- System checks from the SnowflakeOS review (roadmap 18k-18o) ---
+# /tmp should be tmpfs with nosuid,nodev (Omarchy 4.0.6 has this).
+aegis_audit_tmp_path: /tmp
+aegis_audit_polkit_dirs: [/etc/polkit-1/rules.d, /usr/share/polkit-1/rules.d]
+# Blanket polkit grants that are expected, with the reason (reported as INFO).
+aegis_audit_polkit_known:
+  /usr/share/polkit-1/rules.d/empower.rules: >-
+    systemd: grants the transient "empower" group of run0 --empower; a permanent
+    member is caught by groups.empower
+# Omarchy writes autologin to /etc/sddm.conf.d/autologin.conf.
+aegis_audit_sddm_paths: [/etc/sddm.conf, /etc/sddm.conf.d]

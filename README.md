@@ -7,9 +7,11 @@ package-signature auditing, and later MAC, sandboxing and AI agent
 containment. It keeps the Hyprland desktop Omarchy gives you. The
 requirements are in [docs/PRD.md](docs/PRD.md).
 
-**Status: pre-alpha scaffold.** Five roles are implemented and tested in a
-container; the rest are stubs that change nothing. Do not run it on a machine
-you cannot recover.
+**Status: alpha.** Every role except `hardened_malloc` (deferred) is
+implemented. Each is tested in a container, in a VirtualBox install of Omarchy,
+or both (see the table in [docs/operating-notes.md](docs/operating-notes.md)).
+Nothing has run on real hardware yet. Do not run it on a machine you cannot
+recover.
 
 ## What it does today
 
@@ -21,15 +23,16 @@ you cannot recover.
 | `firewall` | 3.4 | ✅ implemented | ufw default-deny incoming; removes LocalSend (53317) and the opt-in SSH rule; keeps Docker DNS (configurable) |
 | `pacman_integrity` | 3.5 | ✅ audit only | Emits findings: weak `SigLevel` (including `Include=` files), non-HTTPS mirrors, last full upgrade older than 7 days, setuid files no package owns, world-writable and unowned files, `pacman -Qkk` drift (known-benign and permission-tightening changes reported as INFO, D-22), NOPASSWD sudoers rules, members of docker/libvirt/disk/input |
 | `audit_report` | — | ✅ implemented | Runs last: prints every finding, writes `/var/lib/aegis/audit.jsonl` (0600), fails on any FAIL not listed in `aegis_audit_skip` |
-| `kernel` | 3.1 | ⏳ stub | `linux-hardened` alongside `linux-omarchy` (D-02) |
-| `hardened_malloc` | 3.1 | ⏳ stub | Per-app opt-in (D-03) |
-| `fido2` | 3.2 | ⏳ stub | FIDO2 for LUKS + sudo (D-04) |
-| `apparmor` | 3.3 | ⏳ stub | D-05 |
-| `flatpak` | 3.3 | ⏳ stub | D-06 |
-| `agent_containment` | 3.3 | ⏳ stub | D-07 |
-| `commit_signing` | 3.3 | ⏳ stub | D-08 |
-| `opensnitch` | 3.4 | ⏳ stub | D-09 |
-| `overlay_network` | 3.4 | ⏳ stub | D-10 |
+| `drift_check` | — | ✅ implemented | D-11: after every pacman transaction, runs a root-owned copy of this playbook in `--check` mode, saved with the settings you applied, and warns in the journal and on the desktop if anything would change. Never re-applies |
+| `kernel` | 3.1 | ✅ implemented | D-02: installs `linux-hardened` **alongside** `linux-omarchy` with its own Limine entry; `linux-omarchy` stays the default. Keeps unprivileged user namespaces on under it (D-01) |
+| `hardened_malloc` | 3.1 | ⏸ deferred | D-03: AUR-only and flagged out of date; not built from a root playbook |
+| `fido2` | 3.2 | ✅ implemented | D-04: reports FIDO2 status. Once every wheel user has ≥2 keys, sudo needs key **and** password (`pam_u2f` `required` instead of Omarchy's `sufficient`). Login, polkit and LUKS untouched |
+| `apparmor` | 3.3 | ✅ implemented | D-05: installs AppArmor, adds it to `lsm=` through a Limine drop-in (active after a reboot), every profile in complain mode |
+| `flatpak` | 3.3 | ✅ implemented | D-06: no apps moved. If Flatpak is installed: Flathub limited to verified apps, apps with host/home/device/bus access reported |
+| `agent_containment` | 3.3 | ✅ implemented | D-07: rootless Podman and `aegis-agent`, which runs an agent with only the current project mounted, no `$HOME`, no capabilities and no user namespaces inside (D-01) |
+| `commit_signing` | 3.3 | ✅ implemented | D-08: SSH commit and tag signing for a public key you name (hardware `sk-` key required by default). Reports only until a key is set |
+| `opensnitch` | 3.4 | ✅ implemented | D-09: OpenSnitch running with default action `allow`, seeded rules for pacman/Tailscale/time/DNS, prompt UI autostarted |
+| `overlay_network` | 3.4 | ✅ implemented | D-10: reports Tailscale; opt-in `aegis_overlay_ssh_on_tailscale` allows SSH on `tailscale0` only |
 
 Immutability (PRD 3.6) is aspirational and has no role yet.
 
@@ -107,7 +110,7 @@ uv sync                                    # locked ansible-core, ansible-lint, 
 uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
-tests/container/run.sh                     # 32 checks in a pinned Arch image
+tests/container/run.sh                     # 44 checks in a pinned Arch image
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,

@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Aegis hardening drift check (playbook --check, D-11)
+
+[Service]
+Type=oneshot
+ExecStart={{ aegis_drift_check_script }}
+Nice=10
+IOSchedulingClass=idle
+# Read-only run: nothing outside /var/lib/aegis may be written.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aegis
+ProtectHome=read-only
+PrivateTmp=yes
+NoNewPrivileges=yes

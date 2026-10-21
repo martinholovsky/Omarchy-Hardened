@@ -39,42 +39,13 @@ expect_unchanged() {
   echo "PASS: $2"
 }
 
-# Omarchy's opt-in SSH rule is `ufw limit 22/tcp`: a 6th connection within
-# 30 s is dropped. Poll at most every 7 s; Ansible itself reuses one
-# connection (ControlPersist).
-ssh_up() {
-  ssh -i "$state/id_ed25519" -p "$ssh_port" -o BatchMode=yes -o ConnectTimeout=5 \
-    -o UserKnownHostsFile="$state/known_hosts" "$user@127.0.0.1" true 2>/dev/null
-}
+# shellcheck source=tests/vm/lib.sh
+. "$here/lib.sh"
+ensure_running
 
-# Omarchy installs with LUKS, so every boot stops at a passphrase prompt that
-# SSH cannot reach. Wait long enough for the prompt to be on screen, then type
-# the passphrase (the install password) once through VirtualBox. It is typed
-# only once, so a mistimed attempt cannot land in a desktop window.
-unlock_and_wait() {
-  sleep "${AEGIS_VM_LUKS_DELAY:-45}"
-  VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
-  for _ in $(seq 20); do
-    sleep 7
-    if ssh_up; then return 0; fi
-  done
-  VBoxManage controlvm "$vm" screenshotpng "$state/boot-failed.png" || true
-  die "VM did not come up after unlock; see $state/boot-failed.png"
-}
-
-vm_state=$(VBoxManage showvminfo "$vm" --machinereadable | sed -n 's/^VMState="\(.*\)"$/\1/p')
-if [[ $vm_state != running ]]; then
-  echo "--- boot $vm (state: $vm_state)"
-  # Right after a power-off the old VirtualBox window can still hold the
-  # session lock for a few seconds, and startvm fails until it lets go.
-  started=false
-  for _ in $(seq 15); do
-    if VBoxManage startvm "$vm" --type "${AEGIS_VM_UI:-gui}"; then started=true && break; fi
-    sleep 2
-  done
-  [[ $started == true ]] || die "could not start $vm"
-  unlock_and_wait
-fi
+# A real user runs the playbook on the machine, so ansible-core is there;
+# the D-11 check needs it. The VM test drives Ansible from the host instead.
+guest_root pacman -S --needed --noconfirm ansible-core >/dev/null
 
 echo "--- run 1: apply"
 "${play[@]}" 2>&1 | tee "$state/run1.log"
@@ -84,13 +55,51 @@ echo "--- run 2: apply again"
 expect_unchanged "$state/run2.log" "second run changes nothing"
 
 echo "--- reboot"
-uv run --project "$repo" ansible aegis "${common[@]}" -b -m ansible.builtin.shell \
-  -a "sleep 2 && systemctl reboot" -B 30 -P 0 >/dev/null
-unlock_and_wait
+reboot_and_wait
 
 echo "--- run 3: --check after reboot"
 "${play[@]}" --check --diff 2>&1 | tee "$state/run3.log"
 expect_unchanged "$state/run3.log" "state survives a reboot"
+
+echo "--- decided roles after reboot (D-01, D-02, D-05, D-07, D-09)"
+lsm=$(guest_root cat /sys/kernel/security/lsm)
+[[ $lsm == *apparmor* ]] || die "AppArmor not in the active LSMs after reboot: $lsm"
+echo "PASS: AppArmor active ($lsm)"
+modes=$(guest_root aa-status --json | python3 -I -c 'import sys,json; p=json.load(sys.stdin)["profiles"]; \
+  print(sum(v=="enforce" for v in p.values()), sum(v=="complain" for v in p.values()))')
+read -r enforce complain <<<"$modes"
+[[ $enforce -eq 0 && $complain -gt 0 ]] || die "AppArmor profiles: $enforce enforce, $complain complain (want 0 / >0)"
+echo "PASS: $complain AppArmor profiles loaded, all in complain mode"
+ids=$(guest_root grep -o 'kernel-id=[^ ]*' /boot/limine.conf | tr '\n' ' ')
+[[ $ids == kernel-id=linux-omarchy*kernel-id=linux-hardened* ]] || die "Limine kernel entries: $ids"
+echo "PASS: Limine lists linux-omarchy first, then linux-hardened"
+[[ $(guest_root systemctl is-active opensnitchd) == active ]] || die "opensnitchd not active"
+echo "PASS: opensnitchd active"
+img=docker.io/library/alpine@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+agent=$(guest_ssh "mkdir -p ~/aegis-proj && cd ~/aegis-proj && aegis-agent --image $img -- sh -c \
+  'grep CapEff /proc/self/status; ls -A /home | wc -l; unshare -U true 2>/dev/null && echo USERNS_ALLOWED || echo USERNS_DENIED; touch /work/w && echo WROTE'" 2>&1) || true
+printf '  agent: %s\n' "${agent//$'\n'/ | }"
+if ! { grep -q 'CapEff:.*0000000000000000' <<<"$agent" && grep -q USERNS_DENIED <<<"$agent" && grep -q WROTE <<<"$agent"; }; then
+  die "aegis-agent: capabilities, user namespaces or project mount not as expected"
+fi
+echo "PASS: aegis-agent: no capabilities, no user namespaces, project dir writable"
+
+echo "--- D-11: a package transaction triggers the drift check"
+guest_root sed -i 's/unlock_time=900/unlock_time=120/' /etc/pam.d/system-auth
+guest_root pacman -S --noconfirm which >/dev/null
+for _ in $(seq 60); do
+  st=$(guest_root systemctl show -P ActiveState aegis-drift-check.service)
+  [[ $st == activating || $st == active ]] || break
+  sleep 5
+done
+guest_root test -f /etc/systemd/system/aegis-drift-check.service || die "drift-check unit not installed"
+result=$(guest_root systemctl show -P Result aegis-drift-check.service)
+journal=$(guest_root journalctl -t aegis-drift-check -n 5 --no-pager)
+if ! { [[ $result == exit-code ]] && grep -q 'Hardening drift' <<<"$journal"; }; then
+  die "drift not reported (Result=$result): $journal"
+fi
+grep -q 'unlock_time=120' <<<"$(guest_root cat /etc/pam.d/system-auth)" || die "the drift check changed the system"
+echo "PASS: pacman hook ran the check; the reverted PAM file was reported, not repaired"
 
 echo "--- live values after reboot"
 # vm.mmap_rnd_bits is readable by root only.

@@ -1,0 +1,8 @@
+---
+# D-10 (decided 2026-10-21): Tailscale, installed with Omarchy's own
+# omarchy-install-service-tailscale; logging in stays a manual step. This role
+# reports its state and, only when you opt in, allows SSH on the Tailscale
+# interface (the firewall role closes SSH everywhere else).
+aegis_overlay_ssh_on_tailscale: false
+aegis_overlay_interface: tailscale0
+aegis_overlay_ssh_port: 22

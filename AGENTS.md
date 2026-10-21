@@ -41,6 +41,15 @@ uv run ansible-playbook omarchy-harden.yml --syntax-check
 tests/container/run.sh        # must end with "N/N checks passed"
 ```
 
+Roles that change the boot, install packages or need systemd (kernel,
+apparmor, opensnitch, agent_containment, drift_check) are tested only in the
+VM. Run `tests/vm/run.sh` from the `pre-aegis-updated` snapshot (see
+`tests/vm/README.md`), and do not edit `roles/` while it runs: the D-11 copy
+would change between runs and fail the idempotence check.
+
+Do not edit `tests/container/inside.sh` while the container test runs: bash
+reads the script as it executes it.
+
 If you add a check to `tests/container/inside.sh`, bump `checks_total`.
 
 ## Docs

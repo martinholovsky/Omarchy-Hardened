@@ -101,7 +101,54 @@ SemVer once 1.0 ships.
   tightened versus loosened permissions, exact matching of expected entries,
   the upgrade-age install fallback, and the sudoers NOPASSWD check.
 
+- Owner decisions D-01 to D-11 (2026-10-21): all recommended options; D-03
+  (hardened_malloc) deferred. Every remaining stub role is now implemented:
+  - `drift_check` (D-11): a pacman hook runs a root-owned copy of the
+    playbook in `--check` mode after each transaction. It uses the settings
+    of the last apply, warns through the journal and the desktop, and never
+    re-applies.
+  - `kernel` (D-02): `linux-hardened` installed alongside `linux-omarchy`;
+    the default entry is unchanged.
+  - `fido2` (D-04): sudo becomes key **and** password once every wheel user
+    has 2 or more keys.
+  - `apparmor` (D-05): `lsm=` drop-in, every profile in complain mode.
+  - `flatpak` (D-06): Flathub limited to verified apps; apps with broad
+    permissions reported.
+  - `agent_containment` (D-07, D-01): rootless Podman and `aegis-agent`.
+  - `commit_signing` (D-08): SSH signing for a named `sk-` key.
+  - `opensnitch` (D-09): installed, allow by default, seeded rules, UI
+    autostart.
+  - `overlay_network` (D-10): Tailscale status; opt-in SSH on `tailscale0`
+    only.
+- `pacman_integrity`: five read-only checks from the SnowflakeOS review
+  (roadmap 18k–18o): fwupd, tmpfs `/tmp`, blanket polkit grants, autologin
+  without encryption, weak password hashes.
+- `tests/vm/update-snapshot.sh` and `tests/vm/lib.sh`: an updated snapshot
+  for roles that install packages, and shared boot/unlock helpers. `run.sh`
+  now also checks AppArmor after a reboot, the Limine entries, OpenSnitch,
+  `aegis-agent`, and that the D-11 hook fires on a real pacman transaction.
+
 ### Changed
+
+- `kernel.perf_event_paranoid` is now 3. That is the same as 2 on mainline
+  (verified on linux-omarchy 7.2.8) and no longer lowers linux-hardened's
+  default.
+- The firewall check allows the D-10 `22/tcp on tailscale0` rule while still
+  rejecting a global SSH rule, IPv4 or IPv6 (`22/tcp (v6)`).
+- `groups.empower` joins the D-20 root-equivalent groups (FAIL), and systemd's
+  `empower.rules` is listed as a known polkit grant.
+
+### Fixed (found by the VM and container tests)
+
+- AppArmor: profiles declared `flags=(unconfined)` (78 of 145) are no longer
+  forced into complain mode. Forcing them broke rootless Podman.
+- `aegis-agent`: Podman's default seccomp profile allows `unshare` and `clone`
+  with `CLONE_NEWUSER`. The agent now runs with a derived profile that refuses
+  them (D-01).
+- OpenSnitch: the rules directory is 0755, the mode `opensnitchd` resets it to
+  on start. 0700 showed up as drift after every reboot.
+- `tests/container/run.sh` requires the final `N/N checks passed` line. It had
+  once reported exit 0 after a FAIL.
 
 - `pacman_integrity`:
   - A file with several `-Qkk` reasons is listed and counted once. It used to

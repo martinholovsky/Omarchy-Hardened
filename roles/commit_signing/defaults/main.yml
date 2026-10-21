@@ -1,0 +1,14 @@
+---
+# D-08 (decided 2026-10-21): git commits and tags signed with an SSH key,
+# preferably a FIDO2-resident ed25519-sk key (same tokens as D-04). The role
+# configures git for a key you name; it never creates or touches keys.
+
+# Public key to sign with, e.g. /home/you/.ssh/id_ed25519_sk.pub. Empty: the
+# role only reports the current git signing setup.
+aegis_commit_signing_pubkey: ""
+# Refuse keys that are not hardware-backed (sk-ssh-ed25519 / sk-ecdsa).
+aegis_commit_signing_require_sk: true
+# Whose ~/.gitconfig to configure. Defaults to the user who ran sudo.
+aegis_commit_signing_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"
+# E-mail for allowed_signers; empty uses that user's git user.email.
+aegis_commit_signing_email: ""

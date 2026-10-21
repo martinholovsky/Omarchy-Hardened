@@ -1,0 +1,18 @@
+---
+# D-09 (decided 2026-10-21): install OpenSnitch (Arch extra), default action
+# allow, so nothing breaks on day one and every new connection is visible.
+# Seeded rules give the system services a standing decision. Moving to deny
+# later is aegis_opensnitch_default_action: deny.
+aegis_opensnitch_enabled: true
+aegis_opensnitch_default_action: allow
+aegis_opensnitch_config: /etc/opensnitchd/default-config.json
+aegis_opensnitch_rules_dir: /etc/opensnitchd/rules
+aegis_opensnitch_seed_rules:
+  - {name: pacman, path: /usr/bin/pacman}
+  - {name: tailscaled, path: /usr/bin/tailscaled}
+  - {name: systemd-timesyncd, path: /usr/lib/systemd/systemd-timesyncd}
+  - {name: systemd-resolved, path: /usr/lib/systemd/systemd-resolved}
+# Prompts need the UI running in your session. Omarchy 4 autostarts user
+# programs from ~/.config/hypr/autostart.lua with o.launch_on_start().
+aegis_opensnitch_autostart_ui: true
+aegis_opensnitch_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"

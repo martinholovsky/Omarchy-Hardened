@@ -1,0 +1,17 @@
+{
+  "created": "2026-10-21T00:00:00Z",
+  "updated": "2026-10-21T00:00:00Z",
+  "name": "aegis-{{ item.name }}",
+  "description": "Seeded by Omarchy-Hardened (D-09)",
+  "enabled": true,
+  "precedence": false,
+  "action": "allow",
+  "duration": "always",
+  "operator": {
+    "type": "simple",
+    "operand": "process.path",
+    "sensitive": false,
+    "data": "{{ item.path }}",
+    "list": []
+  }
+}

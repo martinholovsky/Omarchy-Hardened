@@ -22,6 +22,13 @@ run on a real machine as a test.
 
 ## 2. Before the first run
 
+- **Update first.** The kernel, AppArmor, OpenSnitch and Podman roles install
+  packages from Arch's repos. A fresh Omarchy install has no pacman databases
+  yet, so run `omarchy-update` once before the first run.
+- **Put lasting overrides in a vars file, not only on the command line.**
+  The D-11 check reuses the settings of your last run, `-e` overrides
+  included, but only until you run without them.
+
 - **Snapshot or back up.** On a VM, take a snapshot. On hardware, at least back
   up `/etc/pam.d/`, `/etc/security/faillock.conf`, `/etc/ufw/` and
   `/etc/sysctl.d/`.
@@ -62,10 +69,16 @@ run on a real machine as a test.
 | LocalSend no longer receives files | ufw rule for 53317 removed | `aegis_firewall_remove_localsend: false` |
 | SSH from the LAN stops, even if you enabled it with `omarchy-setup-security-sshd` | ufw rule for 22/tcp removed; SSH is meant for the overlay network | `aegis_firewall_remove_ssh: false` |
 | Alt+SysRq keys do nothing except sync (S) | `kernel.sysrq=16` (D-15) | `aegis_sysctl_sysrq: null` |
-| `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=2`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
+| `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=3`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
 | setuid programs never leave core dumps | `fs.suid_dumpable=0` | Edit `aegis_sysctl_settings` |
 | The kernel panics (and reboots, if `kernel.panic` is set) after 100 oopses since boot | `kernel.oops_limit=100` (D-17) | `aegis_sysctl_oops_limit: null` |
 | An ASan/TSan build may crash at startup (**unverified**) | `vm.mmap_rnd_bits=32` (D-16) | `aegis_sysctl_mmap_rnd_max: false` first, before anything else |
+| After every package install or update, a check runs in the background and may notify "Aegis: hardening drift" | D-11 pacman hook (`/etc/pacman.d/hooks/zz-aegis-drift-check.hook`) | `aegis_drift_check_enabled: false` |
+| A second kernel, `linux-hardened`, appears in the Limine menu (not the default) | D-02 | `aegis_kernel_hardened_install: false` (then `pacman -R linux-hardened`) |
+| After the next reboot AppArmor is active; profiles only log (`journalctl -k \| grep apparmor`) | D-05 `lsm=` drop-in | `aegis_apparmor_enabled: false`, then reboot |
+| OpenSnitch runs; its UI starts with your session and asks about new connections (it allows them by default) | D-09 | `aegis_opensnitch_enabled: false` |
+| With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
+| `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
 
 ### Being locked out
 
@@ -79,6 +92,11 @@ therefore usually locks both accounts. Your options:
    does not go through PAM, so faillock cannot block it.
 
 ## 4. What cannot be undone without a reboot
+
+**The new kernel command line (D-05) only takes effect at the next boot.** The
+`lsm=` drop-in is in `/etc/limine-entry-tool.d/aegis-lsm.conf`. If a boot
+fails, choose another kernel or a snapshot in the Limine menu, delete that
+file, and run `sudo limine-mkinitcpio`.
 
 Removing `/etc/sysctl.d/99-zz-aegis-hardened.conf` reverts most settings at the
 next boot, or immediately with `sysctl --system`. Two settings are one-way on a

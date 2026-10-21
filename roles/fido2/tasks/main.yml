@@ -1,8 +1,95 @@
 ---
-# STUB — PRD 3.2. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-04).
-- name: Report that the fido2 role is not implemented yet
-  ansible.builtin.debug:
-    msg: >-
-      fido2: not implemented (PRD 3.2, waiting on D-04). Will enrol FIDO2 for LUKS
-      (systemd-cryptenroll) and sudo (pam_u2f). Nothing was changed.
+# D-04: report FIDO2 status; make pam_u2f a second factor for sudo once it is
+# safe to. Only an existing pam_u2f line (Omarchy's) is changed; FIDO2 itself
+# is set up with omarchy-setup-security-fido2, never by this role.
+- name: Read the sudo PAM stack
+  ansible.builtin.slurp:
+    src: "{{ aegis_fido2_sudo_pam }}"
+  register: aegis_fido2_pam_raw
+  failed_when: false
+
+- name: Read the pam_u2f authfile
+  ansible.builtin.slurp:
+    src: "{{ aegis_fido2_authfile }}"
+  register: aegis_fido2_auth_raw
+  failed_when: false
+
+- name: Read the wheel group
+  ansible.builtin.getent:
+    database: group
+    key: wheel
+  failed_when: false
+
+- name: Work out FIDO2 state
+  vars:
+    aegis_pam_text: "{{ (aegis_fido2_pam_raw.content | default('')) | b64decode }}"
+    aegis_auth_lines: >-
+      {{ ((aegis_fido2_auth_raw.content | default('')) | b64decode).splitlines()
+         | select('match', '^[^#:][^:]*:') | list }}
+    aegis_wheel: >-
+      {{ ((ansible_facts.getent_group | default({})).wheel | default(['', '', '']))[2].split(',')
+         | select | list }}
+  ansible.builtin.set_fact:
+    aegis_fido2_line: >-
+      {{ aegis_pam_text.splitlines() | select('match', '^\s*auth\s+\S+\s+pam_u2f\.so') | first | default('') }}
+    # user -> number of enrolled credentials (one ':' before each)
+    aegis_fido2_keys: >-
+      {{ dict(aegis_auth_lines | map('split', ':') | map('first')
+              | zip(aegis_auth_lines | map('regex_findall', ':') | map('length'))) }}
+    aegis_fido2_wheel: "{{ aegis_wheel }}"
+
+- name: Decide the sudo pam_u2f control
+  vars:
+    aegis_short: >-
+      {{ aegis_fido2_wheel | reject('in', aegis_fido2_keys | dict2items
+         | selectattr('value', '>=', aegis_fido2_min_keys | int) | map(attribute='key') | list) | list }}
+  ansible.builtin.set_fact:
+    aegis_fido2_short_users: "{{ aegis_short }}"
+    aegis_fido2_control: >-
+      {{ 'required' if (aegis_fido2_sudo_second_factor | bool and aegis_fido2_wheel and not aegis_short)
+         else 'sufficient' }}
+
+- name: Set the control of the pam_u2f line in sudo
+  ansible.builtin.replace:
+    path: "{{ aegis_fido2_sudo_pam }}"
+    regexp: '^(\s*auth\s+)(sufficient|required)(\s+pam_u2f\.so\b.*)$'
+    replace: '\g<1>{{ aegis_fido2_control }}\g<3>'
+  when: aegis_fido2_line | length > 0
+
+- name: Read sudo PAM back
+  ansible.builtin.slurp:
+    src: "{{ aegis_fido2_sudo_pam }}"
+  register: aegis_fido2_pam_after
+  when: aegis_fido2_line | length > 0 and not ansible_check_mode
+
+- name: Verify the pam_u2f control in force
+  vars:
+    aegis_expect_re: '(?m)^\s*auth\s+{{ aegis_fido2_control }}\s+pam_u2f\.so\b'
+  ansible.builtin.assert:
+    that:
+      - (aegis_fido2_pam_after.content | b64decode) is search(aegis_expect_re)
+    fail_msg: "{{ aegis_fido2_sudo_pam }}: pam_u2f is not '{{ aegis_fido2_control }}'"
+    quiet: true
+  when: aegis_fido2_line | length > 0 and not ansible_check_mode
+
+- name: Record the FIDO2 finding
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'auth.fido2_sudo',
+            'status': 'INFO' if not aegis_fido2_line
+                      else ('PASS' if aegis_fido2_control == 'required' else 'WARN'),
+            'detail': ('FIDO2 not set up for sudo (omarchy-setup-security-fido2, then enrol '
+                       ~ aegis_fido2_min_keys ~ ' keys)') if not aegis_fido2_line
+                      else ('sudo needs key AND password (pam_u2f required); keys: '
+                            ~ (aegis_fido2_keys | dict2items | map(attribute='key')
+                               | zip(aegis_fido2_keys | dict2items | map(attribute='value'))
+                               | map('join', '=') | join(', ')))
+                           if aegis_fido2_control == 'required'
+                      else ('pam_u2f is sufficient: the key replaces the password for sudo. '
+                            ~ ('Second factor is off (aegis_fido2_sudo_second_factor).'
+                               if not aegis_fido2_sudo_second_factor | bool
+                               else 'Not made required because these wheel users have fewer than '
+                                    ~ aegis_fido2_min_keys ~ ' keys: '
+                                    ~ (aegis_fido2_short_users | join(', ') or 'no wheel members')))}
+         ] }}

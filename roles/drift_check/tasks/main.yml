@@ -1,0 +1,162 @@
+---
+# D-11. Installs a pacman hook that runs a root-owned copy of this playbook in
+# --check mode after every package transaction and warns on drift. When this
+# playbook *is* that copy (the check run itself), the role does nothing.
+- name: Detect whether this run is the drift check itself
+  ansible.builtin.set_fact:
+    aegis_drift_check_self: "{{ playbook_dir == aegis_drift_check_dir }}"
+
+- name: Look for a local ansible-playbook
+  ansible.builtin.stat:
+    path: /usr/bin/ansible-playbook
+  register: aegis_drift_ansible
+
+- name: Install the drift check
+  when:
+    - aegis_drift_check_enabled | bool
+    - not aegis_drift_check_self | bool
+    - aegis_drift_ansible.stat.exists
+  block:
+    - name: Create the root-owned playbook copy
+      ansible.builtin.file:
+        path: "{{ aegis_drift_check_dir }}/{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: ["", collections]
+
+    - name: Copy the playbook (roles, inventory, config)
+      ansible.builtin.copy:
+        src: "{{ aegis_drift_check_source }}/{{ item }}"
+        dest: "{{ aegis_drift_check_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: preserve
+        directory_mode: "0755"
+      loop: [omarchy-harden.yml, ansible.cfg, inventory/, roles/]
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Create directories for the pinned collection files
+      ansible.builtin.file:
+        path: "{{ aegis_drift_check_dir }}/collections/{{ item | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ aegis_drift_check_collection_files }}"
+
+    - name: Copy the pinned collection files the playbook uses
+      ansible.builtin.copy:
+        src: "{{ aegis_drift_check_source }}/.collections/{{ item }}"
+        dest: "{{ aegis_drift_check_dir }}/collections/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ aegis_drift_check_collection_files }}"
+
+    # The check must run with the settings of this apply, -e overrides
+    # included, or every override would show up as drift.
+    - name: Save the settings of this run for the check
+      vars:
+        aegis_saved_names: >-
+          {{ query('ansible.builtin.varnames', '^aegis_')
+             | reject('in', aegis_drift_check_exclude_vars)
+             | reject('match', '^aegis_drift_(check_self|ansible)$') | list }}
+      ansible.builtin.copy:
+        content: >-
+          {{ dict(aegis_saved_names | zip(query('ansible.builtin.vars', *aegis_saved_names)))
+             | to_nice_yaml(indent=2, sort_keys=true) }}
+        dest: "{{ aegis_drift_check_dir }}/applied-vars.yml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Create the script and hook directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ aegis_drift_check_script | dirname }}"
+        - "{{ aegis_drift_check_hook | dirname }}"
+
+    - name: Install the check script
+      ansible.builtin.template:
+        src: aegis-drift-check.sh.j2
+        dest: "{{ aegis_drift_check_script }}"
+        owner: root
+        group: root
+        mode: "0755"
+        validate: bash -n %s
+
+    - name: Install the check unit
+      ansible.builtin.template:
+        src: aegis-drift-check.service.j2
+        dest: /etc/systemd/system/{{ aegis_drift_check_unit }}
+        owner: root
+        group: root
+        mode: "0644"
+      register: aegis_drift_unit
+
+    - name: Reload systemd after a unit change
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: aegis_drift_unit is changed and not ansible_check_mode
+      failed_when: false # no systemd in a container; the unit file is still checked below
+
+    - name: Install the pacman hook
+      ansible.builtin.template:
+        src: aegis-drift-check.hook.j2
+        dest: "{{ aegis_drift_check_hook }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Read the hook back
+      ansible.builtin.slurp:
+        src: "{{ aegis_drift_check_hook }}"
+      register: aegis_drift_hook_read
+      when: not ansible_check_mode
+
+    - name: Verify the hook starts the check unit
+      vars:
+        aegis_exec_line: "Exec = /usr/bin/systemctl start --no-block {{ aegis_drift_check_unit }}"
+      ansible.builtin.assert:
+        that:
+          - aegis_exec_line in (aegis_drift_hook_read.content | b64decode)
+          - "'When = PostTransaction' in (aegis_drift_hook_read.content | b64decode)"
+        fail_msg: "{{ aegis_drift_check_hook }} does not start {{ aegis_drift_check_unit }}"
+        quiet: true
+      when: not ansible_check_mode
+
+- name: Remove the drift check when disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ aegis_drift_check_hook }}"
+    - /etc/systemd/system/{{ aegis_drift_check_unit }}
+    - "{{ aegis_drift_check_script }}"
+  when: not aegis_drift_check_enabled | bool and not aegis_drift_check_self | bool
+
+- name: Record the drift-check finding
+  vars:
+    aegis_installed: "{{ (aegis_drift_check_enabled | bool) and aegis_drift_ansible.stat.exists }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'drift_check.installed',
+            'status': 'PASS' if aegis_installed
+                      else ('INFO' if not aegis_drift_check_enabled | bool else 'WARN'),
+            'detail': ('pacman hook ' ~ aegis_drift_check_hook ~ ' runs ' ~ aegis_drift_check_dir
+                       ~ '/omarchy-harden.yml --check after each transaction')
+                      if aegis_installed
+                      else ('disabled (aegis_drift_check_enabled: false)' if not aegis_drift_check_enabled | bool
+                            else '/usr/bin/ansible-playbook not found on this machine; install ansible-core '
+                                 ~ '(pacman -S --needed ansible-core) and re-run to enable the D-11 check')}
+         ] }}
+  when: not aegis_drift_check_self | bool

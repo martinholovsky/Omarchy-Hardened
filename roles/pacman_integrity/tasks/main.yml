@@ -168,6 +168,80 @@
                       if aegis_other else (aegis_scan.sudoers_files | length | string) ~ ' sudoers files read, none'}
          ] }}
 
+- name: Run the system checks from the SnowflakeOS review (read-only)
+  aegis_system_audit:
+    polkit_dirs: "{{ aegis_audit_polkit_dirs }}"
+    sddm_paths: "{{ aegis_audit_sddm_paths }}"
+  register: aegis_sys
+
+- name: Check whether fwupd is installed
+  ansible.builtin.command:
+    argv: [pacman, -Q, fwupd]
+  register: aegis_fwupd
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check the fwupd refresh timer
+  ansible.builtin.command:
+    argv: [systemctl, is-enabled, fwupd-refresh.timer]
+  register: aegis_fwupd_timer
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: aegis_fwupd.rc == 0
+
+- name: Read the filesystem that holds /tmp
+  ansible.builtin.command:
+    argv: [findmnt, -no, "FSTYPE,OPTIONS", -T, "{{ aegis_audit_tmp_path }}"]
+  register: aegis_tmp
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Record system findings (roadmap 18k-18o)
+  vars:
+    aegis_tmp_fields: "{{ (aegis_tmp.stdout | default('')).split() }}"
+    aegis_tmp_type: "{{ aegis_tmp_fields[0] | default('unknown') }}"
+    aegis_tmp_opts: "{{ (aegis_tmp_fields[1] | default('')).split(',') }}"
+    aegis_tmp_ok: "{{ aegis_tmp_type == 'tmpfs' and 'nosuid' in aegis_tmp_opts and 'nodev' in aegis_tmp_opts }}"
+    aegis_autologin_bad: "{{ aegis_sys.autologin | length > 0 and not aegis_sys.root_encrypted }}"
+    aegis_polkit_unknown: "{{ aegis_sys.polkit_blanket | reject('in', aegis_audit_polkit_known) | list }}"
+    aegis_polkit_known_found: "{{ aegis_sys.polkit_blanket | select('in', aegis_audit_polkit_known) | list }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'firmware.fwupd', 'status': 'INFO',
+            'detail': ('installed; fwupd-refresh.timer ' ~ (aegis_fwupd_timer.stdout | default('unknown')))
+                      if aegis_fwupd.rc == 0
+                      else 'fwupd not installed (Omarchy installs it on demand via omarchy-update-firmware)'},
+           {'id': 'mounts.tmp', 'status': 'PASS' if aegis_tmp_ok | bool else 'WARN',
+            'detail': aegis_audit_tmp_path ~ ' is on ' ~ aegis_tmp_type ~ ' ('
+                      ~ (aegis_tmp_opts | select('in', ['nosuid', 'nodev', 'noexec']) | join(',') or 'no nosuid/nodev')
+                      ~ ')' ~ ('' if aegis_tmp_ok | bool else '; expected tmpfs with nosuid,nodev')},
+           {'id': 'polkit.blanket_grant', 'status': 'WARN' if aegis_polkit_unknown else 'PASS',
+            'detail': ('rules returning polkit.Result.YES without checking action.id: '
+                       ~ (aegis_polkit_unknown | join(', ')))
+                      if aegis_polkit_unknown
+                      else (aegis_sys.polkit_rules_files | string)
+                           ~ ' polkit rules files read, no unexpected blanket grant'
+                           ~ ((' (known: ' ~ (aegis_polkit_known_found | join(', ')) ~ ')')
+                              if aegis_polkit_known_found else '')},
+           {'id': 'login.autologin_unencrypted', 'status': 'WARN' if aegis_autologin_bad | bool else 'PASS',
+            'detail': ('autologin for ' ~ (aegis_sys.autologin | map(attribute='user') | join(', '))
+                       ~ ' (' ~ (aegis_sys.autologin | map(attribute='file') | join(', ')) ~ ') while / ('
+                       ~ aegis_sys.root_source ~ ') is ' ~ ('' if aegis_sys.root_encrypted else 'not ') ~ 'encrypted')
+                      if aegis_sys.autologin else 'no SDDM autologin configured'},
+           {'id': 'accounts.password_hash', 'status': 'WARN' if aegis_sys.weak_hashes else 'PASS',
+            'detail': ('weak password hashes: '
+                       ~ (aegis_sys.weak_hashes | map(attribute='user')
+                          | zip(aegis_sys.weak_hashes | map(attribute='algorithm')) | map('join', ': ') | join(', '))
+                       ~ ' (login.defs ENCRYPT_METHOD ' ~ (aegis_sys.encrypt_method | default('unset', true))
+                       ~ '); run passwd for each to rehash')
+                      if aegis_sys.weak_hashes
+                      else (aegis_sys.hashes_checked | string) ~ ' password hashes checked, all yescrypt/bcrypt/scrypt'}
+         ] }}
+
 - name: Read the group database
   ansible.builtin.getent:
     database: group

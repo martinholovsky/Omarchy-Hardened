@@ -1,0 +1,17 @@
+---
+# D-02 (decided 2026-10-21): linux-hardened is installed *alongside*
+# linux-omarchy with its own Limine entry. linux-omarchy stays the default
+# (Omarchy's BOOT_ORDER lists it first); switching is your manual step after a
+# clean boot of the hardened entry. Packages come from Arch's extra repo.
+aegis_kernel_hardened_install: true
+aegis_kernel_hardened_package: linux-hardened
+# Headers are only needed to build out-of-tree modules (NVIDIA, T2, ...).
+aegis_kernel_hardened_headers_if_dkms: true
+aegis_kernel_limine_conf: /boot/limine.conf
+
+# D-01 (a): unprivileged user namespaces stay on, including under
+# linux-hardened, which turns them off by default. Without this, Flatpak,
+# browser sandboxes, Steam and bubblewrap break when booted into it. The
+# leading '-' makes systemd-sysctl skip the key on kernels that lack it.
+aegis_kernel_hardened_userns: true
+aegis_kernel_hardened_sysctl_file: /etc/sysctl.d/99-zz-aegis-linux-hardened.conf

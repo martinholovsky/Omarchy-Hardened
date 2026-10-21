@@ -13,8 +13,10 @@ This backlog merges four research reviews:
   SnowflakeOS (NixOS-based) at `snowflakeos-modules@0a5e0a3`. It has almost no
   hardening of its own; it contributes five audit checks (18k–18o).
 
-All were checked against Omarchy at `dde0d12`. Tier 0 and Tier 1 are
-implemented; nothing from Tier 2 on is. Each item changes security posture, so
+All were checked against Omarchy at `dde0d12`. Tier 0, Tier 1 and the
+SnowflakeOS checks (18k–18o) are implemented; the rest of Tier 2 on is not.
+The PRD roles behind D-01 to D-11 are implemented separately (see
+[open-decisions.md](open-decisions.md)). Each item changes security posture, so
 it needs the owner's go-ahead.
 Items that wait on a recorded decision point to `open-decisions.md`.
 
@@ -44,7 +46,7 @@ changes the package set.
 
 | # | Item | Role | Source |
 |---|---|---|---|
-| 1 | Info-leak / attack-surface sysctls: `perf_event_paranoid=2` (3 only on linux-hardened), `kernel.unprivileged_bpf_disabled=1`, `net.core.bpf_jit_harden=2`, `dev.tty.ldisc_autoload=0`, `vm.unprivileged_userfaultfd=0`, `kernel.sysrq=0` or `16` | `sysctl` | both |
+| 1 | Info-leak / attack-surface sysctls: `perf_event_paranoid=3` (acts as 2 on mainline; full lockdown on linux-hardened), `kernel.unprivileged_bpf_disabled=1`, `net.core.bpf_jit_harden=2`, `dev.tty.ldisc_autoload=0`, `vm.unprivileged_userfaultfd=0`, `kernel.sysrq=0` or `16` | `sysctl` | both |
 | 2 | Filesystem sysctls: `fs.protected_fifos=2`, `fs.protected_regular=2` (systemd sets 1), `fs.suid_dumpable=0` (systemd-coredump sets 2) | `sysctl` | both |
 | 3 | ASLR: `vm.mmap_rnd_bits` / `mmap_rnd_compat_bits` at the kernel maximum; **assert** `vm.mmap_min_addr >= 65536` (Securix's 4096 would weaken it) | `sysctl` | both |
 | 4 | Network sysctls that leave Omarchy's ARP fix alone: `send_redirects=0`, `accept_redirects=0` (IPv4 **and** IPv6), `secure_redirects=0`, `accept_source_route=0` (both), `tcp_syncookies=1`, `tcp_rfc1337=1`, `use_tempaddr=2`, `rp_filter=2` (loose, not 1) | `sysctl` | both |
@@ -83,7 +85,7 @@ changes the package set.
 | 18i | Set `oops_limit`/`warn_limit` late (after `graphical.target`), with a cmdline escape hatch, so boot-time driver noise does not count | `sysctl` |
 | 18j | If `slab_debug` is ever enabled, `hash_pointers=always` is **mandatory**: `slab_debug` turns off pointer hashing otherwise | `kernel` |
 
-### Added from the SnowflakeOS review
+### Added from the SnowflakeOS review (implemented 2026-10-21)
 
 All five are audit-only findings, so none can change the desktop. Each one
 needs a planted-problem test. 18k is the only one that suggests a later setting,

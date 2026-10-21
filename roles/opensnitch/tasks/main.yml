@@ -1,8 +1,134 @@
 ---
-# STUB — PRD 3.4. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-09).
-- name: Report that the opensnitch role is not implemented yet
-  ansible.builtin.debug:
+# D-09: OpenSnitch with the default action pinned, seeded rules, the daemon
+# running and (optionally) the prompt UI autostarted for the desktop user.
+- name: Check whether OpenSnitch is installed
+  ansible.builtin.command:
+    argv: [pacman, -Q, opensnitch]
+  register: aegis_os_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install OpenSnitch
+  ansible.builtin.command:
+    argv: [pacman, -S, --needed, --noconfirm, opensnitch]
+  register: aegis_os_install
+  changed_when: true
+  failed_when: false
+  when: aegis_opensnitch_enabled | bool and aegis_os_installed.rc != 0
+
+- name: Explain a failed install
+  ansible.builtin.fail:
     msg: >-
-      opensnitch: not implemented (PRD 3.4, waiting on D-09). Will install OpenSnitch with
-      a default-deny outbound rule set. Nothing was changed.
+      pacman could not install opensnitch: {{ aegis_os_install.stderr | default('') | trim }}.
+      Run omarchy-update (a full pacman -Syu) first, then re-run this playbook.
+  when: aegis_os_install is changed and aegis_os_install.rc != 0
+
+- name: Configure and start OpenSnitch
+  when: aegis_opensnitch_enabled | bool and (aegis_os_installed.rc == 0 or aegis_os_install is changed)
+  block:
+    - name: Read the daemon config
+      ansible.builtin.slurp:
+        src: "{{ aegis_opensnitch_config }}"
+      register: aegis_os_conf_raw
+      when: not ansible_check_mode or aegis_os_installed.rc == 0
+
+    - name: Pin the default action
+      ansible.builtin.copy:
+        dest: "{{ aegis_opensnitch_config }}"
+        content: >-
+          {{ (aegis_os_conf_raw.content | b64decode | from_json)
+             | combine({'DefaultAction': aegis_opensnitch_default_action}) | to_nice_json(indent=4) }}
+        owner: root
+        group: root
+        mode: "0644"
+      when: aegis_os_conf_raw.content is defined
+        and (aegis_os_conf_raw.content | b64decode | from_json).DefaultAction != aegis_opensnitch_default_action
+      notify: Restart opensnitchd
+
+    # 0755 because opensnitchd resets the directory to that when it starts
+    # (seen after a reboot on the VM); anything else is drift on every check.
+    # The rule files themselves are 0600.
+    - name: Create the rules directory
+      ansible.builtin.file:
+        path: "{{ aegis_opensnitch_rules_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Seed allow rules for system services
+      ansible.builtin.template:
+        src: rule.json.j2
+        dest: "{{ aegis_opensnitch_rules_dir }}/aegis-{{ item.name }}.json"
+        owner: root
+        group: root
+        mode: "0600"
+      loop: "{{ aegis_opensnitch_seed_rules }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Enable and start the daemon
+      ansible.builtin.systemd_service:
+        name: opensnitchd.service
+        enabled: true
+        state: started
+
+    - name: Autostart the prompt UI in the desktop session
+      ansible.builtin.lineinfile:
+        path: "~{{ aegis_opensnitch_user }}/.config/hypr/autostart.lua"
+        line: 'o.launch_on_start("opensnitch-ui")'
+        create: false
+      become: true
+      become_user: "{{ aegis_opensnitch_user }}"
+      failed_when: false
+      register: aegis_os_ui
+      when: aegis_opensnitch_autostart_ui | bool
+
+- name: Stop OpenSnitch when disabled
+  ansible.builtin.systemd_service:
+    name: opensnitchd.service
+    enabled: false
+    state: stopped
+  when: not aegis_opensnitch_enabled | bool and aegis_os_installed.rc == 0
+
+- name: Flush the restart before verifying
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the daemon state back
+  ansible.builtin.command:
+    argv: [systemctl, is-active, opensnitchd.service]
+  register: aegis_os_active
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the daemon config back
+  ansible.builtin.slurp:
+    src: "{{ aegis_opensnitch_config }}"
+  register: aegis_os_conf_after
+  when: aegis_opensnitch_enabled | bool and not ansible_check_mode
+
+- name: Verify the daemon runs with the chosen default action
+  vars:
+    aegis_action: "{{ (aegis_os_conf_after.content | b64decode | from_json).DefaultAction }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_os_active.stdout == 'active'
+      - aegis_action == aegis_opensnitch_default_action
+    fail_msg: "opensnitchd is {{ aegis_os_active.stdout }}; DefaultAction is {{ aegis_action }}"
+    quiet: true
+  when: aegis_opensnitch_enabled | bool and not ansible_check_mode
+
+- name: Record the OpenSnitch finding
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'network.opensnitch',
+            'status': 'PASS' if aegis_os_active.stdout == 'active'
+                      else ('INFO' if not aegis_opensnitch_enabled | bool else 'WARN'),
+            'detail': ('opensnitchd ' ~ aegis_os_active.stdout ~ ', default action '
+                       ~ aegis_opensnitch_default_action ~ ', ' ~ (aegis_opensnitch_seed_rules | length)
+                       ~ ' seeded rules; prompts appear while opensnitch-ui runs')
+                      if aegis_opensnitch_enabled | bool else 'OpenSnitch disabled (aegis_opensnitch_enabled: false)'}
+         ] }}
