@@ -1,0 +1,13 @@
+#!/usr/bin/expect -f
+# Drive one interactive `su -c "id -u" root` with the password in $SU_PASSWORD.
+# Exits with su's exit status (0 = authenticated).
+set timeout 20
+spawn su -c "id -u" root
+expect {
+  -re "Password: ?$" { send -- "$env(SU_PASSWORD)\r" }
+  timeout { exit 98 }
+  eof
+}
+expect eof
+lassign [wait] pid spawnid os_error status
+exit $status

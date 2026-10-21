@@ -4,14 +4,14 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=12
+checks_total=15
 checks_passed=0
 
 pass() { checks_passed=$((checks_passed + 1)); echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 echo "--- installing ansible"
-pacman -Syu --noconfirm --needed ansible-core python ufw >/dev/null
+pacman -Syu --noconfirm --needed ansible-core python ufw expect >/dev/null
 ansible --version | head -1
 
 # Work on a writable copy; /src is mounted read-only.
@@ -29,6 +29,8 @@ install -m 0644 "$FIX/faillock.conf" /etc/security/faillock.conf
 grep -q 'pam_faillock.so preauth silent deny=10 unlock_time=120' /etc/pam.d/system-auth \
   || fail "seed: Omarchy's sed did not apply to this image's system-auth"
 grep -q '^deny = 10$' /etc/security/faillock.conf || fail "seed: faillock.conf"
+grep -Eq '^auth\s+required\s+pam_unix\.so\s*$' /etc/pam.d/su || fail "seed: su does not call pam_unix directly"
+grep -Eq '^#auth\s+required\s+pam_wheel\.so use_uid' /etc/pam.d/su || fail "seed: su pam_wheel line not commented"
 pass "seeded Omarchy's relaxed faillock state"
 
 echo "--- first run"
@@ -51,6 +53,26 @@ for kv in kernel.dmesg_restrict=1 kernel.kptr_restrict=2 kernel.kexec_load_disab
   grep -qx "$kv" /etc/sysctl.d/99-zz-aegis-hardened.conf || fail "sysctl file missing $kv"
 done
 pass "sysctl file holds all 4 settings"
+
+echo "--- su: real logins against the hardened stack"
+echo 'root:Aegis-root-pw1' | chpasswd
+useradd -m -G wheel alice
+useradd -m bob
+su_as() { runuser -u "$1" -- env SU_PASSWORD="$2" expect /src/tests/container/su-login.exp >/dev/null 2>&1; }
+
+su_as alice 'wrong-password' && fail "su accepted a wrong password"
+[[ -s /var/lib/faillock/root ]] || fail "su failure not recorded in /var/lib/faillock"
+[[ ! -e /run/faillock/root ]] || fail "tally still written to tmpfs /run/faillock"
+# Count record lines (they start with a timestamp), not the header.
+[[ $(faillock --user root | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2} ') -ge 1 ]] \
+  || { faillock --user root; fail "faillock CLI shows no record for root"; }
+pass "su failure counted in the persistent tally (/var/lib/faillock)"
+
+su_as bob 'Aegis-root-pw1' && fail "non-wheel user could su with the right password"
+pass "su refused for a non-wheel user"
+
+su_as alice 'Aegis-root-pw1' || fail "wheel user could not su with the right password"
+pass "su works for a wheel user"
 
 echo "--- second run (idempotence)"
 out=$(ansible-playbook tests/container/playbook.yml)

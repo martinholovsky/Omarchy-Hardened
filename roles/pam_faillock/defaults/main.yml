@@ -11,9 +11,24 @@ aegis_faillock_unlock_time: 900
 
 aegis_faillock_conf: /etc/security/faillock.conf
 
+# Persistent tally directory (roadmap G1, owner decision 2026-10-21). The
+# pam_faillock default, /var/run/faillock, is tmpfs, so a reboot reset the
+# counter. A lockout now also survives a reboot; it still clears after
+# unlock_time, or with `faillock --user NAME --reset` as root.
+aegis_faillock_dir: /var/lib/faillock
+
 # Omarchy repeats deny=/unlock_time= inline on the pam_faillock lines of these
 # files, and inline arguments override faillock.conf — so writing the conf file
 # alone would change nothing. Files that do not exist are skipped.
 aegis_faillock_pam_files:
   - /etc/pam.d/system-auth            # install/config/increase-lockout-limit.sh
   - /etc/pam.d/omarchy-lock-password  # bin/omarchy-apply-lock (lock screen)
+
+# su/su-l (roadmap G2, owner decision 2026-10-21). Arch's su.pam calls
+# pam_unix directly, so su was outside faillock. The role makes su use
+# system-auth (and with it pam_faillock) and restricts su to wheel members.
+# Empty the list to leave su alone.
+aegis_faillock_su_files:
+  - /etc/pam.d/su
+  - /etc/pam.d/su-l
+aegis_faillock_su_wheel_only: true

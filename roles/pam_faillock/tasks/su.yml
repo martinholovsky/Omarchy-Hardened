@@ -1,0 +1,65 @@
+---
+# Arch's util-linux su.pam has:
+#   auth  sufficient  pam_rootok.so
+#   #auth required    pam_wheel.so use_uid
+#   auth  required    pam_unix.so
+# Route su through system-auth, which carries pam_faillock, the same way
+# Arch's system-login does. Root itself is only locked if even_deny_root is
+# set (roadmap #6); until then failures against root are counted and logged.
+
+- name: Find the su PAM files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ aegis_faillock_su_files }}"
+  register: aegis_faillock_su_stats
+
+- name: Select the su PAM files present on this host
+  ansible.builtin.set_fact:
+    aegis_faillock_su_present: >-
+      {{ aegis_faillock_su_stats.results
+         | selectattr('stat.exists')
+         | map(attribute='item')
+         | list }}
+
+- name: Restrict su to members of wheel
+  ansible.builtin.lineinfile:
+    path: "{{ item }}"
+    regexp: '^\s*#?\s*auth\s+required\s+pam_wheel\.so\s+use_uid\s*$'
+    line: "auth            required        pam_wheel.so use_uid"
+    insertafter: '^\s*auth\s+sufficient\s+pam_rootok\.so'
+    backup: true
+  loop: "{{ aegis_faillock_su_present }}"
+  when: aegis_faillock_su_wheel_only | bool
+
+- name: Authenticate su through system-auth (adds pam_faillock)
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: '^\s*auth\s+required\s+pam_unix\.so\s*$'
+    replace: "auth            include         system-auth"
+    backup: true
+  loop: "{{ aegis_faillock_su_present }}"
+
+- name: Read back the su PAM files
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop: "{{ aegis_faillock_su_present }}"
+  register: aegis_faillock_su_contents
+  when: not ansible_check_mode
+
+- name: Assert su goes through system-auth and, if enabled, pam_wheel
+  vars:
+    aegis_su_text: "{{ item.content | b64decode }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_su_text is search('(?m)^auth\s+include\s+system-auth\s*$')
+      - aegis_su_text is not search('(?m)^auth\s+\S+\s+pam_unix\.so')
+      - not (aegis_faillock_su_wheel_only | bool)
+        or aegis_su_text is search('(?m)^auth\s+required\s+pam_wheel\.so\s+use_uid\s*$')
+    fail_msg: >-
+      {{ item.item }} does not have the expected auth stack; su may bypass
+      faillock. Upstream su.pam probably changed; inspect the file.
+    quiet: true
+  loop: "{{ aegis_faillock_su_contents.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: not ansible_check_mode

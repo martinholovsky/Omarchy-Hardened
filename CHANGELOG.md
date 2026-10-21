@@ -23,7 +23,7 @@ SemVer once 1.0 ships.
   packages, with an explicit exception list.
 - Stub roles for kernel, hardened_malloc, fido2, apparmor, flatpak,
   agent_containment, commit_signing, opensnitch, overlay_network.
-- Container test (11 checks) against Omarchy's PAM and ufw baseline in a
+- Container test (15 checks) against Omarchy's PAM and ufw baseline in a
   digest-pinned Arch image. It also checks idempotence and a negative case.
 - CI: pre-commit (shellcheck, yamllint, ansible-lint), full-history gitleaks
   with a checksum-verified binary, the container test. Dependabot for Actions
@@ -36,8 +36,13 @@ SemVer once 1.0 ships.
   `bubblewrap-suid` on Arch, and no mainline AppArmor userns-restrict sysctl.
 
 - Research: a Kicksecure security-misc review at `9535bf8`, merged into the
-  roadmap. It found two gaps in `pam_faillock`, now documented as roadmap G1
-  and G2: the tally lives on tmpfs, and Arch's `su` bypasses `system-auth`.
+  roadmap. It found two gaps in `pam_faillock` (roadmap G1/G2), both now fixed:
+  - **G1:** the tally moves from tmpfs `/var/run/faillock` to `/var/lib/faillock`
+    (with a `tmpfiles.d` entry), so a reboot no longer resets the counter.
+  - **G2:** `su`/`su-l` now `include system-auth`, so faillock covers them, and
+    `pam_wheel use_uid` limits `su` to wheel.
+  The container test drives real `su` logins with `expect`. Mutation runs
+  (su coverage off, wheel restriction off) each fail the suite.
 
 ### Changed
 

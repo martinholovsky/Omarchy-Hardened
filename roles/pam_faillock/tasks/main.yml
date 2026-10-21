@@ -1,4 +1,24 @@
 ---
+# Persistent tally (roadmap G1): pam_faillock's default dir is /var/run/faillock,
+# which is tmpfs, so a reboot would reset every counter.
+- name: Create the persistent faillock tally directory
+  ansible.builtin.file:
+    path: "{{ aegis_faillock_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Keep the tally directory across boots
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/aegis-faillock.conf
+    content: |
+      # Managed by Omarchy-Hardened (pam_faillock role).
+      d {{ aegis_faillock_dir }} 0700 root root -
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Set the faillock defaults in faillock.conf
   ansible.builtin.lineinfile:
     path: "{{ aegis_faillock_conf }}"
@@ -12,6 +32,7 @@
   loop:
     - { key: deny, value: "{{ aegis_faillock_deny }}" }
     - { key: unlock_time, value: "{{ aegis_faillock_unlock_time }}" }
+    - { key: dir, value: "{{ aegis_faillock_dir }}" }
   loop_control:
     label: "{{ item.key }}"
 
@@ -61,6 +82,8 @@
       {{ item.content | b64decode | regex_findall('(?m)^\s*auth\s.*pam_faillock\.so.*$') }}
     aegis_faillock_inline: >-
       {{ aegis_faillock_lines | join('\n') | regex_findall('(deny|unlock_time)=(\d+)') }}
+    aegis_faillock_inline_dirs: >-
+      {{ aegis_faillock_lines | join('\n') | regex_findall('\sdir=(\S+)') }}
   ansible.builtin.assert:
     that:
       - aegis_faillock_lines | length > 0
@@ -70,10 +93,13 @@
       - aegis_faillock_inline
         | selectattr('0', 'equalto', 'deny') | map(attribute='1') | map('int')
         | reject('equalto', aegis_faillock_deny | int) | list | length == 0
+      # An inline dir= would silently move the tally back to tmpfs.
+      - aegis_faillock_inline_dirs | reject('equalto', aegis_faillock_dir) | list | length == 0
     fail_msg: >-
       {{ item.item }} still carries inline faillock values other than
       deny={{ aegis_faillock_deny }} unlock_time={{ aegis_faillock_unlock_time }}
-      (found {{ aegis_faillock_inline }}), or has no pam_faillock line at all.
+      (found {{ aegis_faillock_inline }}, dir={{ aegis_faillock_inline_dirs }}),
+      or has no pam_faillock line at all.
     quiet: true
   loop: "{{ aegis_faillock_pam_contents.results | default([]) }}"
   loop_control:
@@ -93,5 +119,10 @@
     that:
       - aegis_conf_text is search('(?m)^deny = ' ~ aegis_faillock_deny ~ '$')
       - aegis_conf_text is search('(?m)^unlock_time = ' ~ aegis_faillock_unlock_time ~ '$')
+      - aegis_conf_text is search('(?m)^dir = ' ~ aegis_faillock_dir ~ '$')
     quiet: true
   when: not ansible_check_mode
+
+- name: Bring su and su-l under the policy
+  ansible.builtin.include_tasks: su.yml
+  when: aegis_faillock_su_files | length > 0

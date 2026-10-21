@@ -16,14 +16,18 @@ Items that wait on a recorded decision point to `open-decisions.md`.
 
 "Both" means the two reviews recommend the item independently.
 
-## Tier 0: gaps in roles that are already implemented
+## Tier 0: gaps in implemented roles (fixed 2026-10-21)
 
-Both were verified in the digest-pinned Arch test image on 2026-10-21.
+Both were found by the Kicksecure review, verified in the test image, and
+fixed by owner decision:
 
-| # | Gap | Fix | Role | Source |
-|---|---|---|---|---|
-| G1 | **The faillock counter resets on every reboot.** The default tally `dir` is `/var/run/faillock` (commented default in Arch's `faillock.conf`), and `/var/run` → `/run` is tmpfs, so a reboot gives 10 fresh attempts | `dir = /var/lib/faillock` in `faillock.conf` **and** inline on Omarchy's `pam_faillock` lines (inline args win), plus a `tmpfiles.d` entry. Trade-off: a lockout then also survives a reboot (still 15 minutes) | `pam_faillock` | Kicksecure |
-| G2 | **`su` is not covered by faillock.** Arch's `/etc/pam.d/su` and `su-l` call `pam_unix.so` directly and never include `system-auth`, and the `pam_wheel.so use_uid` line ships commented out | Uncomment `auth required pam_wheel.so use_uid` (only wheel may `su`), and add the `pam_faillock` preauth/authfail lines to `su` and `su-l` | `pam_faillock` | Kicksecure |
+- **G1, done.** The faillock tally was on tmpfs (`/var/run/faillock`), so a
+  reboot reset the counter. It now lives in `/var/lib/faillock`, created by
+  `tmpfiles.d`. A lockout therefore also survives a reboot.
+- **G2, done.** Arch's `su`/`su-l` called `pam_unix` directly. They now
+  `include system-auth`, which carries faillock, and `pam_wheel use_uid`
+  limits `su` to wheel. Root itself still only locks once `even_deny_root`
+  (#6) is enabled.
 
 ## Tier 1: low Omarchy risk, extends existing roles
 

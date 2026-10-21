@@ -17,7 +17,7 @@ you cannot recover.
 |---|---|---|---|
 | `preflight` | — | ✅ implemented | Nothing. Refuses non-Arch hosts, finds the Omarchy install, prints the baseline |
 | `sysctl` | 3.1 | ✅ implemented | Writes `/etc/sysctl.d/99-zz-aegis-hardened.conf`: `dmesg_restrict=1`, `kptr_restrict=2`, `kexec_load_disabled=1`, `yama.ptrace_scope=1`, then reads the live values back |
-| `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count) and `unlock_time=900` (Omarchy: 120 s) in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack, then verifies |
+| `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count), `unlock_time=900` (Omarchy: 120 s) and a persistent tally dir in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack; routes `su` through `system-auth`, restricted to wheel; then verifies |
 | `firewall` | 3.4 | ✅ implemented | ufw default-deny incoming; removes LocalSend (53317) and the opt-in SSH rule; keeps Docker DNS (configurable) |
 | `pacman_integrity` | 3.5 | ✅ audit only | Fails the run if any repo's `SigLevel` accepts unsigned or untrusted packages |
 | `kernel` | 3.1 | ⏳ stub | `linux-hardened` alongside `linux-omarchy` (D-02) |
@@ -68,9 +68,12 @@ Tags: `p0` `p1` `p2`, area tags (`kernel`, `auth`, `isolation`, `network`,
 15 minutes. SSH, console, sudo and the lock screen share one counter. Keep a second logged-in TTY open
 the first time. `faillock --user "$USER" --reset` (as root) clears a lockout.
 
-**Known gaps in `pam_faillock`** (roadmap G1, G2, verified in the test image):
-the failure counter lives on tmpfs, so a reboot resets it; and Arch's `su`
-bypasses `system-auth`, so `su` attempts are not counted at all.
+**What `pam_faillock` also changes:** failure records live in
+`/var/lib/faillock`, so a lockout survives a reboot. `su`/`su-l` now
+authenticate through `system-auth`, so they are counted too, and only members
+of `wheel` may use `su`. Root is not locked out unless `even_deny_root` is
+enabled (roadmap #6), so failed `su` attempts against root are counted and
+logged but do not lock root.
 
 **After every `omarchy-update`:** run the playbook again. Omarchy's update
 scripts rewrite some PAM files (D-11).
@@ -85,13 +88,13 @@ uv sync                                    # locked ansible-core, ansible-lint, 
 uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
-tests/container/run.sh                     # 11 checks in a pinned Arch image
+tests/container/run.sh                     # 15 checks in a pinned Arch image
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,
 using snippets vendored from Omarchy at a pinned commit. It then runs the
-roles, checks the result with `grep` and `ufw status` (not with the roles' own
-asserts), runs everything a second time to prove idempotence, and checks that
+roles, checks the result with `grep`, `ufw status`, `faillock` and real `su`
+logins driven by `expect` (not with the roles' own asserts), runs everything a second time to prove idempotence, and checks that
 an unsigned repository fails the audit. The kernel `sysctl` apply step and
 anything boot- or hardware-related cannot run in a container; those still need
 a VM test.

@@ -131,3 +131,12 @@ protection therefore comes from key-only auth, `MaxAuthTries` and
 `PerSourcePenalties` (proposed `sshd` role), and from keeping port 22 off the
 LAN entirely (the `firewall` role removes `ufw limit 22/tcp`; `overlay_network`
 is planned).
+
+## D-14 — faillock tally persistence and `su` (Decided 2026-10-21)
+
+- Tally directory: **persistent**, `/var/lib/faillock`. This closes the
+  reboot-reset bypass. The cost is that a lockout survives a reboot too.
+- `su`: **wheel-only + faillock**. `su`/`su-l` authenticate through
+  `system-auth`, and `pam_wheel use_uid` is enabled. Open follow-up: whether
+  to set `even_deny_root` (roadmap #6) so that repeated `su` failures lock root
+  as well. That also locks root's console login for `unlock_time`.
