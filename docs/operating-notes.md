@@ -12,7 +12,7 @@ Last reviewed: 2026-10-21, after the first VM run.
 | Area | Verified how | Not verified |
 |---|---|---|
 | sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift. **VM (2026-10-21):** applied on Omarchy 4.0.6 / `linux-omarchy 7.2.8-9`, all keys present, values still in force after a reboot | Real hardware |
-| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot | The lock screen (`hyprlock`) lockout and its persistence across a reboot, `sudo` from a Hyprland terminal |
+| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot; the lock screen locks out after 10 failures (it recorded none before the tally directory became 0755) | Persistence of a lockout across a reboot with autologin (Omarchy's autologin clears it), `sudo` from a Hyprland terminal |
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
 | Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22, a default install gives 0 WARN and 0 FAIL | Long-lived installs with more packages |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
@@ -166,7 +166,10 @@ started as community reports in discussion #176 and are now **tested here**:
 - The Super key works when sent from the host as scancodes.
 
 A VM run passes when the following hold. Steps 1, 2, 5 and 6 are automated by
-`tests/vm/run.sh` and passed; steps 3 and 4 are still manual and not yet done.
+`tests/vm/run.sh` and passed. Step 3 is automated too and passed
+(2026-10-22): the lock screen refuses the right password after 10 failures
+until a root reset. Step 4 is covered in the container test, not yet in
+the VM.
 
 1. Take a snapshot `pre-aegis`, then apply the playbook.
 2. Reboot, then check `sysctl kernel.sysrq vm.mmap_rnd_bits kernel.oops_limit`.

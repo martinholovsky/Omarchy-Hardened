@@ -146,5 +146,6 @@ To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
   7 s. Ansible reuses one connection.
 - If the LUKS passphrase is typed before the prompt is on screen, it is lost.
   `run.sh` waits `AEGIS_VM_LUKS_DELAY` seconds (default 45) and types it once.
-- The lock-screen check (10 wrong passwords at `hyprlock`) is still manual.
-  Do it on the desktop after `run.sh`.
+- Any successful `sudo` as the test user runs `pam_faillock authsucc` and
+  clears that user's tally. `run.sh` reads the tally through one root watcher
+  started before the lock-screen test, never through `sudo` mid-test.
