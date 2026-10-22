@@ -1,20 +1,27 @@
 ---
 # Persistent tally (roadmap G1): pam_faillock's default dir is /var/run/faillock,
 # which is tmpfs, so a reboot would reset every counter.
+#
+# 0755, not 0700. Omarchy's lock screen runs PAM as the user, and
+# pam_faillock gives each user their own tally file (user:user 0660) for
+# exactly that case. Behind a 0700 directory the lock screen recorded no
+# failures at all, silently, because pam_faillock returns success on EACCES
+# (measured on the VM, 2026-10-22). This matches pam_faillock's own
+# mkdir(dir, 0755).
 - name: Create the persistent faillock tally directory
   ansible.builtin.file:
     path: "{{ aegis_faillock_dir }}"
     state: directory
     owner: root
     group: root
-    mode: "0700"
+    mode: "0755"
 
 - name: Keep the tally directory across boots
   ansible.builtin.copy:
     dest: /etc/tmpfiles.d/aegis-faillock.conf
     content: |
       # Managed by Omarchy-Hardened (pam_faillock role).
-      d {{ aegis_faillock_dir }} 0700 root root -
+      d {{ aegis_faillock_dir }} 0755 root root -
     owner: root
     group: root
     mode: "0644"

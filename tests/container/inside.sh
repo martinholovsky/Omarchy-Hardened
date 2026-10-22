@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=32
+checks_total=44
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -26,7 +26,7 @@ pass() { checks_passed=$((checks_passed + 1)); echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 echo "--- installing ansible"
-pacman -Syu --noconfirm --needed ansible-core python ufw expect >/dev/null
+pacman -Syu --noconfirm --needed ansible-core python ufw expect sudo git >/dev/null
 ansible --version | head -1
 
 # Work on a writable copy; /src is mounted read-only.
@@ -117,7 +117,10 @@ su_as alice 'wrong-password' && fail "su accepted a wrong password"
 # Count record lines (they start with a timestamp), not the header.
 [[ $(faillock --user root | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2} ') -ge 1 ]] \
   || { faillock --user root; fail "faillock CLI shows no record for root"; }
-pass "su failure counted in the persistent tally (/var/lib/faillock)"
+# The lock screen runs PAM as the user: the user must reach the directory.
+[[ $(stat -c %a /var/lib/faillock) == 755 ]] || fail "tally dir is not 0755 (a 0700 dir hides the lock screen's failures)"
+runuser -u bob -- test -x /var/lib/faillock || fail "a normal user cannot reach /var/lib/faillock"
+pass "su failure counted in the persistent tally (/var/lib/faillock), reachable by users"
 
 su_as bob 'Aegis-root-pw1' && fail "non-wheel user could su with the right password"
 pass "su refused for a non-wheel user"
@@ -142,6 +145,25 @@ echo "--- second run (idempotence)"
 out=$(ansible-playbook tests/container/playbook.yml)
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "second run was not idempotent"; }
 pass "second run changed nothing"
+
+echo "--- D-11: drift check installed, clean after apply, warns after a revert"
+copy=/usr/local/share/aegis-hardened
+ansible-playbook tests/container/playbook.yml -e aegis_drift_check_enabled=true >/dev/null || fail "drift-check install failed"
+if ! { [[ -x /usr/local/libexec/aegis-drift-check ]] && grep -q 'systemctl start --no-block aegis-drift-check.service' \
+  /etc/pacman.d/hooks/zz-aegis-drift-check.hook && [[ $(stat -c %U:%a "$copy/roles/pam_faillock/tasks/main.yml") == root:6[04]4 ]]; }; then
+  fail "drift check not installed as a root-owned copy with its pacman hook"
+fi
+grep -qx 'aegis_faillock_deny: 10' "$copy/applied-vars.yml" || fail "applied settings not saved"
+! grep -q '^aegis_drift_check_source:' "$copy/applied-vars.yml" || fail "controller path saved in applied-vars"
+/usr/local/libexec/aegis-drift-check >/dev/null 2>&1 || { cat /var/lib/aegis/drift-check.log; fail "clean state reported as drift"; }
+# What an omarchy-update that rewrites system-auth would do.
+sed -i 's/deny=10 unlock_time=900/deny=10 unlock_time=120/' /etc/pam.d/system-auth
+if /usr/local/libexec/aegis-drift-check >/dev/null 2>&1; then fail "reverted PAM not reported as drift"; fi
+grep -Eq 'changed=[1-9]' /var/lib/aegis/drift-check.log || { cat /var/lib/aegis/drift-check.log; fail "drift log lacks the change"; }
+grep -q 'unlock_time=120' /etc/pam.d/system-auth || fail "the check modified the system"
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "re-apply after drift failed"
+[[ ! -e /etc/pacman.d/hooks/zz-aegis-drift-check.hook ]] || fail "disabling the drift check left its hook"
+pass "D-11 check: clean after apply, reports a reverted PAM file, changes nothing itself"
 
 # The default deny equals Omarchy's, so the runs above never exercise the deny
 # rewrite. Apply a different count, check it, then restore the default.
@@ -286,6 +308,55 @@ grep -q 'aegis-test' /var/lib/aegis/audit.jsonl || fail "planted sudoers file no
 rm -f /etc/sudoers.d/aegis-test /etc/sudoers.d/50-asdcontrol
 pass "unknown NOPASSWD rule warns; asdcontrol drop-in is known"
 
+echo "--- system checks (roadmap 18k-18o): /tmp mount and fwupd"
+ansible-playbook tests/container/playbook.yml -e aegis_audit_tmp_path=/dev/shm >/dev/null || fail "system-check run failed"
+expect_finding mounts.tmp PASS
+expect_finding firmware.fwupd INFO
+ansible-playbook tests/container/playbook.yml -e aegis_audit_tmp_path=/etc >/dev/null || fail "system-check run failed"
+expect_finding mounts.tmp WARN
+pass "tmpfs with nosuid,nodev passes, a disk directory warns; fwupd reported"
+
+echo "--- system checks: a polkit rule that grants everything"
+mkdir -p /etc/polkit-1/rules.d
+printf '%s\n' 'polkit.addRule(function(action, subject) {' \
+  '  if (subject.isInGroup("wheel")) { return polkit.Result.YES; }' '});' > /etc/polkit-1/rules.d/49-aegis-test.rules
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "polkit run failed"
+expect_finding polkit.blanket_grant WARN
+printf '%s\n' 'polkit.addRule(function(action, subject) {' \
+  '  if (action.id == "org.freedesktop.login1.reboot" && subject.isInGroup("wheel")) { return polkit.Result.YES; }' \
+  '});' > /etc/polkit-1/rules.d/49-aegis-test.rules
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "polkit run failed"
+expect_finding polkit.blanket_grant PASS
+grep -q 'known: /usr/share/polkit-1/rules.d/empower.rules' /var/lib/aegis/audit.jsonl \
+  || fail "systemd's empower.rules not reported as known"
+rm -f /etc/polkit-1/rules.d/49-aegis-test.rules
+groupadd -f empower && gpasswd -a alice empower >/dev/null
+audit_must_fail groups.empower "a permanent empower member"
+gpasswd -d alice empower >/dev/null
+pass "unconditional polkit YES warns; scoped and systemd's empower rule do not; empower members fail"
+
+echo "--- system checks: autologin on an unencrypted root"
+mkdir -p /etc/sddm.conf.d
+printf '[Autologin]\nUser=alice\nSession=omarchy.desktop\n' > /etc/sddm.conf.d/autologin.conf
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "autologin run failed"
+expect_finding login.autologin_unencrypted WARN
+rm -f /etc/sddm.conf.d/autologin.conf
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "autologin run failed"
+expect_finding login.autologin_unencrypted PASS
+pass "autologin without disk encryption warns"
+
+echo "--- system checks: a SHA-512 password hash"
+echo 'bob:Aegis-bob-pw1' | chpasswd -c SHA512
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "hash run failed"
+expect_finding accounts.password_hash WARN
+grep -q 'bob: SHA-512' /var/lib/aegis/audit.jsonl || fail "weak hash not attributed to bob"
+# shellcheck disable=SC2016 # the literal crypt prefix, not an expansion
+! grep -qF '$6$' /var/lib/aegis/audit.jsonl || fail "audit file contains a hash prefix or hash"
+echo 'bob:Aegis-bob-pw1' | chpasswd -c YESCRYPT
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "hash run failed"
+expect_finding accounts.password_hash PASS
+pass "SHA-512 hash warns without leaking it; yescrypt passes"
+
 echo "--- negative: docker group membership, then accepted via aegis_audit_skip"
 groupadd -f docker
 gpasswd -a alice docker >/dev/null
@@ -309,6 +380,67 @@ if ! { ! grep -qx 'audit' /etc/security/faillock.conf && grep -qx 'even_deny_roo
 fi
 pass "faillock audit/even_deny_root toggle cleanly and default to D-18/D-19"
 
+echo "--- D-04 FIDO2: no pam_u2f means nothing changes"
+printf '#%%PAM-1.0\nauth include system-auth\naccount include system-auth\nsession include system-auth\n' > /etc/pam.d/sudo
+cp /etc/pam.d/sudo /tmp/sudo.pam.orig
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "fido2 run failed"
+expect_finding auth.fido2_sudo INFO
+# sha256sum (coreutils): the image has no cmp/diff.
+[[ $(sha256sum </etc/pam.d/sudo) == "$(sha256sum </tmp/sudo.pam.orig)" ]] || fail "sudo PAM changed without pam_u2f"
+pass "without FIDO2 set up, sudo PAM is untouched"
+
+# The exact line omarchy-setup-security-fido2 inserts (bin/, dde0d12).
+echo "--- D-04 FIDO2: one key stays 'sufficient' (no lockout), two keys become 'required'"
+sed -i '1i auth    sufficient pam_u2f.so cue authfile=/etc/fido2/fido2' /etc/pam.d/sudo
+mkdir -p /etc/fido2
+printf 'alice:KH1,PK1,es256,+presence\nbob:KH9,PK9,es256,+presence\n' > /etc/fido2/fido2
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "fido2 run failed"
+expect_finding auth.fido2_sudo WARN
+grep -q '^auth    sufficient pam_u2f.so' /etc/pam.d/sudo || fail "one key: pam_u2f no longer sufficient"
+grep -q 'fewer than 2 keys: alice' /var/lib/aegis/audit.jsonl || fail "short wheel user not named"
+pass "a wheel user with one key keeps Omarchy's sufficient mode"
+
+printf 'alice:KH1,PK1,es256,+presence:KH2,PK2,es256,+presence\nbob:KH9,PK9,es256,+presence\n' > /etc/fido2/fido2
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "fido2 run failed"
+expect_finding auth.fido2_sudo PASS
+grep -q '^auth    required pam_u2f.so cue authfile=/etc/fido2/fido2$' /etc/pam.d/sudo || { cat /etc/pam.d/sudo; fail "two keys: pam_u2f not required"; }
+out=$(ansible-playbook tests/container/playbook.yml)
+grep -Eq 'changed=0 .*failed=0' <<<"$out" || fail "fido2 not idempotent"
+rm -f /etc/fido2/fido2
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "fido2 run failed"
+grep -q '^auth    sufficient pam_u2f.so' /etc/pam.d/sudo || fail "keys removed: not back to sufficient"
+cp /tmp/sudo.pam.orig /etc/pam.d/sudo
+pass "every wheel user with 2 keys makes sudo key AND password; removing keys reverts"
+
+echo "--- D-06 Flatpak: not installed, nothing to do"
+expect_finding flatpak.installed INFO
+pass "without Flatpak the role only reports"
+
+echo "--- D-08 commit signing: configures git for a named sk key"
+install -d -o alice -m 0700 /home/alice/.ssh
+echo 'sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIAegisTestKeyOnly alice@test' > /home/alice/.ssh/id_ed25519_sk.pub
+signing='{"aegis_commit_signing_user": "alice", "aegis_commit_signing_pubkey": "/home/alice/.ssh/id_ed25519_sk.pub",
+  "aegis_commit_signing_email": "alice@example.invalid"}'
+ansible-playbook tests/container/playbook.yml -e "$signing" >/dev/null || fail "commit-signing run failed"
+expect_finding git.commit_signing PASS
+gitcfg() { runuser -u alice -- git config --global --get "$1"; }
+if ! { [[ $(gitcfg gpg.format) == ssh && $(gitcfg commit.gpgsign) == true && $(gitcfg tag.gpgsign) == true ]] \
+  && grep -q '^alice@example.invalid namespaces="git" sk-ssh-ed25519@openssh.com ' /home/alice/.config/git/allowed_signers; }; then
+  fail "git signing not configured for alice"
+fi
+out=$(ansible-playbook tests/container/playbook.yml -e "$signing")
+grep -Eq 'changed=0 .*failed=0' <<<"$out" || fail "commit signing not idempotent"
+pass "ssh signing configured for an sk key, idempotently"
+
+echo "--- D-08 commit signing: a software key is refused by default"
+echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAegisTestSoftwareKey alice@test' > /home/alice/.ssh/id_ed25519.pub
+if ansible-playbook tests/container/playbook.yml \
+  -e '{"aegis_commit_signing_user": "alice", "aegis_commit_signing_pubkey": "/home/alice/.ssh/id_ed25519.pub"}' >/tmp/sk.log 2>&1; then
+  fail "a non-sk key was accepted"
+fi
+grep -q 'hardware-backed' /tmp/sk.log || { cat /tmp/sk.log; fail "refused for the wrong reason"; }
+pass "ssh-ed25519 refused while aegis_commit_signing_require_sk is true"
+
 echo "--- firewall: seed Omarchy's rule set, then harden it"
 bash "$FIX/firewall.sh"
 ufw --force enable >/dev/null
@@ -328,6 +460,14 @@ pass "LocalSend and SSH rules removed, Docker DNS kept"
 out=$(ansible-playbook tests/container/firewall.yml)
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "firewall role not idempotent"; }
 pass "firewall role idempotent"
+
+echo "--- D-10: SSH on tailscale0 only when opted in"
+ansible-playbook tests/container/firewall.yml -e aegis_overlay_ssh_on_tailscale=true >/dev/null || fail "overlay run failed"
+ufw status | grep -Eq '^22/tcp on tailscale0 +ALLOW' || { ufw status; fail "SSH on tailscale0 not allowed"; }
+! ufw status | grep -Eq '^22/tcp( \(v6\))? +(ALLOW|LIMIT)' || fail "SSH opened on all interfaces"
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run failed"
+! ufw status | grep -q 'tailscale0' || { ufw status; fail "overlay rule not removed when opted out"; }
+pass "opt-in opens SSH on tailscale0 only; opting out removes it"
 
 [[ $checks_passed -eq $checks_total ]] || fail "only $checks_passed/$checks_total checks ran"
 echo "${checks_passed}/${checks_total} checks passed"

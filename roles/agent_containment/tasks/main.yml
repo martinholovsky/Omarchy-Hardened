@@ -1,8 +1,81 @@
 ---
-# STUB — PRD 3.3. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-07).
-- name: Report that the agent_containment role is not implemented yet
-  ansible.builtin.debug:
+# D-07: install rootless Podman and the aegis-agent wrapper.
+- name: Check whether Podman is installed
+  ansible.builtin.command:
+    argv: [pacman, -Q, podman]
+  register: aegis_agent_podman
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install Podman
+  ansible.builtin.command:
+    argv: [pacman, -S, --needed, --noconfirm, podman]
+  register: aegis_agent_install
+  changed_when: true
+  failed_when: false
+  when: aegis_agent_enabled | bool and aegis_agent_podman.rc != 0
+
+- name: Explain a failed install
+  ansible.builtin.fail:
     msg: >-
-      agent_containment: not implemented (PRD 3.3, waiting on D-07). Will run AI agents
-      inside a sandbox with no host home and filtered egress. Nothing was changed.
+      pacman could not install podman: {{ aegis_agent_install.stderr | default('') | trim }}.
+      Run omarchy-update (a full pacman -Syu) first, then re-run this playbook.
+  when: aegis_agent_install is changed and aegis_agent_install.rc != 0
+
+- name: Read the subordinate ID ranges
+  ansible.builtin.command:
+    argv: [grep, -c, "^{{ aegis_agent_user }}:", /etc/subuid, /etc/subgid]
+  register: aegis_agent_subids
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: aegis_agent_enabled | bool
+
+- name: Give the user subordinate IDs for rootless Podman
+  ansible.builtin.command:
+    argv: [usermod, --add-subuids, 100000-165535, --add-subgids, 100000-165535, "{{ aegis_agent_user }}"]
+  changed_when: true
+  when:
+    - aegis_agent_enabled | bool
+    - aegis_agent_subids.stdout_lines | default([]) | select('search', ':0$') | list | length > 0
+
+- name: Create /etc/aegis
+  ansible.builtin.file:
+    path: "{{ aegis_agent_seccomp | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: aegis_agent_enabled | bool
+
+- name: Write the seccomp profile without user namespaces (D-01)
+  aegis_seccomp_nouserns:
+    dest: "{{ aegis_agent_seccomp }}"
+  when: aegis_agent_enabled | bool and (aegis_agent_podman.rc == 0 or aegis_agent_install is changed)
+
+- name: Install the aegis-agent wrapper
+  ansible.builtin.template:
+    src: aegis-agent.sh.j2
+    dest: "{{ aegis_agent_wrapper }}"
+    owner: root
+    group: root
+    mode: "0755"
+    validate: bash -n %s
+  when: aegis_agent_enabled | bool
+
+- name: Remove the wrapper when disabled
+  ansible.builtin.file:
+    path: "{{ aegis_agent_wrapper }}"
+    state: absent
+  when: not aegis_agent_enabled | bool
+
+- name: Record the agent-containment finding
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'isolation.agent_wrapper', 'status': 'INFO',
+            'detail': (aegis_agent_wrapper ~ ' installed: run agents with `aegis-agent --image IMAGE@sha256:... -- CMD`'
+                       ~ ' from a project directory')
+                      if aegis_agent_enabled | bool else 'agent wrapper disabled'}
+         ] }}

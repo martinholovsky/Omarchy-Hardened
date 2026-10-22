@@ -1,0 +1,13 @@
+---
+# D-05 (decided 2026-10-21): enable AppArmor, profiles in complain mode first.
+# linux-omarchy and linux-hardened build it in (CONFIG_SECURITY_APPARMOR=y)
+# but leave it out of CONFIG_LSM, so it is added with lsm= on the kernel
+# command line through a Limine drop-in, the way Omarchy adds resume=.
+aegis_apparmor_enabled: true
+# Mainline order with apparmor added (CONFIG_LSM was
+# "landlock,lockdown,yama,integrity,bpf" on linux-omarchy 7.2.8).
+aegis_apparmor_lsm: landlock,lockdown,yama,integrity,apparmor,bpf
+aegis_apparmor_cmdline_dropin: /etc/limine-entry-tool.d/aegis-lsm.conf
+# Profiles listed here are left in enforce mode; every other profile in
+# /etc/apparmor.d is forced into complain mode (D-05).
+aegis_apparmor_enforce: []

@@ -1,8 +1,111 @@
 ---
-# STUB — PRD 3.3. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-08).
-- name: Report that the commit_signing role is not implemented yet
-  ansible.builtin.debug:
-    msg: >-
-      commit_signing: not implemented (PRD 3.3, waiting on D-08). Will require signed
-      commits (SSH/FIDO2 key) in the user's git config. Nothing was changed.
+# D-08: configure SSH commit/tag signing for one user. Only acts when
+# aegis_commit_signing_pubkey is set; otherwise reports the current setup.
+- name: Look up the signing user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ aegis_commit_signing_user }}"
+
+- name: Set signing paths
+  ansible.builtin.set_fact:
+    aegis_sign_home: "{{ ansible_facts.getent_passwd[aegis_commit_signing_user][4] }}"
+
+- name: Read the current git signing settings
+  ansible.builtin.command:
+    argv: [git, config, --global, --get, "{{ item }}"]
+  become: "{{ aegis_commit_signing_user != ansible_facts['user_id'] }}"
+  become_user: "{{ aegis_commit_signing_user }}"
+  register: aegis_sign_current
+  changed_when: false
+  failed_when: aegis_sign_current.rc not in [0, 1]
+  check_mode: false
+  loop: [gpg.format, user.signingkey, commit.gpgsign, tag.gpgsign, gpg.ssh.allowedSignersFile, user.email]
+
+- name: Index the current settings by name
+  ansible.builtin.set_fact:
+    aegis_sign_cur: >-
+      {{ dict(aegis_sign_current.results | map(attribute='item')
+              | zip(aegis_sign_current.results | map(attribute='stdout'))) }}
+
+- name: Configure SSH signing
+  when: aegis_commit_signing_pubkey | length > 0
+  vars:
+    aegis_signers: "{{ aegis_sign_home }}/.config/git/allowed_signers"
+    aegis_email: "{{ aegis_commit_signing_email or aegis_sign_cur['user.email'] }}"
+    aegis_wanted:
+      gpg.format: ssh
+      user.signingkey: "{{ aegis_commit_signing_pubkey }}"
+      commit.gpgsign: "true"
+      tag.gpgsign: "true"
+      gpg.ssh.allowedSignersFile: "{{ aegis_signers }}"
+  block:
+    - name: Read the public key
+      ansible.builtin.slurp:
+        src: "{{ aegis_commit_signing_pubkey }}"
+      register: aegis_sign_pub
+
+    - name: Check the key type
+      vars:
+        aegis_key_type: "{{ (aegis_sign_pub.content | b64decode).split() | first | default('') }}"
+      ansible.builtin.assert:
+        that:
+          - aegis_key_type is match('^(sk-ssh-ed25519|sk-ecdsa-sha2-nistp256)@openssh\.com$|^ssh-ed25519$')
+          - not (aegis_commit_signing_require_sk | bool) or aegis_key_type is match('^sk-')
+          - aegis_email | length > 0
+        fail_msg: >-
+          {{ aegis_commit_signing_pubkey }} is '{{ aegis_key_type }}'; D-08 wants a hardware-backed
+          sk-ssh-ed25519 key (set aegis_commit_signing_require_sk: false to allow ssh-ed25519),
+          and an e-mail (git user.email or aegis_commit_signing_email).
+        quiet: true
+
+    - name: Create the allowed_signers directory
+      ansible.builtin.file:
+        path: "{{ aegis_signers | dirname }}"
+        state: directory
+        owner: "{{ aegis_commit_signing_user }}"
+        mode: "0700"
+
+    - name: Trust this key for its own commits (allowed_signers)
+      ansible.builtin.lineinfile:
+        path: "{{ aegis_signers }}"
+        line: "{{ aegis_email }} namespaces=\"git\" {{ (aegis_sign_pub.content | b64decode).split()[:2] | join(' ') }}"
+        create: true
+        owner: "{{ aegis_commit_signing_user }}"
+        mode: "0644"
+
+    - name: Set the git signing options
+      ansible.builtin.command:
+        argv: [git, config, --global, "{{ item.key }}", "{{ item.value }}"]
+      become: "{{ aegis_commit_signing_user != ansible_facts['user_id'] }}"
+      become_user: "{{ aegis_commit_signing_user }}"
+      changed_when: true
+      loop: "{{ aegis_wanted | dict2items }}"
+      when: aegis_sign_cur[item.key] != item.value
+
+    - name: Read the git signing settings back
+      ansible.builtin.command:
+        argv: [git, config, --global, --get, "{{ item.key }}"]
+      become: "{{ aegis_commit_signing_user != ansible_facts['user_id'] }}"
+      become_user: "{{ aegis_commit_signing_user }}"
+      register: aegis_sign_after
+      changed_when: false
+      failed_when: aegis_sign_after.stdout != item.value
+      loop: "{{ aegis_wanted | dict2items }}"
+      when: not ansible_check_mode
+
+- name: Record the commit-signing finding
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'git.commit_signing',
+            'status': 'PASS' if aegis_commit_signing_pubkey
+                      else ('INFO' if aegis_sign_cur['commit.gpgsign'] == 'true' else 'WARN'),
+            'detail': ('commits and tags of ' ~ aegis_commit_signing_user ~ ' signed with '
+                       ~ aegis_commit_signing_pubkey)
+                      if aegis_commit_signing_pubkey
+                      else ('git for ' ~ aegis_commit_signing_user ~ ': gpg.format='
+                            ~ (aegis_sign_cur['gpg.format'] or 'unset') ~ ', commit.gpgsign='
+                            ~ (aegis_sign_cur['commit.gpgsign'] or 'unset')
+                            ~ '. Set aegis_commit_signing_pubkey to an sk-ssh-ed25519 public key'
+                            ~ ' to enable D-08 signing')}
+         ] }}

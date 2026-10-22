@@ -1,8 +1,144 @@
 ---
-# STUB — PRD 3.3. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-05).
-- name: Report that the apparmor role is not implemented yet
-  ansible.builtin.debug:
+# D-05: AppArmor on, every profile in complain mode unless listed in
+# aegis_apparmor_enforce. The lsm= change takes effect at the next boot.
+- name: Check whether AppArmor is installed
+  ansible.builtin.command:
+    argv: [pacman, -Q, apparmor]
+  register: aegis_aa_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install AppArmor
+  ansible.builtin.command:
+    argv: [pacman, -S, --needed, --noconfirm, apparmor]
+  register: aegis_aa_install
+  changed_when: true
+  failed_when: false
+  when: aegis_apparmor_enabled | bool and aegis_aa_installed.rc != 0
+
+- name: Explain a failed install
+  ansible.builtin.fail:
     msg: >-
-      apparmor: not implemented (PRD 3.3, waiting on D-05). Will enable AppArmor and
-      enforce profiles for network-facing apps. Nothing was changed.
+      pacman could not install apparmor: {{ aegis_aa_install.stderr | default('') | trim }}.
+      Run omarchy-update (a full pacman -Syu) first, then re-run this playbook.
+  when: aegis_aa_install is changed and aegis_aa_install.rc != 0
+
+- name: Add apparmor to the LSM list on the kernel command line
+  ansible.builtin.copy:
+    dest: "{{ aegis_apparmor_cmdline_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Omarchy-Hardened (D-05): enable AppArmor at boot.
+      KERNEL_CMDLINE[default]+=" lsm={{ aegis_apparmor_lsm }}"
+  register: aegis_aa_dropin
+  when: aegis_apparmor_enabled | bool
+
+- name: Remove the LSM drop-in when AppArmor is off
+  ansible.builtin.file:
+    path: "{{ aegis_apparmor_cmdline_dropin }}"
+    state: absent
+  register: aegis_aa_dropin_removed
+  when: not aegis_apparmor_enabled | bool
+
+- name: Rebuild the UKIs and Limine entries (as omarchy-hibernation-setup does)
+  ansible.builtin.command:
+    argv: [limine-mkinitcpio]
+  changed_when: true
+  when: aegis_aa_dropin is changed or aegis_aa_dropin_removed is changed
+
+- name: Load AppArmor profiles at boot
+  ansible.builtin.systemd_service:
+    name: apparmor.service
+    enabled: "{{ aegis_apparmor_enabled | bool }}"
+  when: aegis_apparmor_enabled | bool or aegis_aa_installed.rc == 0
+
+- name: Find the shipped profiles
+  ansible.builtin.find:
+    paths: /etc/apparmor.d
+    file_type: file
+    recurse: false
+  register: aegis_aa_profiles
+  when: aegis_apparmor_enabled | bool
+
+# Profiles declared flags=(unconfined) (78 of 145 in apparmor 4.1.8, podman
+# among them) confine nothing; they exist to permit things such as user
+# namespaces. Forcing one into complain mode turns it into real confinement,
+# which broke rootless Podman on the VM ("failed to reexec: Permission
+# denied"). They are left as shipped.
+- name: Find the profiles that are declared unconfined
+  ansible.builtin.find:
+    paths: /etc/apparmor.d
+    file_type: file
+    recurse: false
+    # find matches line by line with re.match (anchored); search the whole file.
+    contains: 'flags=\(unconfined\)'
+    read_whole_file: true
+  register: aegis_aa_unconfined
+  when: aegis_apparmor_enabled | bool
+
+- name: Create the force-complain directory
+  ansible.builtin.file:
+    path: /etc/apparmor.d/force-complain
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: aegis_apparmor_enabled | bool
+
+- name: Force every profile not listed for enforcement into complain mode
+  ansible.builtin.file:
+    src: "{{ item.path }}"
+    dest: "/etc/apparmor.d/force-complain/{{ item.path | basename }}"
+    state: link
+  loop: "{{ aegis_aa_profiles.files | default([]) | rejectattr('path', 'search', '/(local|abstractions|tunables)')
+            | rejectattr('path', 'in', aegis_apparmor_enforce | map('regex_replace', '^(?!/)', '/etc/apparmor.d/'))
+            | rejectattr('path', 'in', aegis_aa_unconfined.files | default([]) | map(attribute='path'))
+            | list }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: aegis_apparmor_enabled | bool
+
+- name: Never force an unconfined profile into complain mode
+  ansible.builtin.file:
+    path: "/etc/apparmor.d/force-complain/{{ item.path | basename }}"
+    state: absent
+  loop: "{{ aegis_aa_unconfined.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: aegis_aa_unforced
+  when: aegis_apparmor_enabled | bool
+
+- name: Reload profiles that were wrongly forced into complain mode
+  ansible.builtin.command:
+    argv: [apparmor_parser, --replace, "{{ item.item.path }}"]
+  changed_when: true
+  loop: "{{ aegis_aa_unforced.results | default([]) | selectattr('changed') | list }}"
+  loop_control:
+    label: "{{ item.item.path | basename }}"
+  when: aegis_apparmor_enabled | bool and not ansible_check_mode
+
+- name: Read the active LSMs
+  ansible.builtin.slurp:
+    src: /sys/kernel/security/lsm
+  register: aegis_aa_lsm
+  failed_when: false
+
+- name: Record the AppArmor finding
+  vars:
+    aegis_active: "{{ 'apparmor' in ((aegis_aa_lsm.content | default('')) | b64decode) }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'apparmor.active',
+            'status': 'PASS' if aegis_active else ('INFO' if aegis_apparmor_enabled | bool else 'INFO'),
+            'detail': ('AppArmor is active; ' ~ (aegis_aa_profiles.files | default([]) | length)
+                       ~ ' profiles (' ~ (aegis_aa_unconfined.files | default([]) | length)
+                       ~ ' declared unconfined, left as shipped); the rest in complain mode except: '
+                       ~ (aegis_apparmor_enforce | join(', ') or 'none'))
+                      if aegis_active
+                      else ('lsm= set in ' ~ aegis_apparmor_cmdline_dropin ~ '; AppArmor becomes active after a reboot'
+                            if aegis_apparmor_enabled | bool else 'AppArmor disabled (aegis_apparmor_enabled: false)')}
+         ] }}

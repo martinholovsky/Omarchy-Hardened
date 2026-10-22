@@ -12,7 +12,7 @@ Last reviewed: 2026-10-21, after the first VM run.
 | Area | Verified how | Not verified |
 |---|---|---|
 | sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift. **VM (2026-10-21):** applied on Omarchy 4.0.6 / `linux-omarchy 7.2.8-9`, all keys present, values still in force after a reboot | Real hardware |
-| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot | The lock screen (`hyprlock`) lockout and its persistence across a reboot, `sudo` from a Hyprland terminal |
+| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot; the lock screen locks out after 10 failures (it recorded none before the tally directory became 0755) | Persistence of a lockout across a reboot with autologin (Omarchy's autologin clears it), `sudo` from a Hyprland terminal |
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
 | Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22, a default install gives 0 WARN and 0 FAIL | Long-lived installs with more packages |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
@@ -21,6 +21,13 @@ The VM run (section 6) has been done; real hardware has not. Treat the first
 run on a real machine as a test.
 
 ## 2. Before the first run
+
+- **Update first.** The kernel, AppArmor, OpenSnitch and Podman roles install
+  packages from Arch's repos. A fresh Omarchy install has no pacman databases
+  yet, so run `omarchy-update` once before the first run.
+- **Put lasting overrides in a vars file, not only on the command line.**
+  The D-11 check reuses the settings of your last run, `-e` overrides
+  included, but only until you run without them.
 
 - **Snapshot or back up.** On a VM, take a snapshot. On hardware, at least back
   up `/etc/pam.d/`, `/etc/security/faillock.conf`, `/etc/ufw/` and
@@ -56,16 +63,22 @@ run on a real machine as a test.
 | What you will notice | Why | How to get the old behaviour |
 |---|---|---|
 | 10 wrong passwords in 15 min lock you out for 15 min (Omarchy: 2 min) | `unlock_time=900` | `aegis_faillock_unlock_time: 120` |
-| The lockout survives a reboot | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
+| The lockout survives a reboot, unless autologin is on (Omarchy's autologin runs `pam_faillock authsucc`, which clears it) | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
 | **Root locks too**, after the same 10 failures | `even_deny_root` (D-19) | `aegis_faillock_even_deny_root: false` |
 | `su` refuses users outside `wheel`, and its failures count toward the lockout | `pam_wheel` + `include system-auth` (G2) | `aegis_faillock_su_wheel_only: false`; empty `aegis_faillock_su_files` |
 | LocalSend no longer receives files | ufw rule for 53317 removed | `aegis_firewall_remove_localsend: false` |
 | SSH from the LAN stops, even if you enabled it with `omarchy-setup-security-sshd` | ufw rule for 22/tcp removed; SSH is meant for the overlay network | `aegis_firewall_remove_ssh: false` |
 | Alt+SysRq keys do nothing except sync (S) | `kernel.sysrq=16` (D-15) | `aegis_sysctl_sysrq: null` |
-| `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=2`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
+| `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=3`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
 | setuid programs never leave core dumps | `fs.suid_dumpable=0` | Edit `aegis_sysctl_settings` |
 | The kernel panics (and reboots, if `kernel.panic` is set) after 100 oopses since boot | `kernel.oops_limit=100` (D-17) | `aegis_sysctl_oops_limit: null` |
 | An ASan/TSan build may crash at startup (**unverified**) | `vm.mmap_rnd_bits=32` (D-16) | `aegis_sysctl_mmap_rnd_max: false` first, before anything else |
+| After every package install or update, a check runs in the background and may notify "Aegis: hardening drift" | D-11 pacman hook (`/etc/pacman.d/hooks/zz-aegis-drift-check.hook`) | `aegis_drift_check_enabled: false` |
+| A second kernel, `linux-hardened`, appears in the Limine menu (not the default) | D-02 | `aegis_kernel_hardened_install: false` (then `pacman -R linux-hardened`) |
+| After the next reboot AppArmor is active; profiles only log (`journalctl -k \| grep apparmor`) | D-05 `lsm=` drop-in | `aegis_apparmor_enabled: false`, then reboot |
+| OpenSnitch runs; its UI starts with your session and asks about new connections (it allows them by default) | D-09 | `aegis_opensnitch_enabled: false` |
+| With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
+| `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
 
 ### Being locked out
 
@@ -79,6 +92,11 @@ therefore usually locks both accounts. Your options:
    does not go through PAM, so faillock cannot block it.
 
 ## 4. What cannot be undone without a reboot
+
+**The new kernel command line (D-05) only takes effect at the next boot.** The
+`lsm=` drop-in is in `/etc/limine-entry-tool.d/aegis-lsm.conf`. If a boot
+fails, choose another kernel or a snapshot in the Limine menu, delete that
+file, and run `sudo limine-mkinitcpio`.
 
 Removing `/etc/sysctl.d/99-zz-aegis-hardened.conf` reverts most settings at the
 next boot, or immediately with `sysctl --system`. Two settings are one-way on a
@@ -148,7 +166,10 @@ started as community reports in discussion #176 and are now **tested here**:
 - The Super key works when sent from the host as scancodes.
 
 A VM run passes when the following hold. Steps 1, 2, 5 and 6 are automated by
-`tests/vm/run.sh` and passed; steps 3 and 4 are still manual and not yet done.
+`tests/vm/run.sh` and passed. Step 3 is automated too and passed
+(2026-10-22): the lock screen refuses the right password after 10 failures
+until a root reset. Step 4 is covered in the container test, not yet in
+the VM.
 
 1. Take a snapshot `pre-aegis`, then apply the playbook.
 2. Reboot, then check `sysctl kernel.sysrq vm.mmap_rnd_bits kernel.oops_limit`.

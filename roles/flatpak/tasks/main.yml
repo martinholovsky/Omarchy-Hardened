@@ -1,8 +1,53 @@
 ---
-# STUB — PRD 3.3. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-06).
-- name: Report that the flatpak role is not implemented yet
-  ansible.builtin.debug:
-    msg: >-
-      flatpak: not implemented (PRD 3.3, waiting on D-06). Will move network-facing apps
-      to Flatpak with tightened permissions. Nothing was changed.
+# D-06: audit Flatpak and limit Flathub to verified apps. Does nothing when
+# Flatpak is not installed (Omarchy does not install it by default).
+- name: Audit Flatpak remotes and app permissions
+  aegis_flatpak_audit:
+  register: aegis_flatpak
+
+- name: Limit the Flathub remote to verified apps
+  ansible.builtin.command:
+    argv: [flatpak, remote-modify, --system, --subset=verified, "{{ aegis_flatpak_remote }}"]
+  changed_when: true
+  when:
+    - aegis_flatpak.installed
+    - aegis_flatpak_restrict_flathub | bool
+    - aegis_flatpak_remote in (aegis_flatpak.remotes | map(attribute='name'))
+    - (aegis_flatpak.remotes | selectattr('name', 'equalto', aegis_flatpak_remote) | first).subset != 'verified'
+
+- name: Read the remotes back
+  aegis_flatpak_audit:
+  register: aegis_flatpak_after
+  when: aegis_flatpak.installed and not ansible_check_mode
+
+- name: Verify Flathub is limited to verified apps
+  vars:
+    aegis_remote: "{{ aegis_flatpak_after.remotes | selectattr('name', 'equalto', aegis_flatpak_remote) | list }}"
+  ansible.builtin.assert:
+    that: aegis_remote | length == 0 or aegis_remote[0].subset == 'verified'
+    fail_msg: "{{ aegis_flatpak_remote }} still lists unverified apps"
+    quiet: true
+  when: aegis_flatpak.installed and aegis_flatpak_restrict_flathub | bool and not ansible_check_mode
+
+- name: Record Flatpak findings
+  vars:
+    aegis_broad: "{{ aegis_flatpak.broad | rejectattr('app', 'in', aegis_flatpak_broad_allow) | list }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + ([
+           {'id': 'flatpak.installed', 'status': 'INFO',
+            'detail': 'flatpak not installed (Omarchy does not install it by default)'}
+         ] if not aegis_flatpak.installed else [
+           {'id': 'flatpak.remotes', 'status': 'INFO',
+            'detail': (aegis_flatpak.remotes | map(attribute='name')
+                       | zip(aegis_flatpak.remotes | map(attribute='subset') | map('default', '', true)
+                             | map('regex_replace', '^$', 'all apps'))
+                       | map('join', ': ') | join(', ')) or 'no system remotes'},
+           {'id': 'flatpak.broad_permissions',
+            'status': aegis_flatpak_broad_severity if aegis_broad else 'PASS',
+            'detail': ((aegis_broad | map(attribute='app')
+                        | zip(aegis_broad | map(attribute='permissions') | map('join', ' '))
+                        | map('join', ': ') | join('; '))
+                       if aegis_broad else (aegis_flatpak.apps | length | string) ~ ' apps checked')
+                      ~ ((' (errors: ' ~ (aegis_flatpak.errors | join('; ')) ~ ')') if aegis_flatpak.errors else '')}
+         ]) }}

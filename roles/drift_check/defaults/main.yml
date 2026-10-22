@@ -1,0 +1,39 @@
+---
+# D-11 (decided 2026-10-21): after every pacman transaction, run this playbook
+# in --check mode and warn if anything would change. It never re-applies.
+aegis_drift_check_enabled: true
+
+# Root-owned copy of the playbook that the hook runs. The hook runs as root,
+# so it must not execute files from a user-writable checkout.
+aegis_drift_check_dir: /usr/local/share/aegis-hardened
+# Repository root the copy is taken from (the test harness overrides it).
+aegis_drift_check_source: "{{ playbook_dir }}"
+aegis_drift_check_script: /usr/local/libexec/aegis-drift-check
+aegis_drift_check_hook: /etc/pacman.d/hooks/zz-aegis-drift-check.hook
+aegis_drift_check_unit: aegis-drift-check.service
+aegis_drift_check_log: /var/lib/aegis/drift-check.log
+
+# Limit the check to some tags (e.g. [auth]); empty runs everything.
+aegis_drift_check_tags: []
+
+# Desktop notification for each logged-in user (notify-send over their session
+# bus), in addition to the journal warning.
+aegis_drift_check_notify: true
+
+# Variables that describe the machine rather than your settings, and are not
+# saved for the check run. aegis_omarchy_paths is resolved on the controller,
+# so it would pin the controller's $HOME.
+aegis_drift_check_exclude_vars:
+  - aegis_drift_check_source
+  - aegis_omarchy_paths
+  - aegis_omarchy_path
+  - aegis_omarchy_stats
+  - aegis_omarchy_version_file
+
+# The only collection content the playbook needs: community.general.ufw, which
+# imports nothing beyond ansible.module_utils.basic (checked at 13.5.0).
+aegis_drift_check_collection_files:
+  - ansible_collections/community/general/MANIFEST.json
+  - ansible_collections/community/general/COPYING
+  - ansible_collections/community/general/meta/runtime.yml
+  - ansible_collections/community/general/plugins/modules/ufw.py

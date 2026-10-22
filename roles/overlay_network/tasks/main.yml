@@ -1,8 +1,65 @@
 ---
-# STUB — PRD 3.4. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-10).
-- name: Report that the overlay_network role is not implemented yet
-  ansible.builtin.debug:
-    msg: >-
-      overlay_network: not implemented (PRD 3.4, waiting on D-10). Will bind sshd to the
-      Tailscale/WireGuard interface only. Nothing was changed.
+# D-10: report Tailscale; optionally allow SSH on tailscale0 only.
+- name: Check whether Tailscale is installed
+  ansible.builtin.command:
+    argv: [pacman, -Q, tailscale]
+  register: aegis_ts_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the Tailscale state
+  ansible.builtin.command:
+    argv: [tailscale, status, --json]
+  register: aegis_ts_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  timeout: 30
+  when: aegis_ts_installed.rc == 0
+
+- name: Allow SSH on the Tailscale interface only
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: "{{ aegis_overlay_interface }}"
+    port: "{{ aegis_overlay_ssh_port | string }}"
+    proto: tcp
+    comment: aegis-ssh-overlay
+    delete: "{{ not aegis_overlay_ssh_on_tailscale | bool }}"
+
+- name: Read the firewall back
+  ansible.builtin.command:
+    argv: [ufw, status]
+  register: aegis_ts_ufw
+  changed_when: false
+  check_mode: false
+
+- name: Verify the overlay SSH rule matches the setting
+  vars:
+    # Plain `ufw status` prints ALLOW; `ufw status verbose` prints ALLOW IN.
+    aegis_rule_re: '(?m)^{{ aegis_overlay_ssh_port }}/tcp on {{ aegis_overlay_interface }}\s+ALLOW\b'
+  ansible.builtin.assert:
+    that: (aegis_ts_ufw.stdout is search(aegis_rule_re)) == (aegis_overlay_ssh_on_tailscale | bool)
+    fail_msg: >-
+      SSH on {{ aegis_overlay_interface }} should be
+      {{ 'open' if aegis_overlay_ssh_on_tailscale | bool else 'closed' }}
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Record the overlay finding
+  vars:
+    aegis_state: >-
+      {{ ((aegis_ts_status.stdout | default('{}', true)) | from_json).BackendState | default('unknown')
+         if aegis_ts_installed.rc == 0 else 'not installed' }}
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'network.overlay',
+            'status': 'PASS' if aegis_state == 'Running' else 'INFO',
+            'detail': 'Tailscale: ' ~ aegis_state
+                      ~ ('; SSH allowed on ' ~ aegis_overlay_interface ~ ' only'
+                         if aegis_overlay_ssh_on_tailscale | bool else '; SSH closed')
+                      ~ ('' if aegis_ts_installed.rc == 0
+                         else ' (install with omarchy-install-service-tailscale, then tailscale up)')}
+         ] }}

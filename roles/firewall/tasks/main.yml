@@ -54,12 +54,16 @@
   vars:
     aegis_firewall_status_re: '(?m)^Status: active$'
     aegis_firewall_default_re: 'Default: {{ aegis_firewall_default_incoming }} \(incoming\)'
+    # A global SSH rule has its action right after the port; the D-10 rule
+    # reads "22/tcp on tailscale0" and is allowed.
+    # IPv6 rules read "22/tcp (v6)   LIMIT".
+    aegis_firewall_ssh_re: '(?m)^22(/tcp)?( \(v6\))?\s+(ALLOW|LIMIT|DENY|REJECT)'
   ansible.builtin.assert:
     that:
       - aegis_firewall_status.stdout is search(aegis_firewall_status_re)
       - aegis_firewall_status.stdout is search(aegis_firewall_default_re)
       - not (aegis_firewall_remove_localsend | bool) or aegis_firewall_status.stdout is not search('(?m)^53317')
-      - not (aegis_firewall_remove_ssh | bool) or aegis_firewall_status.stdout is not search('(?m)^22(/tcp)?\s')
+      - not (aegis_firewall_remove_ssh | bool) or aegis_firewall_status.stdout is not search(aegis_firewall_ssh_re)
     fail_msg: "Unexpected firewall state:\n{{ aegis_firewall_status.stdout }}"
     quiet: true
   when: not ansible_check_mode

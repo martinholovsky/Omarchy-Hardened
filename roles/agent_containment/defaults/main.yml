@@ -1,0 +1,16 @@
+---
+# D-07 (decided 2026-10-21): run AI agents in a rootless Podman container that
+# sees only the current project directory. Opt-in per invocation:
+#   cd ~/code/project && aegis-agent --image IMAGE@sha256:... -- COMMAND
+# D-01 (a): inside it the agent cannot create user namespaces (no capabilities,
+# Podman's default seccomp profile), while the rest of the desktop keeps them.
+aegis_agent_enabled: true
+aegis_agent_wrapper: /usr/local/bin/aegis-agent
+# Podman's default seccomp profile minus user-namespace creation (D-01).
+aegis_agent_seccomp: /etc/aegis/agent-seccomp.json
+# Default image; must be pinned by digest. Empty: --image is required.
+aegis_agent_image: ""
+aegis_agent_network: pasta # "none" for no network at all
+aegis_agent_memory: 8g
+aegis_agent_pids_limit: 2048
+aegis_agent_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"

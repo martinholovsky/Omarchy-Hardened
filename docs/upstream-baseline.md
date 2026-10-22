@@ -20,6 +20,24 @@ re-check is a `git diff` of those paths.
 | Unsigned repo | On Intel T2 Macs, `[arch-mact2]` is appended with **`SigLevel = Never`** | `install/hardware/pacman.sh` | — | `pacman_integrity` (fails unless excepted) |
 | sysctl | Three drop-ins, all performance/networking, no hardening keys: `90-omarchy-arp.conf` (arp_ignore/announce), `90-omarchy-file-watchers.conf` (inotify), `99-omarchy-sysctl.conf` (BBR+fq, MTU probing, zram swappiness=150, dirty-bytes caps). No overlap with Aegis keys today; Aegis writes `99-zz-aegis-hardened.conf` so it sorts last and wins any future overlap | `etc/sysctl.d/` | — | `sysctl` |
 
+## polkit
+
+Omarchy 4.0.6 ships no polkit rules of its own: `/etc/polkit-1/rules.d/` is
+empty. The 7 package rules in `/usr/share/polkit-1/rules.d/` include systemd's
+`empower.rules`, which grants every action to the `empower` group used by
+`run0 --empower` (measured on the VM; file owned by systemd 262 in the test
+image).
+
+## pacman guard
+
+`default/libalpm/hooks/00-omarchy-update-guard.hook` runs
+`bin/omarchy-update-pacman-guard` before every upgrade transaction. It aborts a
+direct system upgrade (`-S` together with `-u`) unless
+`OMARCHY_ALLOW_DIRECT_PACMAN=1` or `OMARCHY_UPDATE_PACMAN=1` is set, and tells
+the user to run `omarchy update` instead. Plain installs (`pacman -S --needed
+pkg`, as our roles do) pass. A fresh install has no sync databases until the
+first `omarchy update` (measured on 4.0.6).
+
 ## Drift: Omarchy rewrites some of these on update
 
 Omarchy's own update and migration scripts rewrite several of the files above:
@@ -29,6 +47,6 @@ Omarchy's own update and migration scripts rewrite several of the files above:
   on `system-auth`.
 - `omarchy-setup-security-sshd` re-adds the SSH rule whenever the user runs it.
 
-**Re-run the playbook after every `omarchy-update`.** Making this automatic (a
-pacman hook or a systemd path unit that re-applies, or at least reports drift)
-is tracked as D-11 in [open-decisions.md](open-decisions.md).
+**D-11 (decided):** the `drift_check` role's pacman hook runs the playbook in
+`--check` mode after every transaction and warns when something was
+reverted. Re-run the playbook to restore it.

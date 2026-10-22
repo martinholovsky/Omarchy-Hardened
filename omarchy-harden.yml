@@ -19,6 +19,11 @@
       tags: [always]
 
   roles:
+    # D-11: refresh the root-owned copy and the pacman hook on every run, so the
+    # post-update check always uses the settings that were last applied.
+    - role: drift_check
+      tags: [always, drift-check]
+
     # 3.1 Kernel & memory (P0)
     - role: sysctl
       tags: [kernel, sysctl, p0]

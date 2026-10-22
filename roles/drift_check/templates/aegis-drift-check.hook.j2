@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# D-11: after any package transaction, queue a --check run of the hardening
+# playbook. --no-block keeps pacman from waiting for it.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Queueing an Aegis hardening drift check...
+When = PostTransaction
+Exec = /usr/bin/systemctl start --no-block {{ aegis_drift_check_unit }}

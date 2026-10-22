@@ -1,0 +1,5 @@
+---
+- name: Restart opensnitchd
+  ansible.builtin.systemd_service:
+    name: opensnitchd.service
+    state: restarted

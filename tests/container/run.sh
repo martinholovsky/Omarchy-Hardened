@@ -31,9 +31,17 @@ for _ in $(seq 120); do
   rc=''
   sleep 5
 done
-podman logs "$cid" 2>&1
+log=$(podman logs "$cid" 2>&1)
+printf '%s\n' "$log"
 [[ -n $rc ]] || { echo "error: lost track of test container $cid" >&2; exit 2; }
 [[ $rc -eq 0 ]] || exit "$rc"
+# The exit status alone was once 0 after a FAIL (a playbook killed by
+# SIGTERM); the suite's own count is the authority.
+summary=$(grep -E '^[0-9]+/[0-9]+ checks passed$' <<<"$log" | tail -1 || true)
+if ! [[ $summary =~ ^([0-9]+)/([0-9]+)\ checks\ passed$ && ${BASH_REMATCH[1]} -eq ${BASH_REMATCH[2]} ]]; then
+  echo "error: no 'N/N checks passed' line (got: '${summary}')" >&2
+  exit 1
+fi
 
 # Keys that exist only in the initial network namespace, checked read-only in
 # a container that shares the host's (no capabilities, nothing is written).

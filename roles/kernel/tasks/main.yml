@@ -1,8 +1,92 @@
 ---
-# STUB — PRD 3.1. Not implemented yet; changes nothing on the host.
-# Design notes and the decision this role is waiting on: docs/open-decisions.md (D-02).
-- name: Report that the kernel role is not implemented yet
-  ansible.builtin.debug:
+# D-02: linux-hardened alongside linux-omarchy; never changes the default entry.
+- name: Check whether linux-hardened is installed
+  ansible.builtin.command:
+    argv: [pacman, -Q, "{{ aegis_kernel_hardened_package }}"]
+  register: aegis_kernel_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check whether DKMS modules are in use
+  ansible.builtin.command:
+    argv: [pacman, -Q, dkms]
+  register: aegis_kernel_dkms
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install linux-hardened (the mkinitcpio hook adds its Limine entry)
+  ansible.builtin.command:
+    argv: >-
+      {{ ['pacman', '-S', '--needed', '--noconfirm', aegis_kernel_hardened_package]
+         + ([aegis_kernel_hardened_package ~ '-headers']
+            if (aegis_kernel_hardened_headers_if_dkms | bool and aegis_kernel_dkms.rc == 0) else []) }}
+  register: aegis_kernel_install
+  changed_when: true
+  failed_when: false
+  when: aegis_kernel_hardened_install | bool and aegis_kernel_installed.rc != 0
+
+- name: Explain a failed install
+  ansible.builtin.fail:
     msg: >-
-      kernel: not implemented (PRD 3.1, waiting on D-02). Will install linux-hardened
-      alongside linux-omarchy and add a Limine boot entry. Nothing was changed.
+      pacman could not install {{ aegis_kernel_hardened_package }}:
+      {{ aegis_kernel_install.stderr | default('') | trim }}.
+      On a fresh install the package databases are missing or stale: run
+      omarchy-update (a full pacman -Syu) first, then re-run this playbook.
+  when: aegis_kernel_install is changed and aegis_kernel_install.rc != 0
+
+- name: Keep unprivileged user namespaces on under linux-hardened (D-01)
+  ansible.builtin.copy:
+    dest: "{{ aegis_kernel_hardened_sysctl_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Omarchy-Hardened (D-01, D-02). linux-hardened disables
+      # unprivileged user namespaces; Flatpak, browser sandboxes and bubblewrap
+      # need them. '-' = ignore on kernels without this key (linux-omarchy).
+      -kernel.unprivileged_userns_clone = 1
+  when: aegis_kernel_hardened_install | bool and aegis_kernel_hardened_userns | bool
+
+- name: Remove the userns drop-in when not wanted
+  ansible.builtin.file:
+    path: "{{ aegis_kernel_hardened_sysctl_file }}"
+    state: absent
+  when: not (aegis_kernel_hardened_install | bool and aegis_kernel_hardened_userns | bool)
+
+- name: Read the Limine menu
+  ansible.builtin.slurp:
+    src: "{{ aegis_kernel_limine_conf }}"
+  register: aegis_kernel_limine
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Verify linux-hardened has an entry and linux-omarchy stays first
+  vars:
+    aegis_menu: "{{ (aegis_kernel_limine.content | default('')) | b64decode }}"
+    aegis_ids: "{{ aegis_menu | regex_findall('kernel-id=(\\S+)') }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_kernel_hardened_package in aegis_ids
+      - aegis_ids | first in ['linux-omarchy', 'linux-t2']
+    fail_msg: >-
+      {{ aegis_kernel_limine_conf }}: expected a {{ aegis_kernel_hardened_package }} entry after
+      linux-omarchy; kernel entries in order: {{ aegis_ids | join(', ') or 'none' }}
+    quiet: true
+  when: aegis_kernel_hardened_install | bool and not ansible_check_mode
+
+- name: Record the kernel finding
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'kernel.hardened',
+            'status': 'PASS' if ansible_facts['kernel'] is search('hardened')
+                      else ('INFO' if aegis_kernel_hardened_install | bool else 'INFO'),
+            'detail': ('running ' ~ ansible_facts['kernel'])
+                      ~ ('; ' ~ aegis_kernel_hardened_package ~ ' is installed as a second Limine entry, '
+                         ~ 'linux-omarchy stays the default. Boot it once from the Limine menu; make it the '
+                         ~ 'default yourself only after a clean boot (D-02)'
+                         if aegis_kernel_hardened_install | bool and ansible_facts['kernel'] is not search('hardened')
+                         else '')}
+         ] }}

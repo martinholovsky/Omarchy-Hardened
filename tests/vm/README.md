@@ -99,13 +99,27 @@ Take the snapshot **powered off**. A live snapshot (`--live`) once left the
 guest frozen: its clock stopped and it ignored input. The cause was not
 investigated.
 
+## 5b. Update, then snapshot again
+
+```bash
+tests/vm/update-snapshot.sh
+```
+
+This restores `pre-aegis`, runs a full `pacman -Syu`, reboots and saves
+`pre-aegis-updated`. The roles that install packages need current pacman
+databases, and a fresh install has none, just as a user's machine would need
+`omarchy-update` first. Omarchy's update guard hook blocks a direct `-Syu`,
+so the script sets `OMARCHY_ALLOW_DIRECT_PACMAN=1`, the bypass the guard
+itself names. Run the tests from `pre-aegis-updated`.
+
 ## 6. Run
 
 ```bash
 tests/vm/run.sh
 ```
 
-It boots and unlocks the VM if it is off. It then applies the playbook twice
+It installs `ansible-core` in the guest, as a local user would have it, so
+the D-11 check can run there. It boots and unlocks the VM if it is off. It then applies the playbook twice
 (the second run must change nothing), reboots and unlocks, and runs `--check`
 (nothing may differ after the reboot). Last, it prints the live sysctl values
 and every WARN, FAIL and ACCEPTED finding. Logs go to `tests/vm/.state/`.
@@ -113,7 +127,17 @@ and every WARN, FAIL and ACCEPTED finding. Logs go to `tests/vm/.state/`.
 `tests/vm/vm-vars.yml` keeps Omarchy's SSH rule, because the test needs it. The
 container test covers removing it.
 
-To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis`.
+After the reboot it also checks:
+
+- AppArmor is active, with no profile enforcing
+- the Limine order (`linux-omarchy` first, then `linux-hardened`)
+- `opensnitchd` is running
+- `aegis-agent` has no capabilities, cannot create user namespaces, and can
+  write to the project
+- a real `pacman -S` triggers the D-11 check, which reports a reverted PAM
+  file without repairing it
+
+To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
 
 ## Traps
 
@@ -122,5 +146,6 @@ To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis`.
   7 s. Ansible reuses one connection.
 - If the LUKS passphrase is typed before the prompt is on screen, it is lost.
   `run.sh` waits `AEGIS_VM_LUKS_DELAY` seconds (default 45) and types it once.
-- The lock-screen check (10 wrong passwords at `hyprlock`) is still manual.
-  Do it on the desktop after `run.sh`.
+- Any successful `sudo` as the test user runs `pam_faillock authsucc` and
+  clears that user's tally. `run.sh` reads the tally through one root watcher
+  started before the lock-screen test, never through `sudo` mid-test.

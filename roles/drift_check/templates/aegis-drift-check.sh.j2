@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# D-11: run the root-owned copy of the hardening playbook in --check mode and
+# warn (journal + desktop notification) if anything would change or the audit
+# fails. Exit 0: no drift. Exit 1: drift or audit failure. Never re-applies.
+set -uo pipefail
+
+dir={{ aegis_drift_check_dir | quote }}
+log={{ aegis_drift_check_log | quote }}
+tmp=/var/lib/aegis/tmp
+
+mkdir -p "$tmp" && chmod 0700 /var/lib/aegis "$tmp"
+cd "$dir" || exit 1
+export ANSIBLE_CONFIG="$dir/ansible.cfg" ANSIBLE_LOCAL_TEMP="$tmp" ANSIBLE_REMOTE_TEMP="$tmp"
+# /root is read-only under ProtectHome, so keep Ansible's own state in $tmp.
+export ANSIBLE_HOME="$tmp/home" ANSIBLE_NOCOLOR=1 ANSIBLE_COLLECTIONS_PATH="$dir/collections"
+
+args=(/usr/bin/ansible-playbook "$dir/omarchy-harden.yml" --check --diff
+  -e "@$dir/applied-vars.yml" -e ansible_become=false)
+{% if aegis_drift_check_tags %}
+args+=(--tags {{ aegis_drift_check_tags | join(',') | quote }})
+{% endif %}
+
+"${args[@]}" >"$log" 2>&1
+rc=$?
+chmod 0600 "$log"
+recap=$(grep -E '^[^ ]+ +: ok=' "$log" | tail -1)
+
+if [[ $rc -eq 0 ]] && grep -q ' changed=0 ' <<<"$recap"; then
+  echo "aegis: no hardening drift ($recap)"
+  exit 0
+fi
+
+msg="Hardening drift after a package update: re-run omarchy-harden.yml (exit $rc; ${recap:-no recap}). Details: $log"
+echo "$msg" | systemd-cat -t aegis-drift-check -p warning || echo "$msg" >&2
+{% if aegis_drift_check_notify %}
+for bus in /run/user/*/bus; do
+  [[ -S $bus ]] || continue
+  uid=$(basename "$(dirname "$bus")")
+  [[ $uid -ge 1000 ]] || continue
+  user=$(id -nu "$uid" 2>/dev/null) || continue
+  runuser -u "$user" -- env DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+    notify-send -u critical -a Aegis "Aegis: hardening drift" "$msg" >/dev/null 2>&1 || true
+done
+{% endif %}
+exit 1

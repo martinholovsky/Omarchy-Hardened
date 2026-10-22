@@ -1,0 +1,11 @@
+---
+# D-06 (decided 2026-10-21): no native app is moved to Flatpak. When Flatpak is
+# installed, the Flathub remote is limited to verified apps and installed apps
+# with broad permissions are reported. Nothing is installed or removed.
+aegis_flatpak_restrict_flathub: true
+aegis_flatpak_remote: flathub
+# Severity for an installed app with host/home filesystem, devices=all, bus
+# sockets or the Flatpak portal "talk" grant.
+aegis_flatpak_broad_severity: WARN
+# Apps whose broad permissions you accept (application IDs).
+aegis_flatpak_broad_allow: []

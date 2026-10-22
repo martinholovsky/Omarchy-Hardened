@@ -46,6 +46,16 @@ globally. They are denied only for the processes we confine: the agent wrapper
 profiles that deny `userns` (D-05). `aegis_sysctl_disable_unprivileged_userns`
 keeps refusing `true`.
 
+**Found in the VM test:** Podman's default seccomp profile (containers-common
+0.69.2) allows `clone`, `clone3` and `unshare` unconditionally. An agent could
+create user namespaces inside the container even with every capability
+dropped. The `agent_containment` role therefore derives
+`/etc/aegis/agent-seccomp.json` from it: `unshare`/`clone` with
+`CLONE_NEWUSER` get EPERM, and `clone3` gets ENOSYS (libc falls back to
+`clone`), as in Docker's default profile. The result was measured: `unshare
+-U` is refused, and fork and project writes still work. AppArmor `userns`
+rules are not used yet, because profiles run in complain mode (D-05).
+
 ## D-02 — Kernel: replace `linux-omarchy` or install alongside it (Decided 2026-10-21: alongside, opt-in default)
 
 Omarchy ships its own `linux-omarchy`, not Arch `linux`. `linux-hardened` lags
@@ -95,6 +105,14 @@ week, then switch to enforce one profile at a time.
 **Decided (owner, 2026-10-21).** Enable AppArmor by adding it to `lsm=`
 through a separate Limine cmdline drop-in. Profiles load in complain mode.
 Enforcing is a later per-profile variable.
+
+**Found in the VM test (apparmor 4.1.8):** 78 of 145 shipped profiles are
+declared `flags=(unconfined)`, `podman` among them. They confine nothing; they
+exist to permit things such as user namespaces. Forcing them into complain
+mode turned them into real confinement and broke rootless Podman ("failed to
+reexec: Permission denied"). Removing just the `podman` profile fixed it, so
+they are left as shipped. After a reboot, AppArmor is active and 161 profiles
+are loaded, with none in enforce mode.
 
 ## D-06 — Which apps move to Flatpak (Decided 2026-10-21: no moves; verified remote + audit)
 
@@ -191,6 +209,13 @@ is planned).
 
 - Tally directory: **persistent**, `/var/lib/faillock`. This closes the
   reboot-reset bypass. The cost is that a lockout survives a reboot too.
+  Omarchy's SDDM autologin stack (`/etc/pam.d/sddm-autologin`) ends with `pam_faillock.so authsucc`, so with autologin on, the successful autologin after a reboot clears the tally again (config checked on 4.0.6; reboot not tested).
+  **Correction 2026-10-22:** the directory was first created 0700. That
+  silently stopped Omarchy's lock screen, which runs PAM as the user, from
+  recording failures (`pam_faillock` returns success on `EACCES`). It is now
+  0755, as `pam_faillock` itself creates it. Measured on the VM: at 0700 there
+  were no records after 3 failures; at 0755 there were 3 records. After 10
+  failures the right password is refused until a root reset.
 - `su`: **wheel-only + faillock**. `su`/`su-l` authenticate through
   `system-auth`, and `pam_wheel use_uid` is enabled. Open follow-up: whether
   to set `even_deny_root` (roadmap #6) so that repeated `su` failures lock root
@@ -266,6 +291,12 @@ and `input` through gaming and ydotool helpers. Options: (a) FAIL for
 docker/libvirt/disk, WARN for input; (b) WARN for all; (c) off.
 **Recommendation: (a).** Choosing root-equivalent access should be an explicit,
 recorded act: add `groups.docker` to `aegis_audit_skip`.
+
+**Extended 2026-10-21 under the same rule.** `empower` is added at FAIL.
+systemd 262 ships `/usr/share/polkit-1/rules.d/empower.rules`, which grants
+every polkit action to members of `empower`. `run0 --empower` adds a member for
+one command only, so a permanent member is root-equivalent like `docker`. The
+rule file itself is listed as known in `aegis_audit_polkit_known`.
 
 ### D-21 — severity of package-file drift (Decided: FAIL since 2026-10-21)
 
