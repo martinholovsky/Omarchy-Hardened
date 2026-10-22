@@ -5,7 +5,8 @@ undo, and what has not been tested yet. The settings are in each role's
 `defaults/main.yml`. The decisions behind them are in
 [open-decisions.md](open-decisions.md).
 
-Last reviewed: 2026-10-21, after the first VM run.
+Last reviewed: 2026-10-22, after the VM run of the decided roles (D-01 to D-11).
+Everything still open is listed in [open-items.md](open-items.md).
 
 ## 1. What has and has not been verified
 
@@ -14,8 +15,9 @@ Last reviewed: 2026-10-21, after the first VM run.
 | sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift. **VM (2026-10-21):** applied on Omarchy 4.0.6 / `linux-omarchy 7.2.8-9`, all keys present, values still in force after a reboot | Real hardware |
 | PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot; the lock screen locks out after 10 failures (it recorded none before the tally directory became 0755) | Persistence of a lockout across a reboot with autologin (Omarchy's autologin clears it), `sudo` from a Hyprland terminal |
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
-| Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22, a default install gives 0 WARN and 0 FAIL | Long-lived installs with more packages |
+| Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22 and the SnowflakeOS checks (18k–18o), a default 4.0.6 install gives 0 FAIL and 2 WARN, both correct: `accounts.password_hash` and `git.commit_signing` ([open-items.md](open-items.md) §3) | Long-lived installs with more packages |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
+| Decided roles (D-01 to D-11) | **VM (2026-10-22):** after a reboot, AppArmor is active with 83 profiles, all in complain mode; Limine lists `linux-omarchy` first, then `linux-hardened`; `opensnitchd` runs; `aegis-agent` has no capabilities and cannot create user namespaces; a real `pacman -S` triggers the D-11 check, which reports drift without repairing it. FIDO2, Flatpak, commit signing and Tailscale: container only | Booting `linux-hardened`, FIDO2 and signing keys, a tailnet login ([open-items.md](open-items.md) §1) |
 
 The VM run (section 6) has been done; real hardware has not. Treat the first
 run on a real machine as a test.
@@ -129,8 +131,9 @@ from a root shell.
   old (`aegis_pacman_max_upgrade_age_days`). Before the first `-Syu`, the age
   counts from the install, which is the first `pacman.log` entry.
 - **Re-run after every `omarchy-update`.** Omarchy's update scripts rewrite
-  PAM files (D-11), and nothing warns you when that happens yet. A re-run puts
-  the settings back and verifies them. `--check --diff` shows what the update
+  PAM files. The D-11 pacman hook warns when that happens (journal and a
+  desktop notification), but never repairs anything. A re-run puts the
+  settings back and verifies them. `--check --diff` shows what the update
   reverted.
 - **Home directories are not scanned** for setuid or world-writable files. Set
   `aegis_integrity_scan_home: true` for a one-off sweep. It can take minutes.
@@ -168,7 +171,8 @@ started as community reports in discussion #176 and are now **tested here**:
 A VM run passes when the following hold. Steps 1, 2, 5 and 6 are automated by
 `tests/vm/run.sh` and passed. Step 3 is automated too and passed
 (2026-10-22): the lock screen refuses the right password after 10 failures
-until a root reset. Step 4 is covered in the container test, not yet in
+until a root reset. Its reboot and 15-minute parts are not automated, and
+with autologin on, a reboot clears the lockout (see section 3). Step 4 is covered in the container test, not yet in
 the VM.
 
 1. Take a snapshot `pre-aegis`, then apply the playbook.
@@ -194,7 +198,6 @@ guest (D-04) is untested. Plan to test FIDO2 on hardware.
   settings cannot be undone until reboot. It refuses to run without
   `AEGIS_ALLOW_HOST_SYSCTL=1`. Only CI sets that, on a throwaway runner. Never
   set it on your workstation or on the podman machine.
-- Before the repo goes public, settle the licence question in
-  [open-decisions.md](open-decisions.md) (ansible-core and community.general
-  are GPL-3.0).
+- Before the repo goes public, settle the licence question (D-12, listed in
+  [open-items.md](open-items.md) §2).
 - New checks need a planted-problem test (see `AGENTS.md`).

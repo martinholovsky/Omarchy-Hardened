@@ -137,6 +137,12 @@ SemVer once 1.0 ships.
   rejecting a global SSH rule, IPv4 or IPv6 (`22/tcp (v6)`).
 - `groups.empower` joins the D-20 root-equivalent groups (FAIL), and systemd's
   `empower.rules` is listed as a known polkit grant.
+- `docs/open-items.md`: one list of what is still open for implemented work
+  (untested paths, owner decisions, user steps, harness issues). Corrected
+  stale statements: the default-install WARN count is 2, not 0; the D-05
+  AppArmor count is 83 complain-mode profiles, not 161; the drift after
+  `omarchy-update` is now reported by D-11; roadmap #12 and #18 are
+  implemented.
 
 ### Fixed (found by the VM and container tests)
 
