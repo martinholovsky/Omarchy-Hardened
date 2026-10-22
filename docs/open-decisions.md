@@ -393,5 +393,8 @@ the owner too; (c) audit only, an INFO finding while autologin is on.
 
 Revisit if Omarchy enables autologin without encryption, or if TPM or other
 passwordless LUKS unlock becomes part of the default install. Omarchy at
-`dde0d12` ships none. Its only boot-time auto-unlock is the staged install key,
-which `install/provisioning/luks-rekey.sh` removes after the re-key.
+`dde0d12` ships none: across its 5184 files, `systemd-cryptenroll`,
+`tpm2-device`, `tpm2-pcrs` and `clevis` appear only in a test fixture
+(`test/shell.d/luks-rekey-journal-test.sh`, a previous owner's token). Its only
+boot-time auto-unlock is the staged install key, which `luks_auto_unlock_drop`
+(`bin/omarchy-provision-owner:1044`) removes after the re-key.

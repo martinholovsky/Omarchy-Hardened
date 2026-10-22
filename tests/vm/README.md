@@ -157,6 +157,7 @@ To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
   locks the test user out of `sudo` on purpose and lifts the lock through
   `su` to root, which has its own tally.
 - **The host must be quiet.** On 2026-10-22, with other VMs and containers
-  using about 8 of 12 cores and 40+ GB of swap, run 1 took about 50 minutes
-  and later runs lost SSH ("banner exchange" and become-prompt timeouts).
+  loading the host (swap 12.4 of 13.3 GB used at 18:12, 9.3 of 10.2 GB at
+  19:23), run 1 took about 46 minutes (18:13 to 18:59) and the runs lost SSH
+  ("banner exchange" and become-prompt timeouts).
   `AEGIS_VM_UI=headless` avoids the GUI window's host CPU.
