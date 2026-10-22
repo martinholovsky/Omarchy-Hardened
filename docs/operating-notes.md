@@ -63,7 +63,7 @@ run on a real machine as a test.
 | What you will notice | Why | How to get the old behaviour |
 |---|---|---|
 | 10 wrong passwords in 15 min lock you out for 15 min (Omarchy: 2 min) | `unlock_time=900` | `aegis_faillock_unlock_time: 120` |
-| The lockout survives a reboot | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
+| The lockout survives a reboot, unless autologin is on (Omarchy's autologin runs `pam_faillock authsucc`, which clears it) | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
 | **Root locks too**, after the same 10 failures | `even_deny_root` (D-19) | `aegis_faillock_even_deny_root: false` |
 | `su` refuses users outside `wheel`, and its failures count toward the lockout | `pam_wheel` + `include system-auth` (G2) | `aegis_faillock_su_wheel_only: false`; empty `aegis_faillock_su_files` |
 | LocalSend no longer receives files | ufw rule for 53317 removed | `aegis_firewall_remove_localsend: false` |

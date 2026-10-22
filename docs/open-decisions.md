@@ -209,6 +209,13 @@ is planned).
 
 - Tally directory: **persistent**, `/var/lib/faillock`. This closes the
   reboot-reset bypass. The cost is that a lockout survives a reboot too.
+  Omarchy's SDDM autologin stack (`/etc/pam.d/sddm-autologin`) ends with `pam_faillock.so authsucc`, so with autologin on, the successful autologin after a reboot clears the tally again (config checked on 4.0.6; reboot not tested).
+  **Correction 2026-10-22:** the directory was first created 0700. That
+  silently stopped Omarchy's lock screen, which runs PAM as the user, from
+  recording failures (`pam_faillock` returns success on `EACCES`). It is now
+  0755, as `pam_faillock` itself creates it. Measured on the VM: at 0700 there
+  were no records after 3 failures; at 0755 there were 3 records. After 10
+  failures the right password is refused until a root reset.
 - `su`: **wheel-only + faillock**. `su`/`su-l` authenticate through
   `system-auth`, and `pam_wheel use_uid` is enabled. Open follow-up: whether
   to set `even_deny_root` (roadmap #6) so that repeated `su` failures lock root

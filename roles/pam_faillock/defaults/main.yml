@@ -13,7 +13,8 @@ aegis_faillock_conf: /etc/security/faillock.conf
 
 # Persistent tally directory (roadmap G1, owner decision 2026-10-21). The
 # pam_faillock default, /var/run/faillock, is tmpfs, so a reboot reset the
-# counter. A lockout now also survives a reboot; it still clears after
+# counter. A lockout now survives a reboot, except that Omarchy's SDDM
+# autologin stack runs pam_faillock authsucc, which clears it; it still clears after
 # unlock_time, or with `faillock --user NAME --reset` as root.
 aegis_faillock_dir: /var/lib/faillock
 

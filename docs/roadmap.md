@@ -29,7 +29,8 @@ fixed by owner decision:
 
 - **G1, done.** The faillock tally was on tmpfs (`/var/run/faillock`), so a
   reboot reset the counter. It now lives in `/var/lib/faillock`, created by
-  `tmpfiles.d`. A lockout therefore also survives a reboot.
+  `tmpfiles.d`. A lockout therefore survives a reboot unless autologin clears it.
+  Omarchy's SDDM autologin stack (`/etc/pam.d/sddm-autologin`) ends with `pam_faillock.so authsucc`, so with autologin on, the successful autologin after a reboot clears the tally again (config checked on 4.0.6; reboot not tested).
 - **G2, done.** Arch's `su`/`su-l` called `pam_unix` directly. They now
   `include system-auth`, which carries faillock, and `pam_wheel use_uid`
   limits `su` to wheel. Root itself still only locks once `even_deny_root`

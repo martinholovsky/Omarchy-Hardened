@@ -101,6 +101,36 @@ fi
 grep -q 'unlock_time=120' <<<"$(guest_root cat /etc/pam.d/system-auth)" || die "the drift check changed the system"
 echo "PASS: pacman hook ran the check; the reverted PAM file was reported, not repaired"
 
+echo "--- lock screen: 10 wrong passwords lock the right one out (D-13, G1)"
+# Any successful sudo runs pam_faillock authsucc for this user and clears the
+# tally, so one sudo starts a root watcher that logs the tally and resets it
+# later, and nothing authenticates in between.
+locked() {
+  # shellcheck disable=SC2016 # expanded in the guest, not here
+  guest_ssh 'export XDG_RUNTIME_DIR=/run/user/1000 HYPRLAND_INSTANCE_SIGNATURE=$(ls /run/user/1000/hypr | head -1);
+    omarchy-hyprland-session-locked; echo $?' | tail -1
+}
+guest_root sh -c "faillock --user $user --reset; (for i in \$(seq 80); do stat -c %s /var/lib/faillock/$user; sleep 1; done;
+  faillock --user $user --reset; echo reset) >/tmp/aegis-tally-log 2>&1 &"
+VBoxManage controlvm "$vm" keyboardputscancode e0 5b 1d 26 a6 9d e0 db # Super+Ctrl+L
+sleep 5
+[[ $(locked) == 0 ]] || die "screen did not lock"
+for i in $(seq 10); do
+  VBoxManage controlvm "$vm" keyboardputstring "wrong-$i"
+  VBoxManage controlvm "$vm" keyboardputscancode 1c 9c
+  sleep 3
+done
+VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
+sleep 6
+[[ $(locked) == 0 ]] || die "the right password unlocked after 10 failures"
+until guest_ssh 'grep -q reset /tmp/aegis-tally-log'; do sleep 7; done
+bytes=$(guest_ssh 'grep -v reset /tmp/aegis-tally-log | tail -1')
+[[ $bytes -ge 640 ]] || die "lock screen recorded $bytes bytes of failures (want 10 records, 640)"
+VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
+sleep 6
+[[ $(locked) == 1 ]] || die "the right password did not unlock after a root reset"
+echo "PASS: lock screen locks out after 10 failures ($bytes bytes of records); a root reset unlocks"
+
 echo "--- live values after reboot"
 # vm.mmap_rnd_bits is readable by root only.
 uv run --project "$repo" ansible aegis "${common[@]}" -b -m ansible.builtin.command \

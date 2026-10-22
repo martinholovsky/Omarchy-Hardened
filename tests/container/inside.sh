@@ -117,7 +117,10 @@ su_as alice 'wrong-password' && fail "su accepted a wrong password"
 # Count record lines (they start with a timestamp), not the header.
 [[ $(faillock --user root | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2} ') -ge 1 ]] \
   || { faillock --user root; fail "faillock CLI shows no record for root"; }
-pass "su failure counted in the persistent tally (/var/lib/faillock)"
+# The lock screen runs PAM as the user: the user must reach the directory.
+[[ $(stat -c %a /var/lib/faillock) == 755 ]] || fail "tally dir is not 0755 (a 0700 dir hides the lock screen's failures)"
+runuser -u bob -- test -x /var/lib/faillock || fail "a normal user cannot reach /var/lib/faillock"
+pass "su failure counted in the persistent tally (/var/lib/faillock), reachable by users"
 
 su_as bob 'Aegis-root-pw1' && fail "non-wheel user could su with the right password"
 pass "su refused for a non-wheel user"

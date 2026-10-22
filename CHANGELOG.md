@@ -147,6 +147,13 @@ SemVer once 1.0 ships.
   them (D-01).
 - OpenSnitch: the rules directory is 0755, the mode `opensnitchd` resets it to
   on start. 0700 showed up as drift after every reboot.
+- `pam_faillock`: the tally directory is 0755, not 0700. Omarchy's lock
+  screen runs PAM as the user, and behind 0700 it recorded no failures at all
+  (silently: `pam_faillock` returns success on `EACCES`). This was a
+  regression from G1, measured on the VM. The VM test now checks the lockout
+  at the real lock screen.
+- Docs: a lockout survives a reboot only without autologin. Omarchy's
+  `sddm-autologin` runs `pam_faillock authsucc`, which clears it.
 - `tests/container/run.sh` requires the final `N/N checks passed` line. It had
   once reported exit 0 after a FAIL.
 

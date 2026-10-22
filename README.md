@@ -85,7 +85,8 @@ how to undo each change, what is still untested, and how to test in a
 VirtualBox VM.
 
 **What `pam_faillock` also changes:** failure records live in
-`/var/lib/faillock`, so a lockout survives a reboot. `su`/`su-l` now
+`/var/lib/faillock`, so a lockout survives a reboot, unless SDDM autologin
+(Omarchy's default with disk encryption) clears it on the next login. `su`/`su-l` now
 authenticate through `system-auth`, so they are counted too, and only members
 of `wheel` may use `su`. Root is locked too after 10 failures
 (`even_deny_root`, decision D-19).
