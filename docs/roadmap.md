@@ -32,7 +32,7 @@ fixed by owner decision:
 - **G1, done.** The faillock tally was on tmpfs (`/var/run/faillock`), so a
   reboot reset the counter. It now lives in `/var/lib/faillock`, created by
   `tmpfiles.d`. A lockout therefore survives a reboot unless autologin clears it.
-  Omarchy's SDDM autologin stack (`/etc/pam.d/sddm-autologin`) ends with `pam_faillock.so authsucc`, so with autologin on, the successful autologin after a reboot clears the tally again (config checked on 4.0.6; reboot not tested).
+  Omarchy's SDDM autologin stack (`/etc/pam.d/sddm-autologin`) ends with `pam_faillock.so authsucc`, so with autologin on, the successful autologin after a reboot clears the tally again (config checked on 4.0.6; reboot not tested). Accepted as D-23.
 - **G2, done.** Arch's `su`/`su-l` called `pam_unix` directly. They now
   `include system-auth`, which carries faillock, and `pam_wheel use_uid`
   limits `su` to wheel. Root itself still only locks once `even_deny_root`
@@ -101,7 +101,7 @@ measured on the VM test install (see the review).
 | 18l | `/tmp` stays tmpfs with `nosuid,nodev` (`findmnt -no FSTYPE,OPTIONS /tmp`). Omarchy 4.0.6 already has this, so the check guards against it regressing. It overlaps #17 | `pacman_integrity` |
 | 18m | polkit check: WARN on any `rules.d` rule returning `polkit.Result.YES` without an `action.id` condition. On Omarchy 4.0.6, `/etc/polkit-1/rules.d/` is empty and the 7 package rules in `/usr/share/polkit-1/rules.d/` must not trip it | `pacman_integrity` |
 | 18n | Autologin needs encryption: WARN if `/etc/sddm.conf.d/*` sets `[Autologin] User=` while `/` is not on a `crypto_LUKS` device. This is Omarchy's own installer rule, checked after install | `pacman_integrity` |
-| 18o | Password hash strength: WARN on `$6$` (SHA-512) hashes for root or human accounts when `login.defs` says YESCRYPT. Log the prefix only, never the hash. **This fires on a default Omarchy 4.0.6 install**: both root and the user were `$6$`. The fix is to run `passwd` once, which is the user's call. The playbook must not reset passwords | `pacman_integrity` |
+| 18o | Password hash strength: WARN on `$6$` (SHA-512) hashes for root or human accounts when `login.defs` says YESCRYPT. Log the prefix only, never the hash. **This fires on a default Omarchy 4.0.6 install**: both root and the user were `$6$`. The fix is to run `sudo passwd <user>` once (measured: it rehashes to `$y$` even with the same password), which is the user's call. The playbook must not reset passwords | `pacman_integrity` |
 
 **Resolved:** coredump `Storage=none` keeps `omarchy-crash-watch` working,
 because crashes and backtraces are still journalled (`coredump.conf(5)`). It

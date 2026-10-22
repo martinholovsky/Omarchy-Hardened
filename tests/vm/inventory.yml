@@ -6,3 +6,8 @@ aegis:
     aegis-vm:
       ansible_host: 127.0.0.1
       ansible_port: "{{ lookup('ansible.builtin.env', 'AEGIS_VM_SSH_PORT', default='2222') }}"
+      # Arch's /etc/pam.d/sudo runs pam_systemd, which writes an OSC 3008
+      # escape sequence to the terminal when the sudo session ends. Over a
+      # pty it lands after the module's JSON and Ansible warns "junk after the
+      # JSON data" on every become task. sudo needs no tty here.
+      ansible_ssh_use_tty: false

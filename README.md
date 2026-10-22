@@ -3,7 +3,7 @@
 An Ansible playbook that retrofits defence in depth onto an
 [Omarchy](https://github.com/basecamp/omarchy) / Arch Linux workstation:
 kernel and sysctl lockdown, a stricter login lockout, a tighter firewall,
-package-signature auditing, and later MAC, sandboxing and AI agent
+package-signature auditing, AppArmor, Flatpak auditing and AI agent
 containment. It keeps the Hyprland desktop Omarchy gives you. The
 requirements are in [docs/PRD.md](docs/PRD.md).
 
@@ -86,7 +86,8 @@ VirtualBox VM.
 
 **What `pam_faillock` also changes:** failure records live in
 `/var/lib/faillock`, so a lockout survives a reboot, unless SDDM autologin
-(Omarchy's default with disk encryption) clears it on the next login. `su`/`su-l` now
+(Omarchy's default with disk encryption) clears it on the next login
+(accepted, decision D-23). `su`/`su-l` now
 authenticate through `system-auth`, so they are counted too, and only members
 of `wheel` may use `su`. Root is locked too after 10 failures
 (`even_deny_root`, decision D-19).

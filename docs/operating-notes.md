@@ -65,7 +65,7 @@ run on a real machine as a test.
 | What you will notice | Why | How to get the old behaviour |
 |---|---|---|
 | 10 wrong passwords in 15 min lock you out for 15 min (Omarchy: 2 min) | `unlock_time=900` | `aegis_faillock_unlock_time: 120` |
-| The lockout survives a reboot, unless autologin is on (Omarchy's autologin runs `pam_faillock authsucc`, which clears it) | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
+| The lockout survives a reboot, unless autologin is on (Omarchy's autologin runs `pam_faillock authsucc`, which clears it; accepted, D-23) | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
 | **Root locks too**, after the same 10 failures | `even_deny_root` (D-19) | `aegis_faillock_even_deny_root: false` |
 | `su` refuses users outside `wheel`, and its failures count toward the lockout | `pam_wheel` + `include system-auth` (G2) | `aegis_faillock_su_wheel_only: false`; empty `aegis_faillock_su_files` |
 | LocalSend no longer receives files | ufw rule for 53317 removed | `aegis_firewall_remove_localsend: false` |
@@ -74,7 +74,7 @@ run on a real machine as a test.
 | `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=3`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
 | setuid programs never leave core dumps | `fs.suid_dumpable=0` | Edit `aegis_sysctl_settings` |
 | The kernel panics (and reboots, if `kernel.panic` is set) after 100 oopses since boot | `kernel.oops_limit=100` (D-17) | `aegis_sysctl_oops_limit: null` |
-| An ASan/TSan build may crash at startup (**unverified**) | `vm.mmap_rnd_bits=32` (D-16) | `aegis_sysctl_mmap_rnd_max: false` first, before anything else |
+| An ASan/TSan build from an older toolchain may crash at startup (gcc 16 and clang 23 builds ran fine in the VM, D-16) | `vm.mmap_rnd_bits=32` (D-16) | `aegis_sysctl_mmap_rnd_max: false` first, before anything else |
 | After every package install or update, a check runs in the background and may notify "Aegis: hardening drift" | D-11 pacman hook (`/etc/pacman.d/hooks/zz-aegis-drift-check.hook`) | `aegis_drift_check_enabled: false` |
 | A second kernel, `linux-hardened`, appears in the Limine menu (not the default) | D-02 | `aegis_kernel_hardened_install: false` (then `pacman -R linux-hardened`) |
 | After the next reboot AppArmor is active; profiles only log (`journalctl -k \| grep apparmor`) | D-05 `lsm=` drop-in | `aegis_apparmor_enabled: false`, then reboot |
@@ -172,8 +172,8 @@ A VM run passes when the following hold. Steps 1, 2, 5 and 6 are automated by
 `tests/vm/run.sh` and passed. Step 3 is automated too and passed
 (2026-10-22): the lock screen refuses the right password after 10 failures
 until a root reset. Its reboot and 15-minute parts are not automated, and
-with autologin on, a reboot clears the lockout (see section 3). Step 4 is covered in the container test, not yet in
-the VM.
+with autologin on, a reboot clears the lockout (see section 3). Step 4 is scripted in `tests/vm/run.sh` and passed on its own;
+a full run through it is still open (docs/open-items.md).
 
 1. Take a snapshot `pre-aegis`, then apply the playbook.
 2. Reboot, then check `sysctl kernel.sysrq vm.mmap_rnd_bits kernel.oops_limit`.
