@@ -7,7 +7,8 @@ Guidance for coding agents working in this repository.
 An Ansible playbook (`omarchy-harden.yml`) that hardens an Omarchy / Arch Linux
 workstation. Requirements: `docs/PRD.md`. Verified upstream behaviour:
 `docs/upstream-baseline.md`. Pending security decisions: `docs/open-decisions.md`. What a run changes for
-the user, how to undo it, and what is untested: `docs/operating-notes.md`.
+the user, how to undo it, and what is untested: `docs/operating-notes.md`. Everything still open for
+implemented work: `docs/open-items.md`; delete a row when you close it.
 
 ## Rules
 

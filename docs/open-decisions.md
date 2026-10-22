@@ -111,8 +111,8 @@ declared `flags=(unconfined)`, `podman` among them. They confine nothing; they
 exist to permit things such as user namespaces. Forcing them into complain
 mode turned them into real confinement and broke rootless Podman ("failed to
 reexec: Permission denied"). Removing just the `podman` profile fixed it, so
-they are left as shipped. After a reboot, AppArmor is active and 161 profiles
-are loaded, with none in enforce mode.
+they are left as shipped. After a reboot, AppArmor is active and 83 profiles
+are in complain mode, none in enforce mode (final VM run, 2026-10-22).
 
 ## D-06 — Which apps move to Flatpak (Decided 2026-10-21: no moves; verified remote + audit)
 

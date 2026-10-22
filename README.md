@@ -147,6 +147,7 @@ docs/upstream-baseline.md what Omarchy really ships (verified)
 docs/open-decisions.md    security decisions each stub is waiting on
 docs/operating-notes.md   before/after a run: effects, rollback, untested areas, VM test
 docs/roadmap.md           ranked backlog merged from the reviews below
+docs/open-items.md        what is still untested or waiting on the owner
 docs/research/            the source reviews (Securix-Linux, secureblue, Kicksecure, SnowflakeOS)
 docs/adr/                 architecture decisions
 ```

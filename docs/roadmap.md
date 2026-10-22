@@ -14,7 +14,9 @@ This backlog merges four research reviews:
   hardening of its own; it contributes five audit checks (18k–18o).
 
 All were checked against Omarchy at `dde0d12`. Tier 0, Tier 1 and the
-SnowflakeOS checks (18k–18o) are implemented; the rest of Tier 2 on is not.
+SnowflakeOS checks (18k–18o) are implemented, and so are #12 and #18 (through
+D-05 and D-06); the rest of Tier 2 on is not. Follow-ups on implemented work
+are in [open-items.md](open-items.md).
 The PRD roles behind D-01 to D-11 are implemented separately (see
 [open-decisions.md](open-decisions.md)). Each item changes security posture, so
 it needs the owner's go-ahead.
@@ -63,13 +65,13 @@ changes the package set.
 |---|---|---|---|
 | 10 | Module blocklist with `install X /bin/false`: obscure network protocols, debug/test modules, legacy buses (firewire), rare filesystems. **Not** bluetooth, thunderbolt, cifs/nfs clients, hfsplus, udf. Fail if a blocked module is loaded anyway | `module_blocklist` | both |
 | 11 | Kernel cmdline via a separate `/etc/limine-entry-tool.d/` drop-in plus UKI rebuild: `init_on_free=1 slab_nomerge page_alloc.shuffle=1 randomize_kstack_offset=on vsyscall=none random.trust_cpu=off random.trust_bootloader=off`; assert through `/proc/cmdline` | `kernel` | both |
-| 12 | `lsm=` adding `apparmor` (verified: Arch `linux` has `CONFIG_SECURITY_APPARMOR=y` but `CONFIG_LSM="landlock,lockdown,yama,integrity,bpf"`) | `kernel` + `apparmor` | Securix |
+| 12 | **Implemented (D-05).** `lsm=` adding `apparmor` (verified: Arch `linux` has `CONFIG_SECURITY_APPARMOR=y` but `CONFIG_LSM="landlock,lockdown,yama,integrity,bpf"`) | `kernel` + `apparmor` | Securix |
 | 13 | Strict IOMMU DMA protection (`iommu.strict=1`, `intel_iommu=on`, …). This matters because Omarchy keeps Thunderbolt on. Test with docks | `kernel` | secureblue |
 | 14 | Core dumps: `coredump.conf.d` size and storage limits, **not** `core_pattern=\|/bin/false` (breaks `omarchy-crash-watch`) | `coredump` | both |
 | 15 | NetworkManager privacy: stable MAC randomization, no DHCP hostname, IPv6 privacy | `network_privacy` | secureblue |
 | 16 | sshd drop-in for Omarchy's opt-in sshd: `Compression no` (OpenSSH 10.6, 2026-10-06, changed compression over a side channel; verified in the release notes), `PermitRootLogin no`, `MaxAuthTries 3`, no forwarding, `LogLevel VERBOSE`, keep `UsePAM yes` | `sshd` | both |
 | 17 | Mount options: ESP `nodev,nosuid,noexec,fmask=0077,dmask=0077`; `/home` and `/tmp` `nodev,nosuid`. **Never** `noexec` on `/var` or `/home` | `mounts` | Securix |
-| 18 | Flathub `--subset=verified` remote plus a permission-severity audit (no global lockdown) | `flatpak` | secureblue |
+| 18 | **Implemented (D-06).** Flathub `--subset=verified` remote plus a permission-severity audit (no global lockdown) | `flatpak` | secureblue |
 
 ### Added from the Kicksecure review
 
