@@ -143,6 +143,9 @@ SemVer once 1.0 ships.
   AppArmor count is 83 complain-mode profiles, not 161; the drift after
   `omarchy-update` is now reported by D-11; roadmap #12 and #18 are
   implemented.
+- `docs/open-items.md`: FIDO2 enrolment corrected. `omarchy-setup-security-fido2`
+  registers one key, and the second goes in with `pamu2fcfg -n`. The VM's lack of
+  FIDO2 passthrough is stated as untried, not as needing the Extension Pack.
 
 ### Fixed (found by the VM and container tests)
 
