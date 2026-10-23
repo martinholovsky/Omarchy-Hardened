@@ -19,7 +19,8 @@ D-05 and D-06); the rest of Tier 2 on is not. Follow-ups on implemented work
 are in [open-items.md](open-items.md).
 The PRD roles behind D-01 to D-11 are implemented separately (see
 [open-decisions.md](open-decisions.md)). Each item changes security posture, so
-it needs the owner's go-ahead.
+it needs the owner's go-ahead. On 2026-10-23 the owner approved none until
+the first run on real hardware has passed ([open-items.md](open-items.md) §2).
 Items that wait on a recorded decision point to `open-decisions.md`.
 
 "Both" means the two reviews recommend the item independently.

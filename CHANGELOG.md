@@ -151,6 +151,11 @@ SemVer once 1.0 ships.
   confirmed. Stale statements corrected: the README intro (AppArmor, Flatpak
   and agent containment are implemented), D-13 (`overlay_network` exists) and
   D-14 (`even_deny_root` was decided in D-19).
+- Roadmap: the owner approved no Tier 2 or Tier 3 item until the first run on
+  real hardware has passed (2026-10-23). `docs/open-items.md`: the container
+  test times are re-measured from CI (15m53s and 17m55s, not 21m).
+- VM test: a full run from `pre-aegis-updated` passed on a quiet host
+  (2026-10-23), step 4 included, so that open item is closed.
 
 ### Fixed (found by the VM and container tests)
 

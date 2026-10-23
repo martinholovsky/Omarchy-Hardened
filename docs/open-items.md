@@ -7,11 +7,11 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-22, on `docs/closure-corrections` (PR #4). Earlier
-evidence: CI green on `16ffcb9` (lint, live sysctl apply, container test
-44/44); the last complete VM run from `pre-aegis-updated` exited 0, with run 2
-and the post-reboot `--check` both at `changed=0`. The VM runs since then were
-stopped by an overloaded host before they finished (§1, step 4).
+Last reviewed: 2026-10-23, on `docs/closure-corrections` (PR #4). A full
+`tests/vm/run.sh` from `pre-aegis-updated` at `c3d9673` exited 0 on a quiet
+host (20:12 to 20:52 UTC): run 2 and the post-reboot `--check` both at
+`changed=0`, every post-reboot check PASS including step 4, and 2 WARN, the
+two in §3. CI green on `c3d9673` (lint, live sysctl apply, container test).
 
 ## 1. Not tested yet
 
@@ -23,7 +23,6 @@ stopped by an overloaded host before they finished (§1, step 4).
 | Commit signing with an `ed25519-sk` key (D-08) | Container: key strings only, including refusal of a non-`sk` key | Set `aegis_commit_signing_pubkey`, make a commit, and check `git log --show-signature` |
 | Tailscale (D-10) | Container: the ufw rule on `tailscale0` is added and removed. No tailnet login | Log in, set `aegis_overlay_ssh_on_tailscale: true`, and SSH in over the tailnet while LAN SSH is refused |
 | Firewall with real traffic | Container, against Omarchy's seeded ufw rules | LocalSend refused, Docker DNS still working, SSH only where allowed |
-| `sudo` and `su` share one lockout; a non-wheel user cannot `su` (VM step 4) | Container, with real logins driven by `expect`. Scripted in `tests/vm/run.sh` (2026-10-22): run on its own against the VM it passed, and two mutants failed it (su back on `pam_unix`: tally stayed at 384 bytes; `pam_wheel` off: non-wheel su allowed). A full suite run did not reach it: the host was overloaded and the runs lost SSH | One full `tests/vm/run.sh` from `pre-aegis-updated` on a quiet host. It also covers the new 20-minute drift-check wait |
 | Audit noise on a long-lived install | Only fresh installs | Run the audit on a machine that has had packages installed for weeks |
 
 ## 2. Waiting on the owner
@@ -34,7 +33,7 @@ stopped by an overloaded host before they finished (§1, step 4).
 | `linux-hardened` as the default boot entry (D-02) | The role never changes the default entry. Switching is a manual step after one clean boot (see §1) |
 | `hardened_malloc` (D-03) | Deferred |
 | Licence check before going public (D-12) | The repo is Apache-2.0. The toolchain it invokes (ansible-core, community.general) is GPL-3.0. That needs a proper look before the repo is public |
-| Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)) |
+| Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)). **Owner, 2026-10-23: none yet.** First the run on real hardware (§1) must pass (the full VM run passed on 2026-10-23), because every role added before the first hardware run widens what that run has to vouch for. Revisit when the real-hardware row in §1 is closed; the items with no desktop effect (18a, #14, #16) come first |
 
 ## 3. Steps for the user on their own machine
 
@@ -59,4 +58,4 @@ run. Both are correct.
 | Item | Detail |
 |---|---|
 | Ansible "junk after the JSON data" on a local run | Cause found in the VM (2026-10-22): Arch's `/etc/pam.d/sudo` (package `sudo` 1.9.17.p2-6, unmodified) runs `pam_systemd.so`, which writes an OSC 3008 sequence when the sudo session ends. Over an SSH pty it trails the module JSON. The VM inventory now sets `ansible_ssh_use_tty: false`: 0 warnings, against 1 with the pty, on the same become task, which returned the right result both times. A user's own run uses `ansible_connection: local`, which was not tested; if the warning shows there it is noise from the same source |
-| Container test time | 21m0s and 20m51s in the last two CI runs, against `timeout-minutes: 35`. Revisit when a CI run takes more than 28 minutes (80% of the timeout): split the job or raise the limit |
+| Container test time | The `container-test` job took 15m53s and 17m55s in the last two CI runs (`c3d9673`, `cadc647`; 22m03s at most over the last four), against `timeout-minutes: 35`. Revisit when a CI run takes more than 28 minutes (80% of the timeout): split the job or raise the limit |

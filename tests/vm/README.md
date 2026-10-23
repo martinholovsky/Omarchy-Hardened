@@ -159,5 +159,7 @@ To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
 - **The host must be quiet.** On 2026-10-22, with other VMs and containers
   loading the host (swap 12.4 of 13.3 GB used at 18:12, 9.3 of 10.2 GB at
   19:23), run 1 took about 46 minutes (18:13 to 18:59) and the runs lost SSH
-  ("banner exchange" and become-prompt timeouts).
+  ("banner exchange" and become-prompt timeouts). On a quiet host (load
+  average about 3 on 12 cores, no other VM running) the whole run took 40
+  minutes on 2026-10-23.
   `AEGIS_VM_UI=headless` avoids the GUI window's host CPU.

@@ -5,7 +5,7 @@ undo, and what has not been tested yet. The settings are in each role's
 `defaults/main.yml`. The decisions behind them are in
 [open-decisions.md](open-decisions.md).
 
-Last reviewed: 2026-10-22, after the VM run of the decided roles (D-01 to D-11).
+Last reviewed: 2026-10-23, after a full VM run of every role, step 4 included.
 Everything still open is listed in [open-items.md](open-items.md).
 
 ## 1. What has and has not been verified
@@ -13,7 +13,7 @@ Everything still open is listed in [open-items.md](open-items.md).
 | Area | Verified how | Not verified |
 |---|---|---|
 | sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift. **VM (2026-10-21):** applied on Omarchy 4.0.6 / `linux-omarchy 7.2.8-9`, all keys present, values still in force after a reboot | Real hardware |
-| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot; the lock screen locks out after 10 failures (it recorded none before the tally directory became 0755) | Persistence of a lockout across a reboot with autologin (Omarchy's autologin clears it), `sudo` from a Hyprland terminal |
+| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot; the lock screen locks out after 10 failures (it recorded none before the tally directory became 0755); **(2026-10-23)** `sudo` and `su` fill one tally and both refuse the right password at 10, and `su` refuses a non-wheel user | Persistence of a lockout across a reboot with autologin (Omarchy's autologin clears it), `sudo` from a Hyprland terminal |
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
 | Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22 and the SnowflakeOS checks (18k–18o), a default 4.0.6 install gives 0 FAIL and 2 WARN, both correct: `accounts.password_hash` and `git.commit_signing` ([open-items.md](open-items.md) §3) | Long-lived installs with more packages |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
