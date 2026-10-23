@@ -7,6 +7,26 @@ description of it. Everything below was read from
 Re-check it when Omarchy changes. Each row names the upstream file, so a
 re-check is a `git diff` of those paths.
 
+**Re-checked 2026-10-23 against `cbd44ba` (41 commits, 226 files later).** Of
+the 58 upstream files this repo cites, the changed ones are
+`bin/omarchy-drive-password` (LUKS re-key recovery),
+`install/provisioning/setup-form.sh` (timezone lookup only) and Omarchy's own
+docs. No row in the table below changed. New since `dde0d12`, on the
+development branch only (none of it is in `v4.0.6` or `v4.5.0-rc1`):
+
+- `bin/omarchy-kernel set <kernel>` writes `BOOT_ORDER` into
+  `/etc/default/limine` and rebuilds the menu, so it is the upstream way to
+  make `linux-hardened` the default (D-02). The `kernel` role accepts that
+  switch since 2026-10-23 (D-02 follow-up in open-decisions.md).
+- `bin/omarchy-apply-pacman` writes `pacman.conf` and the mirrorlist from the
+  channel templates plus regional `Server =` lines placed first. The only
+  region is `cn`, and all six of its URLs are `https://`.
+- `etc/NetworkManager/conf.d/omarchy-connectivity.conf`: the connectivity
+  check fetches `http://ping.omacom.io/nm-check.txt` over plain HTTP, on
+  purpose (captive portals). Relevant to roadmap #15.
+- `default/systemd/timesyncd.conf.d/10-omarchy.conf`:
+  `FallbackNTP=ntp.omarchy.org time.cloudflare.com`. Relevant to roadmap #22.
+
 | Area | Omarchy default | Source | PRD said | Aegis role |
 |---|---|---|---|---|
 | faillock | `deny=10 unlock_time=120`, set **inline** on the `pam_faillock.so` lines of `/etc/pam.d/system-auth`. `/etc/security/faillock.conf` also sets `deny = 10` | `install/config/increase-lockout-limit.sh`, `etc/security/faillock.conf` | relaxed faillock ✔ | `pam_faillock` |

@@ -1,0 +1,47 @@
+---
+# D-02: the role never changes the default boot entry, and it accepts any
+# default, because making linux-hardened the default is the owner's own step
+# (by hand, or `omarchy-kernel set linux-hardened` on newer Omarchy). It only
+# requires the linux-hardened entry to exist, and reports which entry boots.
+# Split out so tests/container can run it against a planted limine.conf.
+- name: Read the Limine menu
+  ansible.builtin.slurp:
+    src: "{{ aegis_kernel_limine_conf }}"
+  register: aegis_kernel_limine
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: List the kernel entries in menu order
+  ansible.builtin.set_fact:
+    aegis_kernel_menu_ids: >-
+      {{ ((aegis_kernel_limine.content | default('')) | b64decode)
+         | regex_findall('kernel-id=(\S+)') }}
+  when: not ansible_check_mode
+
+- name: Verify linux-hardened has a Limine entry
+  ansible.builtin.assert:
+    that:
+      - aegis_kernel_hardened_package in aegis_kernel_menu_ids
+    fail_msg: >-
+      {{ aegis_kernel_limine_conf }}: no {{ aegis_kernel_hardened_package }} entry;
+      kernel entries in order: {{ aegis_kernel_menu_ids | join(', ') or 'none' }}
+    quiet: true
+  when: aegis_kernel_hardened_install | bool and not ansible_check_mode
+
+- name: Record the kernel finding
+  vars:
+    aegis_default: "{{ (aegis_kernel_menu_ids | default([]) | first) | default('unknown', true) }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'kernel.hardened',
+            'status': 'PASS' if ansible_facts['kernel'] is search('hardened') else 'INFO',
+            'detail': ('running ' ~ ansible_facts['kernel'])
+                      ~ ('; default boot entry: ' ~ aegis_default
+                         if aegis_kernel_hardened_install | bool and not ansible_check_mode else '')
+                      ~ ('; ' ~ aegis_kernel_hardened_package ~ ' is installed as a second Limine entry. '
+                         ~ 'Boot it once from the Limine menu; make it the default yourself only after '
+                         ~ 'a clean boot (D-02)'
+                         if aegis_kernel_hardened_install | bool and ansible_facts['kernel'] is not search('hardened')
+                         else '')}
+         ] }}
