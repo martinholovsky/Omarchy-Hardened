@@ -87,11 +87,14 @@ echo "PASS: aegis-agent: no capabilities, no user namespaces, project dir writab
 echo "--- D-11: a package transaction triggers the drift check"
 guest_root sed -i 's/unlock_time=900/unlock_time=120/' /etc/pam.d/system-auth
 guest_root pacman -S --noconfirm which >/dev/null
-for _ in $(seq 60); do
+# The check took 9m21s on 2026-10-22, over the 5 minutes this once waited.
+# While it runs, Result still says success, so a timeout must fail here.
+for _ in $(seq 240); do
   st=$(guest_root systemctl show -P ActiveState aegis-drift-check.service)
   [[ $st == activating || $st == active ]] || break
   sleep 5
 done
+[[ $st != activating && $st != active ]] || die "drift check still $st after 20 minutes"
 guest_root test -f /etc/systemd/system/aegis-drift-check.service || die "drift-check unit not installed"
 result=$(guest_root systemctl show -P Result aegis-drift-check.service)
 journal=$(guest_root journalctl -t aegis-drift-check -n 5 --no-pager)
@@ -130,6 +133,47 @@ VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
 sleep 6
 [[ $(locked) == 1 ]] || die "the right password did not unlock after a root reset"
 echo "PASS: lock screen locks out after 10 failures ($bytes bytes of records); a root reset unlocks"
+
+echo "--- sudo and su share one lockout; only wheel may su (G2, step 4)"
+# A record is 64 bytes. Measured: one wrong `sudo -S` adds 2 records, one
+# wrong su adds 1. 3 + 4 attempts reach deny=10 only when both are counted.
+# Until the reset below, sudo is locked, so nothing here may use guest_root.
+guest_ssh "cat >/tmp/aegis-pty-auth.py" <"$here/pty-auth.py"
+tally() { guest_ssh "stat -c %s /var/lib/faillock/$user 2>/dev/null || echo 0"; }
+su_self() { guest_ssh "python3 /tmp/aegis-pty-auth.py su -c true $user"; }
+guest_root faillock --user "$user" --reset
+for _ in 1 2 3; do
+  if echo wrong-pw | guest_ssh "sudo -S -k -p '' true" >/dev/null 2>&1; then die "sudo accepted a wrong password"; fi
+done
+after_sudo=$(tally)
+((after_sudo >= 3 * 64 && after_sudo < 640)) || die "3 wrong sudo attempts left $after_sudo bytes of records"
+for _ in 1 2 3 4; do
+  if echo wrong-pw | su_self >/dev/null; then die "su accepted a wrong password"; fi
+done
+after_su=$(tally)
+((after_su >= after_sudo + 4 * 64 && after_su >= 640)) ||
+  die "su failures not added to the sudo tally ($after_sudo -> $after_su bytes)"
+if guest_ssh "sudo -S -k -p '' true" <"$state/become-password" >/dev/null 2>&1; then
+  die "sudo accepted the right password after 10 sudo and su failures"
+fi
+if su_self <"$state/become-password" >/dev/null; then die "su accepted the right password while locked"; fi
+# Root has its own tally, so a wheel user can still su to root: that is the
+# positive control for the non-wheel check below, and it lifts the lock.
+guest_ssh "python3 /tmp/aegis-pty-auth.py su -c 'faillock --user $user --reset' root" <"$state/become-password" >/dev/null ||
+  die "a wheel user could not su to root with the right password"
+[[ $(tally) == 0 ]] || die "the tally was not reset through su"
+echo "PASS: sudo ($after_sudo bytes) and su (+$((after_su - after_sudo))) fill one tally; at 10 both refuse the right password"
+
+nowheel=aegis-nowheel
+guest_root sh -c "id -u $nowheel >/dev/null 2>&1 || useradd -m $nowheel"
+if out=$(cat "$state/become-password" "$state/become-password" |
+  guest_ssh "sudo -S -p '' runuser -u $nowheel -- python3 /tmp/aegis-pty-auth.py su -c true root"); then
+  die "a non-wheel user could su with root's password"
+fi
+grep -q 'Permission denied' <<<"$out" || die "non-wheel su failed for another reason: $out"
+guest_root faillock --user root --reset
+guest_root userdel -r "$nowheel"
+echo "PASS: su refuses a non-wheel user with root's right password (Permission denied)"
 
 echo "--- live values after reboot"
 # vm.mmap_rnd_bits is readable by root only.

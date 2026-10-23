@@ -135,7 +135,12 @@ After the reboot it also checks:
 - `aegis-agent` has no capabilities, cannot create user namespaces, and can
   write to the project
 - a real `pacman -S` triggers the D-11 check, which reports a reverted PAM
-  file without repairing it
+  file without repairing it. The check took 9m21s on 2026-10-22; `run.sh`
+  waits up to 20 minutes and fails if it is still running
+- the lock screen locks out after 10 failures (step 3)
+- `sudo` and `su` fill one faillock tally, and `su` refuses a non-wheel user
+  with root's right password (step 4). `tests/vm/pty-auth.py` drives `su` on
+  a pty in the guest; it reads the password from stdin, never argv
 
 To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
 
@@ -148,4 +153,13 @@ To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
   `run.sh` waits `AEGIS_VM_LUKS_DELAY` seconds (default 45) and types it once.
 - Any successful `sudo` as the test user runs `pam_faillock authsucc` and
   clears that user's tally. `run.sh` reads the tally through one root watcher
-  started before the lock-screen test, never through `sudo` mid-test.
+  started before the lock-screen test, never through `sudo` mid-test. Step 4
+  locks the test user out of `sudo` on purpose and lifts the lock through
+  `su` to root, which has its own tally.
+- **The host must be quiet.** On 2026-10-22, with other VMs and containers
+  loading the host (swap 12.4 of 13.3 GB used at 18:12, 9.3 of 10.2 GB at
+  19:23), run 1 took about 46 minutes (18:13 to 18:59) and the runs lost SSH
+  ("banner exchange" and become-prompt timeouts). On a quiet host (load
+  average about 3 on 12 cores, no other VM running) the whole run took 40
+  minutes on 2026-10-23.
+  `AEGIS_VM_UI=headless` avoids the GUI window's host CPU.

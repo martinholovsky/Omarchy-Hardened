@@ -237,7 +237,7 @@
                        ~ (aegis_sys.weak_hashes | map(attribute='user')
                           | zip(aegis_sys.weak_hashes | map(attribute='algorithm')) | map('join', ': ') | join(', '))
                        ~ ' (login.defs ENCRYPT_METHOD ' ~ (aegis_sys.encrypt_method | default('unset', true))
-                       ~ '); run passwd for each to rehash')
+                       ~ '); run sudo passwd USER for each to rehash')
                       if aegis_sys.weak_hashes
                       else (aegis_sys.hashes_checked | string) ~ ' password hashes checked, all yescrypt/bcrypt/scrypt'}
          ] }}

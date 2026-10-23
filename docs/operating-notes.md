@@ -5,7 +5,7 @@ undo, and what has not been tested yet. The settings are in each role's
 `defaults/main.yml`. The decisions behind them are in
 [open-decisions.md](open-decisions.md).
 
-Last reviewed: 2026-10-22, after the VM run of the decided roles (D-01 to D-11).
+Last reviewed: 2026-10-23, after a full VM run of every role, step 4 included.
 Everything still open is listed in [open-items.md](open-items.md).
 
 ## 1. What has and has not been verified
@@ -13,11 +13,11 @@ Everything still open is listed in [open-items.md](open-items.md).
 | Area | Verified how | Not verified |
 |---|---|---|
 | sysctl values | Applied to a live kernel in CI (`sysctl-apply` job, Ubuntu runner kernel), re-read, re-applied after drift. **VM (2026-10-21):** applied on Omarchy 4.0.6 / `linux-omarchy 7.2.8-9`, all keys present, values still in force after a reboot | Real hardware |
-| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot; the lock screen locks out after 10 failures (it recorded none before the tally directory became 0755) | Persistence of a lockout across a reboot with autologin (Omarchy's autologin clears it), `sudo` from a Hyprland terminal |
+| PAM / faillock | Container test with real `su` logins driven by `expect`, mutation-tested. **VM:** PAM changes applied and still in place after a reboot; the lock screen locks out after 10 failures (it recorded none before the tally directory became 0755); **(2026-10-23)** `sudo` and `su` fill one tally and both refuse the right password at 10, and `su` refuses a non-wheel user | Persistence of a lockout across a reboot with autologin (Omarchy's autologin clears it), `sudo` from a Hyprland terminal |
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
 | Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22 and the SnowflakeOS checks (18k–18o), a default 4.0.6 install gives 0 FAIL and 2 WARN, both correct: `accounts.password_hash` and `git.commit_signing` ([open-items.md](open-items.md) §3) | Long-lived installs with more packages |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
-| Decided roles (D-01 to D-11) | **VM (2026-10-22):** after a reboot, AppArmor is active with 83 profiles, all in complain mode; Limine lists `linux-omarchy` first, then `linux-hardened`; `opensnitchd` runs; `aegis-agent` has no capabilities and cannot create user namespaces; a real `pacman -S` triggers the D-11 check, which reports drift without repairing it. FIDO2, Flatpak, commit signing and Tailscale: container only | Booting `linux-hardened`, FIDO2 and signing keys, a tailnet login ([open-items.md](open-items.md) §1) |
+| Decided roles (D-01 to D-11) | **VM (2026-10-22):** after a reboot, AppArmor is active with 83 profiles, all in complain mode; Limine lists `linux-omarchy` first, then `linux-hardened`; `opensnitchd` runs; `aegis-agent` has no capabilities and cannot create user namespaces; a real `pacman -S` triggers the D-11 check, which reports drift without repairing it. FIDO2, Flatpak, commit signing and Tailscale ran in the VM only in their not-set-up state (INFO, or WARN for signing); their planted-problem paths are tested in the container only | Booting `linux-hardened`, FIDO2 and signing keys, a tailnet login ([open-items.md](open-items.md) §1) |
 
 The VM run (section 6) has been done; real hardware has not. Treat the first
 run on a real machine as a test.
@@ -65,7 +65,7 @@ run on a real machine as a test.
 | What you will notice | Why | How to get the old behaviour |
 |---|---|---|
 | 10 wrong passwords in 15 min lock you out for 15 min (Omarchy: 2 min) | `unlock_time=900` | `aegis_faillock_unlock_time: 120` |
-| The lockout survives a reboot, unless autologin is on (Omarchy's autologin runs `pam_faillock authsucc`, which clears it) | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
+| The lockout survives a reboot, unless autologin is on (Omarchy's autologin runs `pam_faillock authsucc`, which clears it; accepted, D-23) | tally in `/var/lib/faillock` (G1) | `aegis_faillock_dir: /var/run/faillock` |
 | **Root locks too**, after the same 10 failures | `even_deny_root` (D-19) | `aegis_faillock_even_deny_root: false` |
 | `su` refuses users outside `wheel`, and its failures count toward the lockout | `pam_wheel` + `include system-auth` (G2) | `aegis_faillock_su_wheel_only: false`; empty `aegis_faillock_su_files` |
 | LocalSend no longer receives files | ufw rule for 53317 removed | `aegis_firewall_remove_localsend: false` |
@@ -74,7 +74,7 @@ run on a real machine as a test.
 | `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=3`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
 | setuid programs never leave core dumps | `fs.suid_dumpable=0` | Edit `aegis_sysctl_settings` |
 | The kernel panics (and reboots, if `kernel.panic` is set) after 100 oopses since boot | `kernel.oops_limit=100` (D-17) | `aegis_sysctl_oops_limit: null` |
-| An ASan/TSan build may crash at startup (**unverified**) | `vm.mmap_rnd_bits=32` (D-16) | `aegis_sysctl_mmap_rnd_max: false` first, before anything else |
+| An ASan/TSan build from an older toolchain may crash at startup (gcc 16 and clang 23 builds ran fine in the VM, D-16) | `vm.mmap_rnd_bits=32` (D-16) | `aegis_sysctl_mmap_rnd_max: false` first, before anything else |
 | After every package install or update, a check runs in the background and may notify "Aegis: hardening drift" | D-11 pacman hook (`/etc/pacman.d/hooks/zz-aegis-drift-check.hook`) | `aegis_drift_check_enabled: false` |
 | A second kernel, `linux-hardened`, appears in the Limine menu (not the default) | D-02 | `aegis_kernel_hardened_install: false` (then `pacman -R linux-hardened`) |
 | After the next reboot AppArmor is active; profiles only log (`journalctl -k \| grep apparmor`) | D-05 `lsm=` drop-in | `aegis_apparmor_enabled: false`, then reboot |
@@ -172,8 +172,8 @@ A VM run passes when the following hold. Steps 1, 2, 5 and 6 are automated by
 `tests/vm/run.sh` and passed. Step 3 is automated too and passed
 (2026-10-22): the lock screen refuses the right password after 10 failures
 until a root reset. Its reboot and 15-minute parts are not automated, and
-with autologin on, a reboot clears the lockout (see section 3). Step 4 is covered in the container test, not yet in
-the VM.
+with autologin on, a reboot clears the lockout (see section 3). Step 4 is scripted in `tests/vm/run.sh` and passed on its own;
+a full run through it is still open (docs/open-items.md).
 
 1. Take a snapshot `pre-aegis`, then apply the playbook.
 2. Reboot, then check `sysctl kernel.sysrq vm.mmap_rnd_bits kernel.oops_limit`.

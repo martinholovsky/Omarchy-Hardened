@@ -74,7 +74,7 @@ SemVer once 1.0 ships.
 
 - `docs/operating-notes.md`: what a run changes for the user, one-way
   settings and rollback, being locked out, verified vs untested areas, and a
-  VirtualBox VM test plan (community-reported settings, not yet tried).
+  VirtualBox VM test plan.
 
 - Research: a SnowflakeOS review (`docs/research/snowflakeos-review.md`,
   `snowflakeos-modules@0a5e0a3`). It has almost no hardening of its own. Five
@@ -143,6 +143,19 @@ SemVer once 1.0 ships.
   AppArmor count is 83 complain-mode profiles, not 161; the drift after
   `omarchy-update` is now reported by D-11; roadmap #12 and #18 are
   implemented.
+- `docs/open-items.md`: FIDO2 enrolment corrected. `omarchy-setup-security-fido2`
+  registers one key, and the second goes in with `pamu2fcfg -n`. The VM's lack of
+  FIDO2 passthrough is stated as untried, not as needing the Extension Pack.
+- Decisions: D-23 accepts that autologin clears the faillock tally at boot
+  (the disk password is the same password); D-20's `empower` FAIL is
+  confirmed. Stale statements corrected: the README intro (AppArmor, Flatpak
+  and agent containment are implemented), D-13 (`overlay_network` exists) and
+  D-14 (`even_deny_root` was decided in D-19).
+- Roadmap: the owner approved no Tier 2 or Tier 3 item until the first run on
+  real hardware has passed (2026-10-23). `docs/open-items.md`: the container
+  test times are re-measured from CI (15m53s and 17m55s, not 21m).
+- VM test: a full run from `pre-aegis-updated` passed on a quiet host
+  (2026-10-23), step 4 included, so that open item is closed.
 
 ### Fixed (found by the VM and container tests)
 
@@ -162,6 +175,19 @@ SemVer once 1.0 ships.
   `sddm-autologin` runs `pam_faillock authsucc`, which clears it.
 - `tests/container/run.sh` requires the final `N/N checks passed` line. It had
   once reported exit 0 after a FAIL.
+- VM test: step 4 is scripted. `sudo` and `su` fill one faillock tally, and
+  `su` refuses a non-wheel user (`tests/vm/pty-auth.py` drives `su` on a pty).
+- VM test: the D-11 wait was 5 minutes, the check took 9m21s, and the test then
+  read the unit's default `Result=success` and reported a false failure. It now
+  waits up to 20 minutes and fails if the check is still running.
+- D-16: ASan and TSan builds (gcc 16, clang 23.1.3) run under
+  `vm.mmap_rnd_bits=32`, measured in the VM.
+- VM test: no more "junk after the JSON data" warnings. Arch's sudo PAM stack
+  runs `pam_systemd`, which prints an OSC 3008 sequence on the pty when the
+  session ends; the VM inventory now sets `ansible_ssh_use_tty: false`.
+- The `accounts.password_hash` finding says `sudo passwd USER`: plain `passwd`
+  refuses to keep the same password, and `sudo passwd` rehashes with yescrypt
+  (measured in the VM).
 
 - `pacman_integrity`:
   - A file with several `-Qkk` reasons is listed and counted once. It used to

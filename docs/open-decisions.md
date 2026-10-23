@@ -203,7 +203,7 @@ This follows from sshd's design and has not been tested here. SSH brute-force
 protection therefore comes from key-only auth, `MaxAuthTries` and
 `PerSourcePenalties` (proposed `sshd` role), and from keeping port 22 off the
 LAN entirely (the `firewall` role removes `ufw limit 22/tcp`; `overlay_network`
-is planned).
+allows SSH on `tailscale0` only, on opt-in, D-10).
 
 ## D-14 — faillock tally persistence and `su` (Decided 2026-10-21)
 
@@ -217,9 +217,10 @@ is planned).
   were no records after 3 failures; at 0755 there were 3 records. After 10
   failures the right password is refused until a root reset.
 - `su`: **wheel-only + faillock**. `su`/`su-l` authenticate through
-  `system-auth`, and `pam_wheel use_uid` is enabled. Open follow-up: whether
-  to set `even_deny_root` (roadmap #6) so that repeated `su` failures lock root
-  as well. That also locks root's console login for `unlock_time`.
+  `system-auth`, and `pam_wheel use_uid` is enabled. Whether repeated `su`
+  failures also lock root was decided in D-19: they do (`even_deny_root`).
+  That also locks root's console login for `root_unlock_time`.
+- Autologin clearing the tally at boot is accepted: D-23.
 
 ## Decisions from roadmap Tier 1 (opened 2026-10-21)
 
@@ -240,9 +241,12 @@ nothing on a single-user laptop. Implemented as `aegis_sysctl_sysrq: 16`, so the
 `vm.mmap_rnd_bits` 28 → 32 and `vm.mmap_rnd_compat_bits` 8 → 16 (Arch config:
 min 28/8, max 32/16, verified). Options: (a) raise on x86_64; (b) leave.
 **Recommendation: (a)**, with one caveat for a developer machine: after Ubuntu
-raised to 32 bits, older ASan/TSan builds crashed. Current toolchains are
-believed fixed, but this is unverified here. If a sanitizer crashes, lowering
-this is the first thing to try (`aegis_sysctl_mmap_rnd_max: false`).
+raised to 32 bits, older ASan/TSan builds crashed. Measured on the VM
+(2026-10-22, `vm.mmap_rnd_bits=32`, `mmap_rnd_compat_bits=16`, kernel
+7.2.8-9-omarchy): gcc 16 and clang 23.1.3 ASan and TSan binaries ran 5 of 5
+times each, and a planted heap overflow and data race were both reported.
+Older toolchains were not tried. If a sanitizer crashes, lowering this is the
+first thing to try (`aegis_sysctl_mmap_rnd_max: false`).
 
 ### D-17 — `oops_limit` / `warn_limit` (Decided: oops_limit=100, warn_limit unset)
 
@@ -297,6 +301,9 @@ systemd 262 ships `/usr/share/polkit-1/rules.d/empower.rules`, which grants
 every polkit action to members of `empower`. `run0 --empower` adds a member for
 one command only, so a permanent member is root-equivalent like `docker`. The
 rule file itself is listed as known in `aegis_audit_polkit_known`.
+**Confirmed (owner, 2026-10-22):** `empower` stays at FAIL, for the same
+reason as `docker`. A deliberate member is recorded by adding
+`groups.empower` to `aegis_audit_skip`.
 
 ### D-21 — severity of package-file drift (Decided: FAIL since 2026-10-21)
 
@@ -358,3 +365,36 @@ D-21 moves to FAIL once a default VM install shows no unaccepted drift.
 permission drift and 0 content drift, with 6 changes accepted. The default is
 now `aegis_integrity_drift_severity: FAIL`. The container test keeps WARN,
 because its image has drift a real install does not.
+
+## D-23 — autologin clears the faillock tally at boot (Decided 2026-10-22: accept)
+
+Omarchy's `/etc/pam.d/sddm-autologin` ends with `pam_faillock.so authsucc`
+(config read on 4.0.6). With autologin on, the successful autologin after a
+reboot resets the tally, so a reboot ends a lockout (D-14). The reboot itself
+was not tested.
+
+Options: (a) accept it and record why; (b) remove `authsucc` from
+`sddm-autologin`, one more Omarchy file the role patches and that
+`omarchy-update` can rewrite, and a lockout that then survives a reboot for
+the owner too; (c) audit only, an INFO finding while autologin is on.
+
+**Decided (owner, 2026-10-22): (a), as recommended.** Reasoning:
+
+- Omarchy sets up autologin only on an encrypted disk, and
+  `login.autologin_unencrypted` (roadmap 18n) WARNs if that ever changes. So
+  a reboot stops at the LUKS prompt.
+- The installer uses **one password for the user, root and LUKS**
+  (`tests/vm/README.md` §3). Whoever gets past the LUKS prompt already has the
+  password the lockout protects, so the reset gains them nothing.
+- **Residual risk, not changed by any option here:** the LUKS prompt has no
+  faillock. The same password can be guessed there, slowed only by the key
+  derivation and the reboots. The lock-screen lockout does not protect a
+  powered-off or rebooted machine; a strong password does.
+
+Revisit if Omarchy enables autologin without encryption, or if TPM or other
+passwordless LUKS unlock becomes part of the default install. Omarchy at
+`dde0d12` ships none: across its 5184 files, `systemd-cryptenroll`,
+`tpm2-device`, `tpm2-pcrs` and `clevis` appear only in a test fixture
+(`test/shell.d/luks-rekey-journal-test.sh`, a previous owner's token). Its only
+boot-time auto-unlock is the staged install key, which `luks_auto_unlock_drop`
+(`bin/omarchy-provision-owner:1044`) removes after the re-key.
