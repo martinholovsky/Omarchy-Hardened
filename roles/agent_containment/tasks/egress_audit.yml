@@ -1,0 +1,61 @@
+---
+# D-26: summarise what agents reached through the egress proxy. The proxies
+# are the user's rootless containers, so their logs are read as that user.
+# tests/container passes aegis_agent_proxy_log_lines instead.
+- name: Look up the agent user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ aegis_agent_user }}"
+  when: aegis_agent_proxy_log_lines is not defined
+
+- name: Read the proxies' logs
+  ansible.builtin.command:
+    argv: [podman, logs, --since, "{{ aegis_agent_egress_window_days * 24 }}h", "aegis-agent-proxy-{{ item }}"]
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts['getent_passwd'][aegis_agent_user][1] }}"
+  become: true
+  become_user: "{{ aegis_agent_user }}"
+  loop: [report, enforce]
+  register: aegis_agent_proxy_logs
+  changed_when: false
+  failed_when: false # no proxy container yet: no agent has run with a proxy
+  check_mode: false
+  when: aegis_agent_proxy_log_lines is not defined
+
+- name: Summarise the proxies' decisions
+  vars:
+    # Smokescreen logs to stderr; podman logs hands both streams back.
+    aegis_lines: >-
+      {{ aegis_agent_proxy_log_lines if aegis_agent_proxy_log_lines is defined
+         else (aegis_agent_proxy_logs.results | map(attribute='stdout_lines') | flatten
+               + aegis_agent_proxy_logs.results | map(attribute='stderr_lines') | flatten) }}
+  aegis_agent_egress_audit:
+    lines: "{{ aegis_lines }}"
+    allowlist: "{{ aegis_agent_egress_allowlist }}"
+  register: aegis_agent_egress_summary
+
+- name: Record the agent egress finding
+  vars:
+    aegis_unlisted: >-
+      {{ aegis_agent_egress_summary.unlisted[:10] | map(attribute='host')
+         | zip(aegis_agent_egress_summary.unlisted[:10] | map(attribute='requests')) | map('join', ' x') | join(', ') }}
+    aegis_denied: >-
+      {{ aegis_agent_egress_summary.denied[:10] | map(attribute='host')
+         | zip(aegis_agent_egress_summary.denied[:10] | map(attribute='denied')) | map('join', ' x') | join(', ') }}
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'agent.egress', 'status': 'INFO',
+            'detail': ('agent egress mode ' ~ aegis_agent_egress ~ '; ')
+                      ~ ((aegis_agent_egress_summary.requests | string) ~ ' request(s) to '
+                         ~ (aegis_agent_egress_summary.hosts | length | string)
+                         ~ ' host(s) through the proxy in the last '
+                         ~ aegis_agent_egress_window_days ~ ' days'
+                         ~ ('; outside the allowlist: ' ~ aegis_unlisted if aegis_agent_egress_summary.unlisted else
+                            '; all on the allowlist')
+                         ~ ('; refused in enforce mode: ' ~ aegis_denied if aegis_agent_egress_summary.denied else '')
+                         if aegis_agent_egress_summary.requests > 0
+                         else 'no agent traffic through the proxy recorded')
+                      ~ ('. Add trusted hosts to aegis_agent_egress_allowlist (D-26)'
+                         if aegis_agent_egress_summary.unlisted else '')}
+         ] }}

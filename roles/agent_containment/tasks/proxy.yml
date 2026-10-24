@@ -1,0 +1,93 @@
+---
+# D-26: install the agent egress proxy (Smokescreen) and its config. Split out
+# so tests/container can run it without podman.
+- name: Map the CPU architecture to Smokescreen's release name
+  vars:
+    aegis_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_facts['architecture'], '') }}"
+  ansible.builtin.set_fact:
+    aegis_agent_proxy_arch: "{{ aegis_arch }}"
+    aegis_agent_proxy_tarball: "smokescreen_{{ aegis_agent_proxy_version }}_linux_{{ aegis_arch }}.tar.gz"
+
+- name: Refuse an architecture Smokescreen publishes no binary for
+  ansible.builtin.assert:
+    that: aegis_agent_proxy_arch in aegis_agent_proxy_sha256
+    fail_msg: >-
+      Smokescreen {{ aegis_agent_proxy_version }} has no release binary for
+      {{ ansible_facts['architecture'] }}; set aegis_agent_egress: off
+    quiet: true
+
+- name: Create the proxy directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [/var/cache/aegis, "{{ aegis_agent_proxy_dir }}", "{{ aegis_agent_proxy_config_dir }}"]
+
+- name: Download Smokescreen (checked against the pinned SHA-256)
+  ansible.builtin.get_url:
+    url: "{{ aegis_release }}/{{ aegis_agent_proxy_version }}/{{ aegis_agent_proxy_tarball }}"
+    dest: "/var/cache/aegis/{{ aegis_agent_proxy_tarball }}"
+    checksum: "sha256:{{ aegis_agent_proxy_sha256[aegis_agent_proxy_arch] }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    aegis_release: https://github.com/stripe/smokescreen/releases/download
+
+- name: Extract only the binary
+  ansible.builtin.unarchive:
+    src: "/var/cache/aegis/{{ aegis_agent_proxy_tarball }}"
+    dest: "{{ aegis_agent_proxy_dir }}"
+    remote_src: true
+    include: ["{{ aegis_agent_proxy_tarball | replace('.tar.gz', '') }}/smokescreen"]
+    extra_opts: [--strip-components=1, --no-same-owner]
+  when: not ansible_check_mode
+
+- name: Install the proxy image recipe
+  ansible.builtin.copy:
+    src: Containerfile.agent-proxy
+    dest: "{{ aegis_agent_proxy_dir }}/Containerfile"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write the proxy config
+  ansible.builtin.template:
+    src: agent-proxy-config.yaml.j2
+    dest: "{{ aegis_agent_proxy_config_dir }}/config.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write the allowlist for each mode
+  ansible.builtin.template:
+    src: agent-proxy-acl.yaml.j2
+    dest: "{{ aegis_agent_proxy_config_dir }}/acl-{{ item }}.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [report, enforce]
+
+- name: Read the proxy binary back
+  ansible.builtin.stat:
+    path: "{{ aegis_agent_proxy_dir }}/smokescreen"
+  register: aegis_agent_proxy_bin
+
+- name: Read the allowlists back
+  ansible.builtin.slurp:
+    src: "{{ aegis_agent_proxy_config_dir }}/acl-{{ item }}.yaml"
+  register: aegis_agent_proxy_acl
+  loop: [report, enforce]
+
+- name: Verify the binary and that each allowlist carries its own action
+  ansible.builtin.assert:
+    that:
+      - aegis_agent_proxy_bin.stat.exists and aegis_agent_proxy_bin.stat.executable
+      - aegis_agent_proxy_bin.stat.pw_name == 'root'
+      - (aegis_agent_proxy_acl.results[0].content | b64decode) is search('(?m)^  action: report$')
+      - (aegis_agent_proxy_acl.results[1].content | b64decode) is search('(?m)^  action: enforce$')
+    fail_msg: "agent proxy files in {{ aegis_agent_proxy_dir }} or {{ aegis_agent_proxy_config_dir }} differ"
+    quiet: true
+  when: not ansible_check_mode

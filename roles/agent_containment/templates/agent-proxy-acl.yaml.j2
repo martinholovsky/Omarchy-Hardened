@@ -1,0 +1,13 @@
+---
+# {{ ansible_managed }}
+# D-26: {{ item }} mode. report allows every host and logs those outside the
+# list; enforce allows only the list. Edit aegis_agent_egress_allowlist.
+version: v1
+services: []
+default:
+  project: aegis-agent
+  action: {{ item }}
+  allowed_domains:
+{% for domain in aegis_agent_egress_allowlist %}
+    - {{ domain | to_json }}
+{% endfor %}

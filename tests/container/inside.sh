@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=56
+checks_total=60
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -541,6 +541,62 @@ ansible-playbook tests/container/egress.yml -e aegis_egress_state_file=/tmp/egre
   -e '{"aegis_egress_known": ["/opt/beacon/*"]}' >/dev/null || fail "egress audit run with a known list failed"
 expect_finding egress.unknown_programs PASS
 pass "a program in aegis_egress_known is no longer reported"
+
+echo "--- D-26: the agent egress proxy (Smokescreen) is installed verified and filters as configured"
+ansible-playbook tests/container/agent-egress.yml >/tmp/proxy-install.log 2>&1 \
+  || { cat /tmp/proxy-install.log; fail "agent proxy install failed"; }
+proxy_bin=/usr/local/lib/aegis/agent-proxy/smokescreen
+[[ -x $proxy_bin && $(stat -c %U "$proxy_bin") == root ]] || fail "smokescreen binary not installed root-owned and executable"
+grep -qx '  action: enforce' /etc/aegis/agent-proxy/acl-enforce.yaml || fail "enforce allowlist has the wrong action"
+pass "proxy installed from the checksum-verified release, with one allowlist per mode"
+# Control for the checksum: a wrong pin must stop the run before anything is used.
+rm -f /var/cache/aegis/smokescreen_*.tar.gz
+if ansible-playbook tests/container/agent-egress.yml \
+  -e '{"aegis_agent_proxy_sha256": {"amd64": "0000000000000000000000000000000000000000000000000000000000000000", "arm64": "0000000000000000000000000000000000000000000000000000000000000000"}}' \
+  >/tmp/proxy-badsum.log 2>&1; then
+  fail "a wrong pinned checksum did not stop the install"
+fi
+grep -qi 'checksum' /tmp/proxy-badsum.log || { cat /tmp/proxy-badsum.log; fail "install failed for another reason than the checksum"; }
+pass "a wrong pinned checksum stops the install"
+# The binary is static, so it runs here without podman. Same config as the
+# wrapper uses, on loopback. Unlisted host: example.org; private: metadata IP.
+proxy_try() { # mode url -> HTTP code of the CONNECT (or of the GET for http://)
+  local mode=$1 url=$2
+  "$proxy_bin" --config-file /etc/aegis/agent-proxy/config.yaml --listen-ip 127.0.0.1 --listen-port 4750 \
+    --egress-acl-file "/etc/aegis/agent-proxy/acl-$mode.yaml" >>"/tmp/proxy-$mode.log" 2>&1 &
+  local pid=$!
+  for _ in $(seq 20); do ss -ltn | grep -q '127.0.0.1:4750 ' && break; sleep 0.5; done
+  if [[ $url == https://* ]]; then
+    curl -s -o /dev/null -m 20 -w '%{http_connect}' --proxy http://127.0.0.1:4750 "$url" || true
+  else
+    curl -s -o /dev/null -m 20 -w '%{http_code}' --proxy http://127.0.0.1:4750 "$url" || true
+  fi
+  kill "$pid"; wait "$pid" 2>/dev/null || true
+}
+listed=$(proxy_try enforce https://github.com/)
+unlisted=$(proxy_try enforce https://example.org/)
+metadata=$(proxy_try enforce http://169.254.169.254/)
+report_unlisted=$(proxy_try report https://example.org/)
+[[ $listed == 200 ]] || { cat /tmp/proxy-enforce.log; fail "enforce: github.com (listed) got $listed"; }
+[[ $unlisted != 200 && $unlisted != 000 ]] || { cat /tmp/proxy-enforce.log; fail "enforce: example.org (unlisted) got $unlisted"; }
+[[ $metadata != 200 ]] || fail "the metadata address was reachable through the proxy"
+[[ $report_unlisted == 200 ]] || { cat /tmp/proxy-report.log; fail "report: example.org got $report_unlisted"; }
+pass "enforce allows github.com ($listed), refuses example.org ($unlisted) and 169.254.169.254 ($metadata); report allows example.org"
+# The audit reads exactly these log lines (plus noise it must skip).
+python3 -I - /tmp/proxy-enforce.log /tmp/proxy-report.log >/tmp/proxy-lines.json <<'PY'
+import json, sys
+lines = []
+for path in sys.argv[1:]:
+    lines += open(path, encoding="utf-8", errors="replace").read().splitlines()
+lines += ["not json", '{"requested_host": "bad host!"}', "{broken"]
+print(json.dumps({"aegis_agent_proxy_log_lines": lines}))
+PY
+ansible-playbook tests/container/agent-egress.yml -e audit_only=true -e @/tmp/proxy-lines.json >/dev/null \
+  || fail "agent egress audit run failed"
+expect_finding agent.egress INFO
+grep -q 'outside the allowlist: example.org' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "unlisted host not reported"; }
+grep -q 'refused in enforce mode: example.org' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "enforce refusal not reported"; }
+pass "the audit lists example.org as outside the allowlist and refused in enforce mode"
 
 echo "--- D-02: the kernel role accepts either default, but needs the linux-hardened entry"
 # Synthetic menus: the role reads only the kernel-id= words, in order.

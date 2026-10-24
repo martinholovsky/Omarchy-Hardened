@@ -14,3 +14,33 @@ aegis_agent_network: pasta # "none" for no network at all
 aegis_agent_memory: 8g
 aegis_agent_pids_limit: 2048
 aegis_agent_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"
+
+# D-26 (decided 2026-10-24): agent egress through Smokescreen (Go, MIT,
+# github.com/stripe/smokescreen), an allowlisting HTTP(S) proxy.
+#   report  - everything allowed; hosts outside the allowlist are logged (default)
+#   enforce - the agent is on an internal network and reaches only the allowlist
+#   off     - the old behaviour: direct network (aegis_agent_network), no proxy
+# Per run: aegis-agent --egress report|enforce|off. Smokescreen also refuses
+# private and internal addresses (LAN, router, metadata) through the proxy.
+aegis_agent_egress: report
+aegis_agent_egress_allowlist:
+  - api.anthropic.com
+  - github.com
+  - api.github.com
+  - codeload.github.com
+  - objects.githubusercontent.com
+  - pypi.org
+  - files.pythonhosted.org
+  - registry.npmjs.org
+# Release binary, verified against the SHA-256 published in the release's
+# SHA256SUMS; its GitHub build-provenance attestation (SLSA v1, release.yml
+# in stripe/smokescreen) was verified when pinned (2026-10-24). The project
+# publishes no support period; v0.1.0 is its first tagged release (2026-09-21).
+aegis_agent_proxy_version: v0.1.0
+aegis_agent_proxy_sha256:
+  amd64: 4e1e447449e3cc653dae956208588722b5c8fe8ce894f633adc756a851d1ec46
+  arm64: f15ddd0dc2b2cbc6d7318f441928939eb9bedfab2a1881508af3096a1e24b7c9
+aegis_agent_proxy_dir: /usr/local/lib/aegis/agent-proxy
+aegis_agent_proxy_config_dir: /etc/aegis/agent-proxy
+aegis_agent_proxy_port: 4750
+aegis_agent_egress_window_days: 7

@@ -203,6 +203,19 @@ exposure of at most 3.0, lets the packaged `curl` and an unowned copy of it in
 expects the audit to name the copy only, with the marker in neither the
 collector's state file nor its journal.
 
+## 9. Agent egress (D-26)
+
+```bash
+tests/vm/agent-egress.sh   # right after tests/vm/run.sh, with the VM still running
+```
+
+It runs `curl` in `aegis-agent` containers (the curl project's image, by
+digest). In `report` mode `github.com`, the unlisted `example.org` and a
+direct connection that ignores the proxy all get through; in `enforce` mode
+`github.com` gets through, the proxy refuses `example.org`, and there is no
+direct route. It also checks the proxy containers' hardening and that the
+audit (`agent.egress`) names `example.org` as unlisted and refused.
+
 ## Traps
 
 - **`ufw limit 22/tcp` drops the 6th connection within 30 s.** A tight
