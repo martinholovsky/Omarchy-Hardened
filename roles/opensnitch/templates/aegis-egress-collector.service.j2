@@ -1,0 +1,58 @@
+# {{ ansible_managed }}
+# D-25: records which program connected out to where, from opensnitchd's
+# remote logger (UDP, 127.0.0.1). Keeps no command lines. Check the sandbox
+# with: systemd-analyze security aegis-egress-collector.service
+[Unit]
+Description=Aegis egress collector (D-25)
+Before=opensnitchd.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -I {{ aegis_egress_collector_path }} --port {{ aegis_egress_collector_port }} --state-dir /var/lib/aegis-egress
+Restart=on-failure
+RestartSec=5s
+
+DynamicUser=yes
+StateDirectory=aegis-egress
+StateDirectoryMode=0700
+UMask=0077
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+DevicePolicy=closed
+PrivateIPC=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+# No PrivateUsers: inside a user namespace /proc/net/udp shows root's
+# sockets as uid 65534, and the sender check needs to see uid 0.
+ProtectProc=invisible
+ProcSubset=pid
+KeyringMode=private
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+MemoryMax=64M
+TasksMax=4
+LimitNOFILE=64
+
+[Install]
+WantedBy=multi-user.target

@@ -15,4 +15,26 @@ dev = [
   "ansible-core==2.21.5",
   "ansible-lint==26.10.1",
   "yamllint==1.38.0",
+  # The egress collector (roles/opensnitch/files) is checked like application
+  # code: every ruff rule and strict mypy. Each pinned to a release at least
+  # two weeks old when added (2026-10-24).
+  "mypy==2.4.0",
+  "ruff==0.17.0",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+# D203/D213 conflict with D211/D212; COM812/ISC001 conflict with the formatter.
+ignore = ["D203", "D213", "COM812", "ISC001"]
+
+[tool.ruff.lint.per-file-ignores]
+# unittest style, fixture data and private-function access are the point here.
+"tests/collector/*" = ["D", "PT", "S311", "SLF001", "PLR2004", "ANN401", "INP001", "CPY001", "FBT001"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"

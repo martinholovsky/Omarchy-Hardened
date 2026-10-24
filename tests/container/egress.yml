@@ -1,0 +1,19 @@
+---
+# Container test: the D-25 egress audit against a state file the real
+# collector wrote in inside.sh. No systemd here, so the service check is off.
+- name: Audit a planted egress table
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  vars:
+    aegis_egress_check_service: false
+  tasks:
+    - name: Run the OpenSnitch role's egress audit
+      ansible.builtin.include_role:
+        name: opensnitch
+        tasks_from: egress_audit.yml
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report

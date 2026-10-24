@@ -506,7 +506,21 @@ runs as that user. OpenSnitch attributes each connection to an executable.
 **Decided:** enable an `opensnitchd` logger, and have the audit WARN on
 executables that connected out, are owned by no pacman package, and are not
 in `aegis_egress_known`. Not caught: a malicious script run by a
-package-owned interpreter (`python`, `node`). Implementation: open-items §2.
+package-owned interpreter (`python`, `node`).
+
+**How it is built (2026-10-24).** Every OpenSnitch log format carries the
+program's command line (v1.7.2 `daemon/log/formats`), which can hold
+credentials, so the journal was rejected: the owner chose a local collector.
+opensnitchd's `remote` logger sends CSV over UDP to `127.0.0.1:7811` (it
+supports only UDP or TCP, and its CSV has no line ending, so UDP). The
+collector, `aegis-egress-collector` (Python, standard library only), accepts
+a datagram only from a loopback socket owned by root (checked in
+`/proc/net/udp`), validates the first nine fields, never reads the command
+line or working directory, and keeps program path, destination, first and
+last seen, for 30 days, in a 0600 file. It runs under a systemd sandbox
+(`DynamicUser`, no capabilities, loopback only, syscall filter, 64 MB).
+A rejected sender is logged as `egress_sender_reject` and the audit WARNs on
+it (`egress.collector_sender`).
 
 ## D-26 — Outgoing traffic of agent containers (Decided 2026-10-24)
 

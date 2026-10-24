@@ -7,6 +7,16 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- `opensnitch` (D-25): `aegis-egress-collector`, a sandboxed local service
+  that receives opensnitchd's connection log over UDP on 127.0.0.1, accepts
+  it only from root's socket, and keeps program path and destination for 30
+  days; command lines are never read. The audit WARNs on programs that
+  connected out and belong to no package (`egress.unknown_programs`) and on
+  datagrams from any other sender (`egress.collector_sender`). The collector
+  is checked by every ruff rule, strict mypy and 27 unit tests (fuzzing and
+  four mutants killed) in pre-commit; four container checks (56 in all) and
+  `tests/vm/egress.sh` test it end to end.
+
 - Project scaffold: `omarchy-harden.yml`, one role per PRD item, pinned
   collections (`ansible.posix` 2.2.2, `community.general` 13.5.0) and locked
   dev tooling (ansible-core 2.21.5, ansible-lint 26.10.1, yamllint 1.38.0).

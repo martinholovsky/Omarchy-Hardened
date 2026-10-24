@@ -191,6 +191,18 @@ netfilter mode and that `network.overlay` WARNs (D-24). As the control, in
 which the mode is set back to `on`. It also checks the SSH findings on the
 harness's key-only sshd.
 
+## 8. Egress report (D-25)
+
+```bash
+tests/vm/egress.sh   # right after tests/vm/run.sh, with the VM still running
+```
+
+It checks that `aegis-egress-collector` runs with a `systemd-analyze security`
+exposure of at most 3.0, lets the packaged `curl` and an unowned copy of it in
+`~/.local/bin` connect out (the copy with a marker on its command line), and
+expects the audit to name the copy only, with the marker in neither the
+collector's state file nor its journal.
+
 ## Traps
 
 - **`ufw limit 22/tcp` drops the 6th connection within 30 s.** A tight

@@ -1,0 +1,64 @@
+---
+# D-25: report programs that connected out but belong to no package.
+# Split out so tests/container can run it against a planted state file.
+- name: Read the collector state
+  ansible.builtin.command:
+    argv: [systemctl, is-active, aegis-egress-collector.service]
+  register: aegis_egress_active
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: aegis_egress_report_enabled | bool and aegis_egress_check_service | default(true) | bool
+
+- name: List programs that connected out but no package owns
+  aegis_egress_audit:
+    state_file: "{{ aegis_egress_state_file }}"
+    known: "{{ aegis_egress_known }}"
+    window_days: "{{ aegis_egress_window_days }}"
+  register: aegis_egress
+  when: aegis_egress_report_enabled | bool
+
+- name: Record the egress findings
+  vars:
+    aegis_running: >-
+      {{ not (aegis_egress_check_service | default(true) | bool)
+         or (aegis_egress_active.stdout | default('')) == 'active' }}
+    aegis_items: "{{ aegis_egress.unknown | default([]) }}"
+    aegis_list: >-
+      {{ aegis_items | map(attribute='path')
+         | zip(aegis_items | map(attribute='dests') | map('join', ' ')) | map('join', ' -> ') | join('; ') }}
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {%- set out = [] -%}
+      {%- if not aegis_egress_report_enabled | bool -%}
+        {%- set _ = out.append({'id': 'egress.unknown_programs', 'status': 'INFO',
+              'detail': 'egress reporting is off (aegis_egress_report_enabled: false)'}) -%}
+      {%- elif not aegis_running | bool -%}
+        {%- set _ = out.append({'id': 'egress.unknown_programs', 'status': 'WARN',
+              'detail': 'aegis-egress-collector is ' ~ (aegis_egress_active.stdout | default('unknown'))
+                        ~ ', so outgoing connections are not being recorded (D-25)'}) -%}
+      {%- elif not aegis_egress.present | default(false) -%}
+        {%- set _ = out.append({'id': 'egress.unknown_programs', 'status': 'INFO',
+              'detail': 'no connections recorded yet'}) -%}
+      {%- elif aegis_egress.error -%}
+        {%- set _ = out.append({'id': 'egress.unknown_programs', 'status': 'WARN',
+              'detail': aegis_egress.error}) -%}
+      {%- else -%}
+        {%- set _ = out.append({'id': 'egress.unknown_programs',
+              'status': 'WARN' if aegis_items or aegis_egress.unverified else 'PASS',
+              'detail': ((aegis_items | length | string) ~ ' program(s) no package owns connected out in the last '
+                         ~ aegis_egress_window_days ~ ' days: ' ~ aegis_list
+                         ~ '. If you trust one, add it to aegis_egress_known'
+                         if aegis_items
+                         else (aegis_egress.programs | string) ~ ' programs connected out in the last '
+                              ~ aegis_egress_window_days ~ ' days, all owned by a package or in aegis_egress_known')
+                        ~ ('; ' ~ (aegis_egress.unverified | length | string)
+                           ~ ' not checked (pacman failed or timed out)' if aegis_egress.unverified else '')}) -%}
+        {%- set _ = out.append({'id': 'egress.collector_sender',
+              'status': 'WARN' if aegis_egress.rejected_sender > 0 else 'PASS',
+              'detail': (aegis_egress.rejected_sender | string)
+                        ~ ' datagram(s) reached the collector from something other than opensnitchd'
+                        ~ (' (another local program wrote to its port; see journalctl -u aegis-egress-collector)'
+                           if aegis_egress.rejected_sender > 0 else '')}) -%}
+      {%- endif -%}
+      {{ (aegis_findings | default([])) + out }}

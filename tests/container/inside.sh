@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=52
+checks_total=56
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -498,6 +498,49 @@ printf 'no-touch-required sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9
 ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run with an sk key failed"
 expect_finding ssh.authorized_keys PASS
 pass "an sk- key behind key options passes"
+
+echo "--- D-25: the egress collector keeps program and destination, never the command line"
+python3 -I -m unittest discover -s tests/collector >/tmp/collector-tests.log 2>&1 \
+  || { cat /tmp/collector-tests.log; fail "collector unit tests failed on Arch's python3"; }
+pass "collector unit tests pass on $(python3 --version)"
+install -d -m 700 /tmp/egress
+python3 -I roles/opensnitch/files/aegis-egress-collector.py --port 7811 --state-dir /tmp/egress 2>/tmp/collector.log &
+collector=$!
+for _ in $(seq 20); do ss -lun | grep -q '127.0.0.1:7811 ' && break; sleep 0.5; done
+send() {
+  python3 -I -c 'import socket,sys
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("127.0.0.1", 7811)); s.send(sys.argv[1].encode())' "$1"
+}
+# Shape of opensnitchd v1.7.2 CSV: 9 fields, then the command line.
+row() { printf '10.0.0.2,40000,140.82.112.3,%s,443,tcp,42,0,%s,[%s --token SECRET-%s],/root,allow,r' "$1" "$2" "$2" "$1"; }
+send "$(row github.com /usr/bin/curl)"
+send "$(row beacon.example /opt/beacon/x)"
+# shellcheck disable=SC2016 # the Python code is for the inner shell, unexpanded
+su sshtest -s /bin/sh -c 'python3 -I -c "import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect((\"127.0.0.1\", 7811)); s.send(b\"10.0.0.2,1,1.1.1.1,spoof.example,443,tcp,1,1500,/opt/spoof,[x],/,allow,r\")"'
+sleep 1
+{ kill -TERM "$collector" && wait "$collector"; } || { cat /tmp/collector.log; fail "collector did not stop cleanly"; }
+python3 -I - /tmp/egress/egress.json <<'PY' || { cat /tmp/collector.log; fail "collector state not as expected"; }
+import json, sys
+raw = open(sys.argv[1], encoding="utf-8").read()
+doc = json.loads(raw)
+paths = sorted(e["path"] for e in doc["entries"])
+assert paths == ["/opt/beacon/x", "/usr/bin/curl"], paths
+assert doc["stats"]["rejected_sender"] == 1, doc["stats"]
+assert "SECRET" not in raw and "--token" not in raw, "a command line reached the state file"
+PY
+grep -q 'egress_sender_reject' /tmp/collector.log || { cat /tmp/collector.log; fail "sender rejection not logged as a named event"; }
+pass "collector stored 2 events from root, rejected the non-root sender, kept no command line"
+ansible-playbook tests/container/egress.yml -e aegis_egress_state_file=/tmp/egress/egress.json >/dev/null \
+  || fail "egress audit run failed"
+expect_finding egress.unknown_programs WARN
+grep -q '/opt/beacon/x -> beacon.example' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "unowned program not named"; }
+! grep -q '/usr/bin/curl ->' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "a package-owned program was reported"; }
+expect_finding egress.collector_sender WARN
+pass "the audit names the unowned program, not the package-owned one, and warns about the rejected sender"
+ansible-playbook tests/container/egress.yml -e aegis_egress_state_file=/tmp/egress/egress.json \
+  -e '{"aegis_egress_known": ["/opt/beacon/*"]}' >/dev/null || fail "egress audit run with a known list failed"
+expect_finding egress.unknown_programs PASS
+pass "a program in aegis_egress_known is no longer reported"
 
 echo "--- D-02: the kernel role accepts either default, but needs the linux-hardened entry"
 # Synthetic menus: the role reads only the kernel-id= words, in order.
