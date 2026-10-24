@@ -86,8 +86,8 @@
     that:
       - aegis_agent_proxy_bin.stat.exists and aegis_agent_proxy_bin.stat.executable
       - aegis_agent_proxy_bin.stat.pw_name == 'root'
-      - (aegis_agent_proxy_acl.results[0].content | b64decode) is search('(?m)^  action: report$')
-      - (aegis_agent_proxy_acl.results[1].content | b64decode) is search('(?m)^  action: enforce$')
+      - "(aegis_agent_proxy_acl.results[0].content | b64decode) is search('(?m)^  action: report$')"
+      - "(aegis_agent_proxy_acl.results[1].content | b64decode) is search('(?m)^  action: enforce$')"
     fail_msg: "agent proxy files in {{ aegis_agent_proxy_dir }} or {{ aegis_agent_proxy_config_dir }} differ"
     quiet: true
   when: not ansible_check_mode
