@@ -112,6 +112,33 @@ databases, and a fresh install has none, just as a user's machine would need
 so the script sets `OMARCHY_ALLOW_DIRECT_PACMAN=1`, the bypass the guard
 itself names. Run the tests from `pre-aegis-updated`.
 
+## 5c. USB 3 and a FIDO2 key (optional)
+
+For the FIDO2 and `ed25519-sk` tests (D-04, D-08) the guest needs the real
+key. `pre-aegis-hw` is `pre-aegis-updated` with the xHCI controller on and
+OHCI/EHCI off. xHCI is in VirtualBox's base package; the Extension Pack is
+not needed.
+
+```bash
+VBoxManage modifyvm aegis-omarchy --usbohci off --usbehci off --usbxhci on   # VM powered off
+VBoxManage snapshot aegis-omarchy take pre-aegis-hw
+```
+
+Attach the key **after** the guest has booted, not through a USB filter:
+
+```bash
+uuid=$(VBoxManage list usbhost | grep -B1 'VendorId: *0x1050' | sed -n 's/^UUID: *//p')
+VBoxManage controlvm aegis-omarchy usbattach "$uuid"
+```
+
+With a filter for the key (YubiKey `1050:0407`), one of two boots on
+2026-10-24, on a quiet host, hung before the firmware started: the log
+stopped at `RUNNING`, the screen was 0x0, and power-off hung until the
+`VirtualBoxVM` process was stopped. The other boot, on an overloaded host,
+started but lost SSH. Without the filter it booted, and `usbattach` gave the
+guest the key as `1050:0407` with a user-accessible `/dev/hidraw*` node. The
+key leaves the Mac while it is attached; `usbdetach` or a power-off returns it.
+
 ## 6. Run
 
 ```bash

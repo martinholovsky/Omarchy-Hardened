@@ -113,16 +113,23 @@ locked() {
   guest_ssh 'export XDG_RUNTIME_DIR=/run/user/1000 HYPRLAND_INSTANCE_SIGNATURE=$(ls /run/user/1000/hypr | head -1);
     omarchy-hyprland-session-locked; echo $?' | tail -1
 }
-guest_root sh -c "faillock --user $user --reset; (for i in \$(seq 80); do stat -c %s /var/lib/faillock/$user; sleep 1; done;
+guest_root sh -c "faillock --user $user --reset; (for i in \$(seq 120); do stat -c %s /var/lib/faillock/$user; sleep 1; done;
   faillock --user $user --reset; echo reset) >/tmp/aegis-tally-log 2>&1 &"
 VBoxManage controlvm "$vm" keyboardputscancode e0 5b 1d 26 a6 9d e0 db # Super+Ctrl+L
 sleep 5
 [[ $(locked) == 0 ]] || die "screen did not lock"
-for i in $(seq 10); do
+# Typed input can be lost: on 2026-10-24 one of 10 attempts never reached the
+# lock screen (9 pam_unix failures, tally 576 bytes) and the test failed
+# although the lockout was right. Type until the tally holds 10 records.
+for i in $(seq 15); do
   VBoxManage controlvm "$vm" keyboardputstring "wrong-$i"
   VBoxManage controlvm "$vm" keyboardputscancode 1c 9c
   sleep 3
+  [[ $(guest_ssh 'tail -1 /tmp/aegis-tally-log') -ge 640 ]] && break
 done
+[[ $i -lt 15 || $(guest_ssh 'tail -1 /tmp/aegis-tally-log') -ge 640 ]] \
+  || die "the lock screen recorded fewer than 10 failures after 15 attempts"
+echo "  $i attempts typed for 10 recorded failures"
 VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
 sleep 6
 [[ $(locked) == 0 ]] || die "the right password unlocked after 10 failures"
