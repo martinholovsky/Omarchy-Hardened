@@ -33,6 +33,7 @@ two in §3. CI green on `c3d9673` (lint, live sysctl apply, container test).
 | `linux-hardened` as the default boot entry (D-02) | The role never changes the default entry. Switching is a manual step after one clean boot (see §1) |
 | `hardened_malloc` (D-03) | Deferred |
 | Licence check before going public (D-12) | The repo is Apache-2.0. The toolchain it invokes (ansible-core, community.general) is GPL-3.0. That needs a proper look before the repo is public |
+| Egress reporting (D-25) and agent egress proxy (D-26) | Decided 2026-10-24, not built yet |
 | Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)). **Owner, 2026-10-23: none yet.** First the run on real hardware (§1) must pass (the full VM run passed on 2026-10-23), because every role added before the first hardware run widens what that run has to vouch for. Revisit when the real-hardware row in §1 is closed; the items with no desktop effect (18a, #14, #16) come first |
 
 ## 3. Steps for the user on their own machine

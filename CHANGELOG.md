@@ -163,6 +163,14 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- `opensnitch` (D-09): an unanswered prompt denied the connection until
+  restart, because `opensnitch-ui` defaults to deny, so "allow by default"
+  held only while no UI ran. In the VM it cut all egress after a reboot. The
+  role now sets the UI's prompt-timeout action to the daemon's default action
+  and reads it back; the VM test checks that a program with no rule gets out
+  while the UI runs. The drift check's copy now includes
+  `community.general.ini_file`.
+
 - `overlay_network` (D-24): the `network.overlay` finding said "SSH closed"
   while Tailscale accepted every inbound connection on `tailscale0` before
   ufw (measured in the VM against Headscale). It now WARNs while that is so.

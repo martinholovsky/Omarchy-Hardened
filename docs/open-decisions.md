@@ -166,6 +166,21 @@ host, Tailscale).
 default action `allow`: visibility first. Rules are pre-seeded for pacman
 mirrors, Omarchy hosts and Tailscale. Moving to `deny` is a variable.
 
+**Follow-up (2026-10-24): "allow" did not hold while the UI ran.** The
+daemon asks `opensnitch-ui` about each new connection, and an unanswered
+prompt applies the UI's own default, which v1.7.2 initialises to deny
+"until restart" (`ui/opensnitch/config.py`). In the VM that cut all egress
+after a reboot (curl to 1.1.1.1 timed out with the daemon running and worked
+with it stopped). The role now writes the UI's `[global] default_action` to
+match `aegis_opensnitch_default_action` and reads it back. Asked whether to
+replace "allow" with a curated default-deny desktop ruleset, the owner chose
+to keep allow and add two things instead: a report of unknown programs that
+connect out, and an egress allowlist for agent containers (D-25, D-26).
+Reasoning: browsers, chat clients and package tools need nearly any
+destination, and interpreters (`python`, `node`, `curl`, `git`) serve both
+legitimate tools and malware, so per-program rules end up broad while every
+silent block reads as an outage.
+
 ## D-10 — Overlay network: Tailscale or plain WireGuard (Decided 2026-10-21: Tailscale via Omarchy)
 
 Tailscale adds a coordination server you have to trust; WireGuard needs manual
@@ -466,3 +481,29 @@ a password-enabled sshd is the same risk on the LAN once its rule is back,
 and the container test can reach this path. (b) stays possible later as an
 opt-in variable; `tests/vm/tailscale.sh` already shows that `nodivert` closes
 the port to tailnet peers.
+
+## D-25 — Report unknown programs that connect out (Decided 2026-10-24)
+
+The owner asked for a review loop over outgoing traffic instead of a
+default-deny desktop ruleset (D-09 follow-up). An nftables/iptables log was
+considered and rejected: a netfilter log entry carries addresses, ports and at
+most the socket's UID (`log flags skuid`, wiki.nftables.org "Logging
+traffic"), not the program, and on a single-user desktop nearly everything
+runs as that user. OpenSnitch attributes each connection to an executable.
+**Decided:** enable an `opensnitchd` logger, and have the audit WARN on
+executables that connected out, are owned by no pacman package, and are not
+in `aegis_egress_known`. Not caught: a malicious script run by a
+package-owned interpreter (`python`, `node`). Implementation: open-items §2.
+
+## D-26 — Outgoing traffic of agent containers (Decided 2026-10-24)
+
+`aegis-agent` (D-07) gets a filtering egress proxy:
+[Smokescreen](https://github.com/stripe/smokescreen) (Go, MIT), chosen by the
+owner over squid as lighter and purpose-built. **Default: `report`**, which
+allows everything and logs hosts outside the allowlist; `enforce`, which
+allows only the allowlist, is a switch (variable, and per invocation). In
+`enforce` the agent sits on an internal podman network whose only way out
+is the proxy. Smokescreen refuses private and internal addresses by default;
+the owner kept that. Its README promises `ghcr.io/stripe/smokescreen`, but the
+image is not public (token 403, package API 404, 2026-10-24), so the release
+binary is used, pinned by SHA-256. Implementation: open-items §2.

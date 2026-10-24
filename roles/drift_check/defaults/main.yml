@@ -30,10 +30,13 @@ aegis_drift_check_exclude_vars:
   - aegis_omarchy_stats
   - aegis_omarchy_version_file
 
-# The only collection content the playbook needs: community.general.ufw, which
-# imports nothing beyond ansible.module_utils.basic (checked at 13.5.0).
+# The only collection content the playbook needs: community.general.ufw and
+# ini_file (opensnitch, D-09), which import nothing from the collection, only
+# ansible.module_utils (checked at 13.5.0). A module missing here fails the
+# drift check's --check run: keep this list in step with the roles.
 aegis_drift_check_collection_files:
   - ansible_collections/community/general/MANIFEST.json
   - ansible_collections/community/general/COPYING
   - ansible_collections/community/general/meta/runtime.yml
   - ansible_collections/community/general/plugins/modules/ufw.py
+  - ansible_collections/community/general/plugins/modules/ini_file.py
