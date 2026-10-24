@@ -163,6 +163,15 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- VM test: the lock-screen check types wrong passwords until the guest has
+  recorded 10 failures (at most 15), instead of assuming 10 typed attempts
+  are 10 failures. On 2026-10-24 one attempt never reached the lock screen
+  and the check failed although the lockout was right. The tally watcher
+  runs 120 s instead of 80 s so the extra attempts fit.
+- VM test: snapshot `pre-aegis-hw` adds an xHCI controller, so a FIDO2 key
+  can be attached to the guest after boot (`tests/vm/README.md` §5c). A USB
+  filter that grabbed the key at power-on hung one boot before the firmware.
+
 - `kernel` (D-02): the role no longer fails once you make `linux-hardened`
   the default boot entry, the switch D-02 leaves to you. It still fails when
   the `linux-hardened` entry is missing, and the `kernel.hardened` finding
