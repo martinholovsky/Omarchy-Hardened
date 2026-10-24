@@ -1,0 +1,18 @@
+---
+# Container test: the kernel role's Limine check (D-02) against a planted
+# limine.conf, passed as -e aegis_kernel_limine_conf=... The rest of the role
+# needs a real boot and is tested in tests/vm/. Driven by inside.sh.
+- name: Check a planted Limine menu
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  tasks:
+    - name: Run the kernel role's Limine check
+      ansible.builtin.include_role:
+        name: kernel
+        tasks_from: limine.yml
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report

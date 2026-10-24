@@ -156,8 +156,17 @@ SemVer once 1.0 ships.
   test times are re-measured from CI (15m53s and 17m55s, not 21m).
 - VM test: a full run from `pre-aegis-updated` passed on a quiet host
   (2026-10-23), step 4 included, so that open item is closed.
+- `docs/upstream-baseline.md`: re-checked against Omarchy `cbd44ba`. No row
+  changed; the new `omarchy-kernel`, regional mirrors, connectivity check and
+  fallback NTP servers are recorded. The Extension Pack is not needed for USB
+  passthrough (corrected in `open-items.md` and `operating-notes.md`).
 
 ### Fixed (found by the VM and container tests)
+
+- `kernel` (D-02): the role no longer fails once you make `linux-hardened`
+  the default boot entry, the switch D-02 leaves to you. It still fails when
+  the `linux-hardened` entry is missing, and the `kernel.hardened` finding
+  now names the default entry. Three container checks cover it (47 in all).
 
 - AppArmor: profiles declared `flags=(unconfined)` (78 of 145) are no longer
   forced into complain mode. Forcing them broke rootless Podman.

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=44
+checks_total=47
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -468,6 +468,29 @@ ufw status | grep -Eq '^22/tcp on tailscale0 +ALLOW' || { ufw status; fail "SSH 
 ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run failed"
 ! ufw status | grep -q 'tailscale0' || { ufw status; fail "overlay rule not removed when opted out"; }
 pass "opt-in opens SSH on tailscale0 only; opting out removes it"
+
+echo "--- D-02: the kernel role accepts either default, but needs the linux-hardened entry"
+# Synthetic menus: the role reads only the kernel-id= words, in order.
+limine_menu() { # kernel ids in menu order
+  local id
+  printf '/+Omarchy\n'
+  for id in "$@"; do printf '  //%s\n  comment: kernel-id=%s\n' "$id" "$id"; done
+}
+limine_menu linux-omarchy linux-hardened >/tmp/limine-default.conf
+limine_menu linux-hardened linux-omarchy >/tmp/limine-switched.conf
+limine_menu linux-omarchy >/tmp/limine-missing.conf
+kernel_play() { ansible-playbook tests/container/kernel-limine.yml -e "aegis_kernel_limine_conf=$1"; }
+kernel_play /tmp/limine-default.conf >/tmp/kernel.log 2>&1 || { cat /tmp/kernel.log; fail "Limine check failed on Omarchy's default menu"; }
+grep -q 'default boot entry: linux-omarchy' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "default entry not reported"; }
+pass "linux-omarchy as the default passes and is reported"
+kernel_play /tmp/limine-switched.conf >/tmp/kernel.log 2>&1 || { cat /tmp/kernel.log; fail "Limine check failed after the owner made linux-hardened the default"; }
+grep -q 'default boot entry: linux-hardened' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "switched default not reported"; }
+pass "linux-hardened as the default passes and is reported"
+if kernel_play /tmp/limine-missing.conf >/tmp/kernel.log 2>&1; then
+  fail "a menu without linux-hardened passed the Limine check"
+fi
+grep -q 'no linux-hardened entry' /tmp/kernel.log || { cat /tmp/kernel.log; fail "failed for the wrong reason"; }
+pass "a menu without linux-hardened fails the run"
 
 [[ $checks_passed -eq $checks_total ]] || fail "only $checks_passed/$checks_total checks ran"
 echo "${checks_passed}/${checks_total} checks passed"

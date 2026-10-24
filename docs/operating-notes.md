@@ -189,8 +189,10 @@ a full run through it is still open (docs/open-items.md).
 6. Revert to `pre-aegis`.
 
 The VirtualBox Extension Pack is under the PUEL licence, not an open-source
-one, so the test setup does not rely on it. Passing a FIDO2 key through to the
-guest (D-04) is untested. Plan to test FIDO2 on hardware.
+one, so the test setup does not rely on it. It is not needed for USB either:
+in 7.2.22 the EHCI and xHCI controllers are part of the base package (user
+manual §3). Passing a FIDO2 key through to the guest (D-04) is untested. Plan
+to test FIDO2 on hardware.
 
 ## 7. For contributors
 

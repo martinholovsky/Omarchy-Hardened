@@ -69,6 +69,17 @@ own Limine entry. `linux-omarchy` stays the default. The role never changes
 the default boot entry; switching is the owner's manual step after a clean
 boot.
 
+**Follow-up (owner, 2026-10-23): the role accepts either default.** Until then
+the role asserted that `linux-omarchy` was the first Limine entry, so the
+switch this decision leaves to the owner made every later apply run fail.
+Omarchy's development branch now has `omarchy-kernel set linux-hardened` for
+that switch. Options were: (a) accept any default and report it; (b) a
+variable naming the expected default; (c) drop the order check. Chosen: (a).
+The role never sets the default, so it should not police it, and (b) fails the
+same way whenever the variable is not updated after a switch. The role still
+fails when the `linux-hardened` entry is missing, and the `kernel.hardened`
+finding names the default boot entry.
+
 ## D-03 — hardened_malloc scope (Deferred 2026-10-21)
 
 Preloading it system-wide (`/etc/ld.so.preload`) breaks or slows some apps
