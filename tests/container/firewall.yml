@@ -8,3 +8,7 @@
   roles:
     - firewall
     - overlay_network
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report

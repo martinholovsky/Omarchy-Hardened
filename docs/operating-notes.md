@@ -70,6 +70,8 @@ run on a real machine as a test.
 | `su` refuses users outside `wheel`, and its failures count toward the lockout | `pam_wheel` + `include system-auth` (G2) | `aegis_faillock_su_wheel_only: false`; empty `aegis_faillock_su_files` |
 | LocalSend no longer receives files | ufw rule for 53317 removed | `aegis_firewall_remove_localsend: false` |
 | SSH from the LAN stops, even if you enabled it with `omarchy-setup-security-sshd` | ufw rule for 22/tcp removed; SSH is meant for the overlay network | `aegis_firewall_remove_ssh: false` |
+| With Tailscale running, the audit WARNs (`network.overlay`) that every device on your tailnet can reach every listening port. That was already true: Tailscale accepts `tailscale0` traffic before ufw sees it, whatever this playbook sets | D-24. Your tailnet's access policy and the login at your identity provider decide who those devices are, so use a passkey or security key there | Nothing to revert: the WARN only reports it |
+| If sshd is installed, the audit WARNs while it accepts passwords (`ssh.password_auth`) and lists authorized keys that are not on a hardware key (`ssh.authorized_keys`, INFO) | D-24 | Authorize a key with `omarchy-setup-security-sshd`; use `ssh-keygen -t ed25519-sk` for a hardware key |
 | Alt+SysRq keys do nothing except sync (S) | `kernel.sysrq=16` (D-15) | `aegis_sysctl_sysrq: null` |
 | `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=3`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
 | setuid programs never leave core dumps | `fs.suid_dumpable=0` | Edit `aegis_sysctl_settings` |

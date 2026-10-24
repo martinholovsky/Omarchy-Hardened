@@ -32,7 +32,7 @@ recover.
 | `agent_containment` | 3.3 | ✅ implemented | D-07: rootless Podman and `aegis-agent`, which runs an agent with only the current project mounted, no `$HOME`, no capabilities and no user namespaces inside (D-01) |
 | `commit_signing` | 3.3 | ✅ implemented | D-08: SSH commit and tag signing for a public key you name (hardware `sk-` key required by default). Reports only until a key is set |
 | `opensnitch` | 3.4 | ✅ implemented | D-09: OpenSnitch running with default action `allow`, seeded rules for pacman/Tailscale/time/DNS, prompt UI autostarted |
-| `overlay_network` | 3.4 | ✅ implemented | D-10: reports Tailscale; opt-in `aegis_overlay_ssh_on_tailscale` allows SSH on `tailscale0` only |
+| `overlay_network` | 3.4 | ✅ implemented | D-10: reports Tailscale; opt-in `aegis_overlay_ssh_on_tailscale` adds a ufw rule on `tailscale0`, which Tailscale's default netfilter mode bypasses, so the audit WARNs (D-24). Audits sshd password logins and non-hardware keys |
 
 Immutability (PRD 3.6) is aspirational and has no role yet.
 

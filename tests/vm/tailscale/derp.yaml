@@ -1,0 +1,16 @@
+---
+# Headscale v0.29.5 refuses to start with an empty DERP map. Both test nodes
+# run in one VM and connect directly, so this region only satisfies that
+# check: it points at a closed loopback port and is never reachable.
+regions:
+  900:
+    regionid: 900
+    regioncode: none
+    regionname: Placeholder (unreachable)
+    nodes:
+      - name: 900a
+        regionid: 900
+        hostname: 127.0.0.1
+        ipv4: 127.0.0.1
+        stunport: -1
+        derpport: 1

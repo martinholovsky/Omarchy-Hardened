@@ -171,6 +171,26 @@ After the reboot it also checks:
 
 To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
 
+## 7. Tailscale (D-10, D-24)
+
+```bash
+tests/vm/tailscale.sh   # right after tests/vm/run.sh, with the VM still running
+```
+
+It installs Tailscale the way Omarchy's `omarchy-install-service-tailscale`
+does, and runs Headscale (v0.29.5, the open-source control server) and a
+second Tailscale node as rootless containers in the guest, on loopback. No
+account, relay or certificate is needed and nothing listens outside the VM.
+Headscale refuses an empty DERP map, so `tailscale/derp.yaml` gives it a
+region that points at a closed loopback port; the two nodes connect
+directly. A listener on port 2200, which ufw does not allow, is the target.
+
+It checks that the second node reaches that port in Tailscale's default
+netfilter mode and that `network.overlay` WARNs (D-24). As the control, in
+`nodivert` mode the port must be closed and the finding must pass, after
+which the mode is set back to `on`. It also checks the SSH findings on the
+harness's key-only sshd.
+
 ## Traps
 
 - **`ufw limit 22/tcp` drops the 6th connection within 30 s.** A tight

@@ -409,3 +409,60 @@ passwordless LUKS unlock becomes part of the default install. Omarchy at
 (`test/shell.d/luks-rekey-journal-test.sh`, a previous owner's token). Its only
 boot-time auto-unlock is the staged install key, which `luks_auto_unlock_drop`
 (`bin/omarchy-provision-owner:1044`) removes after the re-key.
+
+## D-24 — Tailscale bypasses ufw on `tailscale0` (Decided 2026-10-24: (a′), report and audit SSH)
+
+Measured in the VM (Omarchy 4.0.6, `tailscale` 1.104.1-1, Headscale v0.29.5 as
+the control server): with Tailscale up, `INPUT` starts with `-j ts-input`,
+ahead of every ufw chain, and `ts-input` has `-i tailscale0 -j ACCEPT`. A
+second tailnet node reached a test listener on the VM with HTTP 200 with the
+D-10 rule absent, present and absent again (counter: 78 packets on that
+ACCEPT). So `aegis_overlay_ssh_on_tailscale: false` does not close SSH on the
+tailnet, the `network.overlay` finding's "SSH closed" is wrong, and the
+opt-in rule changes nothing. Inbound tailnet traffic is governed by the
+tailnet's access policy (ACLs), not by this playbook. This is Tailscale's
+default `--netfilter-mode=on` ("Tailscale creates its firewall rules and
+ensures they're evaluated for relevant traffic",
+tailscale.com/docs/reference/netfilter-modes).
+
+Options:
+
+- **(a) Report it honestly, change nothing else.** The finding says that
+  inbound tailnet traffic is governed by the tailnet ACLs, and WARNs while
+  Tailscale runs with `netfilter-mode=on`; drop the "SSH closed" text and
+  document that the D-10 rule has no effect in that mode. Small, no change to
+  Tailscale.
+- **(b) Let ufw govern `tailscale0`.** Set `tailscale set
+  --netfilter-mode=nodivert` and add the jumps and rules ourselves, so ufw
+  decides per port. Changes Omarchy's Tailscale setup; subnet routing, exit
+  nodes and direct (non-relayed) connections each need a rule, and each would
+  need a VM test.
+- **(c) `--shields-up` unless SSH is opted in.** Blocks every inbound tailnet
+  connection. Cannot allow SSH alone, and its effect on Taildrop (which
+  Omarchy enables) is untested.
+
+**Decided (owner, 2026-10-24): (a′), a refined (a).** The owner asked which
+login protects what is exposed. Two logins do: joining the tailnet happens at
+Tailscale's identity provider (Apple, Google, GitHub, Microsoft, Okta,
+OneLogin, OIDC, or a passkey; MFA is the provider's,
+tailscale.com/kb/1013/sso-providers), and SSH on the machine is key-only once
+Omarchy's `omarchy-setup-security-sshd` has authorized a key (it writes
+`PasswordAuthentication no` and `KbdInteractiveAuthentication no` and checks
+them with `sshd -T`, read at v4.0.6). With a phishing-resistant tailnet login
+and key-only SSH, the exposure is acceptable, and password brute force is
+still limited by faillock (D-13). So the role:
+
+- WARNs in `network.overlay` while Tailscale runs and `INPUT` jumps to
+  `ts-input`, saying that tailnet peers reach every listening port and that
+  the tailnet policy and identity-provider login decide who they are. It no
+  longer says "SSH closed".
+- WARNs in `ssh.password_auth` when sshd's effective settings allow
+  password or keyboard-interactive logins.
+- Reports in `ssh.authorized_keys` (INFO) every authorized key that is not an
+  `sk-` (hardware) key, by user and type only.
+
+The SSH checks run whenever sshd is installed, not only while Tailscale runs:
+a password-enabled sshd is the same risk on the LAN once its rule is back,
+and the container test can reach this path. (b) stays possible later as an
+opt-in variable; `tests/vm/tailscale.sh` already shows that `nodivert` closes
+the port to tailnet peers.

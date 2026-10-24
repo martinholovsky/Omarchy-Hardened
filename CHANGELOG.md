@@ -163,6 +163,14 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- `overlay_network` (D-24): the `network.overlay` finding said "SSH closed"
+  while Tailscale accepted every inbound connection on `tailscale0` before
+  ufw (measured in the VM against Headscale). It now WARNs while that is so.
+  New checks: `ssh.password_auth` (WARN when sshd's effective settings allow
+  passwords) and `ssh.authorized_keys` (INFO for keys that are not `sk-`).
+  Five container checks (52 in all); `tests/vm/tailscale.sh` tests it against
+  a real tailnet.
+
 - VM test: the lock-screen check types wrong passwords until the guest has
   recorded 10 failures (at most 15), instead of assuming 10 typed attempts
   are 10 failures. On 2026-10-24 one attempt never reached the lock screen

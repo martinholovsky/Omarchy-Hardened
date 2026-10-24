@@ -6,3 +6,6 @@
 aegis_overlay_ssh_on_tailscale: false
 aegis_overlay_interface: tailscale0
 aegis_overlay_ssh_port: 22
+# D-24: the SSH checks read this binary's effective settings (sshd -T). No
+# finding is recorded when it is absent, as on a default Omarchy install.
+aegis_overlay_sshd_path: /usr/bin/sshd
