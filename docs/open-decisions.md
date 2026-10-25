@@ -515,7 +515,7 @@ opensnitchd's `remote` logger sends CSV over UDP to `127.0.0.1:7811` (it
 supports only UDP or TCP, and its CSV has no line ending, so UDP). The
 collector, `aegis-egress-collector` (Python, standard library only), accepts
 a datagram only from a loopback socket owned by root (checked in
-`/proc/net/udp`), validates the first nine fields, never reads the command
+`/proc/self/net/udp`), validates the first nine fields, never reads the command
 line or working directory, and keeps program path, destination, first and
 last seen, for 30 days, in a 0600 file. It runs under a systemd sandbox
 (`DynamicUser`, no capabilities, loopback only, syscall filter, 64 MB).

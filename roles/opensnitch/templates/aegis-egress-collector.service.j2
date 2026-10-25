@@ -32,11 +32,12 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
-# No PrivateUsers: the sender check reads socket owners from /proc/net/udp,
+# No PrivateUsers: the sender check reads socket owners from /proc/self/net/udp,
 # and in a private user namespace root is not mapped, so its sockets would be
 # expected to show an overflow uid rather than 0 (expected from how the
 # kernel maps uids, not measured here). Leaving it off avoids the question.
 ProtectProc=invisible
+# Hides /proc/net (a symlink), so the collector reads /proc/self/net/udp.
 ProcSubset=pid
 KeyringMode=private
 LockPersonality=yes

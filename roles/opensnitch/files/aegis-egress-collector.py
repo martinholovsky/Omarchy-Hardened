@@ -13,7 +13,7 @@ program's command line and working directory; those are never parsed, stored
 or logged, because a command line can hold credentials.
 
 Trust boundary: every datagram is untrusted input. It must come from a socket
-owned by root (opensnitchd), checked through /proc/net/udp, and every field
+owned by root (opensnitchd), checked through /proc/self/net/udp, and every field
 that is kept is validated against an allowlist before it reaches the table.
 Anything else is dropped and only counted. Standard library only.
 """
@@ -204,15 +204,17 @@ def expire(table: Table, now: int) -> None:
 class SenderCheck:
     """Accept only datagrams sent from a loopback UDP socket owned by root.
 
-    /proc/net/udp lists every UDP socket in this network namespace with its
-    owner's uid. opensnitchd keeps one connected socket open, so its source
+    /proc/self/net/udp lists every UDP socket in this network namespace with
+    its owner's uid. Not /proc/net/udp: the unit's ProcSubset=pid hides that
+    symlink (ENOENT, measured in the VM on 2026-10-25), and every datagram was
+    rejected. opensnitchd keeps one connected socket open, so its source
     port is looked up once and then cached briefly. Residual risk: if root's
     socket closes and another user binds the same port within the cache
     window, its datagrams pass until the entry expires; the most it can do is
-    add rows to the table. Fails closed: an unreadable /proc/net/udp rejects.
+    add rows to the table. Fails closed: an unreadable table rejects.
     """
 
-    def __init__(self, proc_udp: Path = Path("/proc/net/udp")) -> None:
+    def __init__(self, proc_udp: Path = Path("/proc/self/net/udp")) -> None:
         """Read socket owners from PROC_UDP (a fixture in tests)."""
         self._proc_udp = proc_udp
         self._cache: dict[int, tuple[bool, float]] = {}
