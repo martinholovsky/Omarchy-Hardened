@@ -520,7 +520,11 @@ line or working directory, and keeps program path, destination, first and
 last seen, for 30 days, in a 0600 file. It runs under a systemd sandbox
 (`DynamicUser`, no capabilities, loopback only, syscall filter, 64 MB).
 A rejected sender is logged as `egress_sender_reject` and the audit WARNs on
-it (`egress.collector_sender`).
+it (`egress.collector_sender`). The report is best effort: UDP has no
+retry, and an event sent while the collector is down (a restart, a crash)
+is lost. Measured 2026-10-25: of three probes run right before a restart,
+one arrived after it and one never did. It is a report of what programs
+connect out, not an audit log.
 
 ## D-26 — Outgoing traffic of agent containers (Decided 2026-10-24)
 

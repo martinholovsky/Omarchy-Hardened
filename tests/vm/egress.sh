@@ -61,10 +61,16 @@ echo "--- a packaged and an unowned program connect out"
 guest_ssh "install -D -m 755 /usr/bin/curl \$HOME/$PROBE"
 guest_ssh "curl -s -m 60 -o /dev/null https://archlinux.org/" || die "packaged curl could not connect"
 guest_ssh "\$HOME/$PROBE -s -m 60 -o /dev/null -H 'X-Marker: $MARKER' https://archlinux.org/" || die "probe could not connect"
-# SIGTERM makes the collector save at once instead of within 30 s.
-guest_root systemctl restart aegis-egress-collector.service
-paths=$(guest_root python3 -I -c 'import json,sys; print("\n".join(e["path"] for e in json.load(open(sys.argv[1]))["entries"]))' "$STATE_FILE")
-grep -qx "/home/$user/$PROBE" <<<"$paths" || die "collector did not record the probe; recorded: $(tr '\n' ' ' <<<"$paths")"
+# Wait for the collector's own save (every 30 s) rather than restarting it:
+# opensnitchd can send an event after the connection is done, and one that
+# arrives while the collector restarts is lost (measured 2026-10-25: of three
+# fast probes restarted at once, one arrived later and one never did).
+for _ in $(seq 10); do
+  sleep 9
+  paths=$(guest_root python3 -I -c 'import json,sys; print("\n".join(e["path"] for e in json.load(open(sys.argv[1]))["entries"]))' "$STATE_FILE")
+  grep -qx "/home/$user/$PROBE" <<<"$paths" && break
+done
+grep -qx "/home/$user/$PROBE" <<<"$paths" || die "collector did not record the probe within 90 s; recorded: $(sort -u <<<"$paths" | tr '\n' ' ')"
 echo "PASS: opensnitchd -> collector recorded the probe ($(wc -l <<<"$paths" | tr -d ' ') programs in the table)"
 
 ! guest_root grep -q "$MARKER" "$STATE_FILE" || die "a command line reached the collector's state file"
