@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=47
+checks_total=52
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -468,6 +468,36 @@ ufw status | grep -Eq '^22/tcp on tailscale0 +ALLOW' || { ufw status; fail "SSH 
 ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run failed"
 ! ufw status | grep -q 'tailscale0' || { ufw status; fail "overlay rule not removed when opted out"; }
 pass "opt-in opens SSH on tailscale0 only; opting out removes it"
+
+echo "--- D-24: sshd password logins and key types"
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run without sshd failed"
+expect_finding ssh.password_auth MISSING
+pass "no SSH findings while sshd is not installed (Omarchy's default)"
+pacman -S --noconfirm --needed openssh >/dev/null
+ssh-keygen -A >/dev/null
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run with sshd failed"
+expect_finding ssh.password_auth WARN
+pass "Arch's stock sshd_config (passwords on) warns"
+# What omarchy-setup-security-sshd writes once a key is authorized (v4.0.6).
+printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' \
+  >/etc/ssh/sshd_config.d/10-omarchy-hardening.conf
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run with key-only sshd failed"
+expect_finding ssh.password_auth PASS
+pass "Omarchy's key-only drop-in passes"
+useradd -m -u 1500 sshtest
+install -d -m 700 -o sshtest /home/sshtest/.ssh
+ssh-keygen -q -t ed25519 -N '' -f /tmp/soft-key
+install -m 600 -o sshtest /tmp/soft-key.pub /home/sshtest/.ssh/authorized_keys
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run with a soft key failed"
+expect_finding ssh.authorized_keys INFO
+grep -q 'sshtest ssh-ed25519' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "soft key not named"; }
+pass "an ssh-ed25519 key is reported as not hardware-backed"
+# Only the type is read; this line has the shape of an ed25519-sk public key.
+printf 'no-touch-required sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIG5vdC1hLXJlYWwta2V5LWp1c3QtdGhlLXNoYXBlAAAABHNzaDo= sk\n' \
+  >/home/sshtest/.ssh/authorized_keys
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run with an sk key failed"
+expect_finding ssh.authorized_keys PASS
+pass "an sk- key behind key options passes"
 
 echo "--- D-02: the kernel role accepts either default, but needs the linux-hardened entry"
 # Synthetic menus: the role reads only the kernel-id= words, in order.

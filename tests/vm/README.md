@@ -171,13 +171,36 @@ After the reboot it also checks:
 
 To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
 
+## 7. Tailscale (D-10, D-24)
+
+```bash
+tests/vm/tailscale.sh   # right after tests/vm/run.sh, with the VM still running
+```
+
+It installs Tailscale the way Omarchy's `omarchy-install-service-tailscale`
+does, and runs Headscale (v0.29.5, the open-source control server) and a
+second Tailscale node as rootless containers in the guest, on loopback. No
+account, relay or certificate is needed and nothing listens outside the VM.
+Headscale refuses an empty DERP map, so `tailscale/derp.yaml` gives it a
+region that points at a closed loopback port; the two nodes connect
+directly. A listener on port 2200, which ufw does not allow, is the target.
+
+It checks that the second node reaches that port in Tailscale's default
+netfilter mode and that `network.overlay` WARNs (D-24). As the control, in
+`nodivert` mode the port must be closed and the finding must pass, after
+which the mode is set back to `on`. It also checks the SSH findings on the
+harness's key-only sshd.
+
 ## Traps
 
 - **`ufw limit 22/tcp` drops the 6th connection within 30 s.** A tight
   `ssh` polling loop gets you "Connection reset by peer". Poll at most every
   7 s. Ansible reuses one connection.
 - If the LUKS passphrase is typed before the prompt is on screen, it is lost.
-  `run.sh` waits `AEGIS_VM_LUKS_DELAY` seconds (default 45) and types it once.
+  `run.sh` waits `AEGIS_VM_LUKS_DELAY` seconds (default 45) and types it; if
+  SSH is not up 140 s later it types it once more (a loaded host reached the
+  prompt late on 2026-10-25, and the run stopped at an empty prompt). Raise
+  `AEGIS_VM_LUKS_DELAY` on a busy host.
 - Any successful `sudo` as the test user runs `pam_faillock authsucc` and
   clears that user's tally. `run.sh` reads the tally through one root watcher
   started before the lock-screen test, never through `sudo` mid-test. Step 4

@@ -166,6 +166,34 @@ host, Tailscale).
 default action `allow`: visibility first. Rules are pre-seeded for pacman
 mirrors, Omarchy hosts and Tailscale. Moving to `deny` is a variable.
 
+**Follow-up (2026-10-24): "allow" did not hold while the UI ran.** The
+daemon asks `opensnitch-ui` about each new connection, and an unanswered
+prompt applies the UI's own default, which v1.7.2 initialises to deny
+"until restart" (`ui/opensnitch/config.py`). In the VM that cut all egress
+after a reboot (curl to 1.1.1.1 timed out with the daemon running and worked
+with it stopped). The role now writes the UI's `[global] default_action` to
+match `aegis_opensnitch_default_action` and reads it back. Asked whether to
+replace "allow" with a curated default-deny desktop ruleset, the owner chose
+to keep allow and add two things instead: a report of unknown programs that
+connect out, and an egress allowlist for agent containers (D-25, D-26).
+Reasoning: browsers, chat clients and package tools need nearly any
+destination, and interpreters (`python`, `node`, `curl`, `git`) serve both
+legitimate tools and malware, so per-program rules end up broad while every
+silent block reads as an outage.
+
+**Follow-up (2026-10-25): the prompt UI crashed at every login.** In 3 of 3
+VM boots `opensnitch-ui` 1.7.2 aborted about 16 s after login, with and
+without the change above (a controlled OLD/NEW run: one core dump each). Its
+"no system tray" warning calls notify2 without checking that notify2
+initialised (`ui/opensnitch/service.py`, `_show_systray_msg_error`), and Qt
+aborts on the exception. Upstream fixed it in 1.8.0
+(`_has_desktop_notifications`); Arch ships 1.7.2. The owner chose a fix in
+this role plus raising it upstream; since upstream is already fixed, the
+upstream step is the Arch package being out of date (open-items §2). The role
+sets `[global] hide_systray_warning=true`, which makes that warning return
+early. Why the UI sees no tray although Omarchy's shell registers
+`org.kde.StatusNotifierWatcher` is not known.
+
 ## D-10 — Overlay network: Tailscale or plain WireGuard (Decided 2026-10-21: Tailscale via Omarchy)
 
 Tailscale adds a coordination server you have to trust; WireGuard needs manual
@@ -409,3 +437,86 @@ passwordless LUKS unlock becomes part of the default install. Omarchy at
 (`test/shell.d/luks-rekey-journal-test.sh`, a previous owner's token). Its only
 boot-time auto-unlock is the staged install key, which `luks_auto_unlock_drop`
 (`bin/omarchy-provision-owner:1044`) removes after the re-key.
+
+## D-24 — Tailscale bypasses ufw on `tailscale0` (Decided 2026-10-24: (a′), report and audit SSH)
+
+Measured in the VM (Omarchy 4.0.6, `tailscale` 1.104.1-1, Headscale v0.29.5 as
+the control server): with Tailscale up, `INPUT` starts with `-j ts-input`,
+ahead of every ufw chain, and `ts-input` has `-i tailscale0 -j ACCEPT`. A
+second tailnet node reached a test listener on the VM with HTTP 200 with the
+D-10 rule absent, present and absent again (counter: 78 packets on that
+ACCEPT). So `aegis_overlay_ssh_on_tailscale: false` does not close SSH on the
+tailnet, the `network.overlay` finding's "SSH closed" is wrong, and the
+opt-in rule changes nothing. Inbound tailnet traffic is governed by the
+tailnet's access policy (ACLs), not by this playbook. This is Tailscale's
+default `--netfilter-mode=on` ("Tailscale creates its firewall rules and
+ensures they're evaluated for relevant traffic",
+tailscale.com/docs/reference/netfilter-modes).
+
+Options:
+
+- **(a) Report it honestly, change nothing else.** The finding says that
+  inbound tailnet traffic is governed by the tailnet ACLs, and WARNs while
+  Tailscale runs with `netfilter-mode=on`; drop the "SSH closed" text and
+  document that the D-10 rule has no effect in that mode. Small, no change to
+  Tailscale.
+- **(b) Let ufw govern `tailscale0`.** Set `tailscale set
+  --netfilter-mode=nodivert` and add the jumps and rules ourselves, so ufw
+  decides per port. Changes Omarchy's Tailscale setup; subnet routing, exit
+  nodes and direct (non-relayed) connections each need a rule, and each would
+  need a VM test.
+- **(c) `--shields-up` unless SSH is opted in.** Blocks every inbound tailnet
+  connection. Cannot allow SSH alone, and its effect on Taildrop (which
+  Omarchy enables) is untested.
+
+**Decided (owner, 2026-10-24): (a′), a refined (a).** The owner asked which
+login protects what is exposed. Two logins do: joining the tailnet happens at
+Tailscale's identity provider (Apple, Google, GitHub, Microsoft, Okta,
+OneLogin, OIDC, or a passkey; MFA is the provider's,
+tailscale.com/kb/1013/sso-providers), and SSH on the machine is key-only once
+Omarchy's `omarchy-setup-security-sshd` has authorized a key (it writes
+`PasswordAuthentication no` and `KbdInteractiveAuthentication no` and checks
+them with `sshd -T`, read at v4.0.6). With a phishing-resistant tailnet login
+and key-only SSH, the exposure is acceptable, and password brute force is
+still limited by faillock (D-13). So the role:
+
+- WARNs in `network.overlay` while Tailscale runs and `INPUT` jumps to
+  `ts-input`, saying that tailnet peers reach every listening port and that
+  the tailnet policy and identity-provider login decide who they are. It no
+  longer says "SSH closed".
+- WARNs in `ssh.password_auth` when sshd's effective settings allow
+  password or keyboard-interactive logins.
+- Reports in `ssh.authorized_keys` (INFO) every authorized key that is not an
+  `sk-` (hardware) key, by user and type only.
+
+The SSH checks run whenever sshd is installed, not only while Tailscale runs:
+a password-enabled sshd is the same risk on the LAN once its rule is back,
+and the container test can reach this path. (b) stays possible later as an
+opt-in variable; `tests/vm/tailscale.sh` already shows that `nodivert` closes
+the port to tailnet peers.
+
+## D-25 — Report unknown programs that connect out (Decided 2026-10-24)
+
+The owner asked for a review loop over outgoing traffic instead of a
+default-deny desktop ruleset (D-09 follow-up). An nftables/iptables log was
+considered and rejected: a netfilter log entry carries addresses, ports and at
+most the socket's UID (`log flags skuid`, wiki.nftables.org "Logging
+traffic"), not the program, and on a single-user desktop nearly everything
+runs as that user. OpenSnitch attributes each connection to an executable.
+**Decided:** enable an `opensnitchd` logger, and have the audit WARN on
+executables that connected out, are owned by no pacman package, and are not
+in `aegis_egress_known`. Not caught: a malicious script run by a
+package-owned interpreter (`python`, `node`). Implementation: open-items §2.
+
+## D-26 — Outgoing traffic of agent containers (Decided 2026-10-24)
+
+`aegis-agent` (D-07) gets a filtering egress proxy:
+[Smokescreen](https://github.com/stripe/smokescreen) (Go, MIT), chosen by the
+owner over squid as lighter and purpose-built. **Default: `report`**, which
+allows everything and logs hosts outside the allowlist; `enforce`, which
+allows only the allowlist, is a switch (variable, and per invocation). In
+`enforce` the agent sits on an internal podman network whose only way out
+is the proxy. Smokescreen refuses private and internal addresses by default;
+the owner kept that. Its README promises `ghcr.io/stripe/smokescreen`, but the
+image is not public (token 403, package API 404, 2026-10-24), so the release
+binary is used, pinned by SHA-256. Implementation: open-items §2.

@@ -75,6 +75,15 @@ ids=$(guest_root grep -o 'kernel-id=[^ ]*' /boot/limine.conf | tr '\n' ' ')
 echo "PASS: Limine lists linux-omarchy first, then linux-hardened"
 [[ $(guest_root systemctl is-active opensnitchd) == active ]] || die "opensnitchd not active"
 echo "PASS: opensnitchd active"
+# D-09 promises allow by default. While opensnitch-ui runs, a prompt nobody
+# answers applies the UI's action after its 30 s timeout, and the UI's own
+# default is deny until restart: on 2026-10-24 that cut all egress here.
+# ps instead of pgrep -f: the remote shell's argv would match the pattern.
+ui=$(guest_ssh "ps -eo args= | grep -c '^/usr/bin/python[0-9.]* /usr/bin/opensnitch-ui'" || true)
+[[ $ui -ge 1 ]] || die "opensnitch-ui is not running, so this check would not test the prompt path"
+code=$(guest_ssh "curl -s -m 60 -o /dev/null -w '%{http_code}' https://archlinux.org/" || true)
+[[ $code =~ ^[23][0-9][0-9]$ ]] || die "a program with no OpenSnitch rule could not connect out (HTTP $code)"
+echo "PASS: with opensnitch-ui running, an unanswered prompt lets a new program out (HTTP $code)"
 img=docker.io/library/alpine@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
 agent=$(guest_ssh "mkdir -p ~/aegis-proj && cd ~/aegis-proj && aegis-agent --image $img -- sh -c \
   'grep CapEff /proc/self/status; ls -A /home | wc -l; unshare -U true 2>/dev/null && echo USERNS_ALLOWED || echo USERNS_DENIED; touch /work/w && echo WROTE'" 2>&1) || true

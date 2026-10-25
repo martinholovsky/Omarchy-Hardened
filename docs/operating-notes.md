@@ -70,6 +70,8 @@ run on a real machine as a test.
 | `su` refuses users outside `wheel`, and its failures count toward the lockout | `pam_wheel` + `include system-auth` (G2) | `aegis_faillock_su_wheel_only: false`; empty `aegis_faillock_su_files` |
 | LocalSend no longer receives files | ufw rule for 53317 removed | `aegis_firewall_remove_localsend: false` |
 | SSH from the LAN stops, even if you enabled it with `omarchy-setup-security-sshd` | ufw rule for 22/tcp removed; SSH is meant for the overlay network | `aegis_firewall_remove_ssh: false` |
+| With Tailscale running, the audit WARNs (`network.overlay`) that every device on your tailnet can reach every listening port. That was already true: Tailscale accepts `tailscale0` traffic before ufw sees it, whatever this playbook sets | D-24. Your tailnet's access policy and the login at your identity provider decide who those devices are, so use a passkey or security key there | Nothing to revert: the WARN only reports it |
+| If sshd is installed, the audit WARNs while it accepts passwords (`ssh.password_auth`) and lists authorized keys that are not on a hardware key (`ssh.authorized_keys`, INFO) | D-24 | Authorize a key with `omarchy-setup-security-sshd`; use `ssh-keygen -t ed25519-sk` for a hardware key |
 | Alt+SysRq keys do nothing except sync (S) | `kernel.sysrq=16` (D-15) | `aegis_sysctl_sysrq: null` |
 | `dmesg` needs sudo; `perf` without root sees only user space; `strace`/`gdb` can attach only to their own children | `dmesg_restrict`, `perf_event_paranoid=3`, `ptrace_scope=1` | Edit `aegis_sysctl_settings` |
 | setuid programs never leave core dumps | `fs.suid_dumpable=0` | Edit `aegis_sysctl_settings` |
@@ -78,7 +80,7 @@ run on a real machine as a test.
 | After every package install or update, a check runs in the background and may notify "Aegis: hardening drift" | D-11 pacman hook (`/etc/pacman.d/hooks/zz-aegis-drift-check.hook`) | `aegis_drift_check_enabled: false` |
 | A second kernel, `linux-hardened`, appears in the Limine menu (not the default) | D-02 | `aegis_kernel_hardened_install: false` (then `pacman -R linux-hardened`) |
 | After the next reboot AppArmor is active; profiles only log (`journalctl -k \| grep apparmor`) | D-05 `lsm=` drop-in | `aegis_apparmor_enabled: false`, then reboot |
-| OpenSnitch runs; its UI starts with your session and asks about new connections (it allows them by default) | D-09 | `aegis_opensnitch_enabled: false` |
+| OpenSnitch runs; its UI starts with your session and asks about new connections. A prompt you do not answer within 30 s allows the connection until restart (the UI on its own would deny). The UI may show no tray icon: version 1.7.2 crashed without one, so its tray warning is switched off | D-09 | `aegis_opensnitch_enabled: false` |
 | With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
 | `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
 

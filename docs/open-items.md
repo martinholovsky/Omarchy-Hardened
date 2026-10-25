@@ -7,11 +7,13 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-23, on `docs/closure-corrections` (PR #4). A full
-`tests/vm/run.sh` from `pre-aegis-updated` at `c3d9673` exited 0 on a quiet
-host (20:12 to 20:52 UTC): run 2 and the post-reboot `--check` both at
-`changed=0`, every post-reboot check PASS including step 4, and 2 WARN, the
-two in §3. CI green on `c3d9673` (lint, live sysctl apply, container test).
+Last reviewed: 2026-10-25, on `test/tailscale-headscale`. A full
+`tests/vm/run.sh` from `pre-aegis-hw` at `e0d18ea` exited 0: run 2 and the
+post-reboot `--check` at `changed=0`, every post-reboot check PASS including
+the OpenSnitch prompt check (UI running, a new program got out), and 2 WARN,
+the two in §3. A mutant (the UI's prompt default back to deny) made that
+check fail. `tests/vm/tailscale.sh` passed on its rerun in the same VM; its
+`nodivert` control had failed once (see §1).
 
 ## 1. Not tested yet
 
@@ -21,7 +23,7 @@ two in §3. CI green on `c3d9673` (lint, live sysctl apply, container test).
 | Booting `linux-hardened` (D-02) | The VM checks only that Limine lists it after `linux-omarchy`. It was never booted | Pick it once in the Limine menu, run `--check`, and confirm that the sysctl values, AppArmor and `aegis-agent` work on it |
 | FIDO2 second factor for sudo (D-04) | Container: planted `pam_u2f` lines and `/etc/fido2/fido2` files, 0, 1 and 2 keys. VM: runs in its not-set-up state (INFO). No real key has been used; since 2026-10-24 the VM can have one: snapshot `pre-aegis-hw` has xHCI, and a YubiKey attached after boot shows up in the guest as `1050:0407` with a user-accessible `/dev/hidraw*` ([tests/vm/README.md](../tests/vm/README.md) §5c). Enrolment has not been run there yet | On hardware: enrol the first key with `omarchy-setup-security-fido2`. It registers **one** key, and on a second run it stops with "already registered" (read at `dde0d12`, `bin/omarchy-setup-security-fido2`). Append the second key to your line in `/etc/fido2/fido2` with `pamu2fcfg -n` (per `pamu2fcfg(1)`; not run here). Then re-run and check that sudo asks for the key **and** the password |
 | Commit signing with an `ed25519-sk` key (D-08) | Container: key strings only, including refusal of a non-`sk` key | Set `aegis_commit_signing_pubkey`, make a commit, and check `git log --show-signature` |
-| Tailscale (D-10) | Container: the ufw rule on `tailscale0` is added and removed. No tailnet login | Log in, set `aegis_overlay_ssh_on_tailscale: true`, and SSH in over the tailnet while LAN SSH is refused |
+| Tailscale (D-10, D-24) | VM (2026-10-25) against Headscale: `tests/vm/tailscale.sh` passed (a tailnet peer reaches a port ufw denies, the audit WARNs; in `nodivert` mode the port is closed and the finding passes; SSH findings). Its `nodivert` control failed once and passed on the rerun in the same VM; cause unknown, the control now waits longer and prints diagnostics | The tailscale.com login itself stays untested: Omarchy runs that step, not this playbook |
 | Firewall with real traffic | Container, against Omarchy's seeded ufw rules | LocalSend refused, Docker DNS still working, SSH only where allowed |
 | Audit noise on a long-lived install | Only fresh installs | Run the audit on a machine that has had packages installed for weeks |
 
@@ -33,6 +35,8 @@ two in §3. CI green on `c3d9673` (lint, live sysctl apply, container test).
 | `linux-hardened` as the default boot entry (D-02) | The role never changes the default entry. Switching is a manual step after one clean boot (see §1) |
 | `hardened_malloc` (D-03) | Deferred |
 | Licence check before going public (D-12) | The repo is Apache-2.0. The toolchain it invokes (ansible-core, community.general) is GPL-3.0. That needs a proper look before the repo is public |
+| Egress reporting (D-25) and agent egress proxy (D-26) | Decided 2026-10-24, not built yet |
+| OpenSnitch 1.8.0 in Arch | Arch ships 1.7.2 (last updated 2026-01-10); 1.8.0 (2025-12-15) fixes the UI crash worked around in D-09. Flagging the package out of date needs an Arch account, so it is the owner's step. Once 1.8.0 is in, re-check whether `hide_systray_warning` is still needed |
 | Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)). **Owner, 2026-10-23: none yet.** First the run on real hardware (§1) must pass (the full VM run passed on 2026-10-23), because every role added before the first hardware run widens what that run has to vouch for. Revisit when the real-hardware row in §1 is closed; the items with no desktop effect (18a, #14, #16) come first |
 
 ## 3. Steps for the user on their own machine

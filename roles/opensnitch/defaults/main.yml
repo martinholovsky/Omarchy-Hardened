@@ -15,4 +15,8 @@ aegis_opensnitch_seed_rules:
 # Prompts need the UI running in your session. Omarchy 4 autostarts user
 # programs from ~/.config/hypr/autostart.lua with o.launch_on_start().
 aegis_opensnitch_autostart_ui: true
+# The UI stores its prompt-timeout action as an index (ui/opensnitch/config.py
+# at v1.7.2: ACTION_DENY_IDX 0, ACTION_ALLOW_IDX 1, ACTION_REJECT_IDX 2). The
+# role writes the one matching aegis_opensnitch_default_action.
+aegis_opensnitch_ui_actions: {deny: 0, allow: 1, reject: 2}
 aegis_opensnitch_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"

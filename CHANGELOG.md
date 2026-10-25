@@ -163,6 +163,27 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- `opensnitch` (D-09): `opensnitch-ui` 1.7.2 aborted at every login in the VM
+  (no tray found, then an uninitialised notify2 call; fixed upstream in 1.8.0,
+  which Arch does not ship yet). The role sets `hide_systray_warning=true` in
+  the UI settings so that path returns early, and reads it back.
+
+- `opensnitch` (D-09): an unanswered prompt denied the connection until
+  restart, because `opensnitch-ui` defaults to deny, so "allow by default"
+  held only while no UI ran. In the VM it cut all egress after a reboot. The
+  role now sets the UI's prompt-timeout action to the daemon's default action
+  and reads it back; the VM test checks that a program with no rule gets out
+  while the UI runs. The drift check's copy now includes
+  `community.general.ini_file`.
+
+- `overlay_network` (D-24): the `network.overlay` finding said "SSH closed"
+  while Tailscale accepted every inbound connection on `tailscale0` before
+  ufw (measured in the VM against Headscale). It now WARNs while that is so.
+  New checks: `ssh.password_auth` (WARN when sshd's effective settings allow
+  passwords) and `ssh.authorized_keys` (INFO for keys that are not `sk-`).
+  Five container checks (52 in all); `tests/vm/tailscale.sh` tests it against
+  a real tailnet.
+
 - VM test: the lock-screen check types wrong passwords until the guest has
   recorded 10 failures (at most 15), instead of assuming 10 typed attempts
   are 10 failures. On 2026-10-24 one attempt never reached the lock screen

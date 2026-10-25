@@ -47,19 +47,79 @@
     quiet: true
   when: not ansible_check_mode
 
+# D-24: with Tailscale's default --netfilter-mode=on, INPUT jumps to ts-input
+# before every ufw chain and ts-input accepts all of tailscale0. Measured in
+# the VM (2026-10-24): a tailnet peer reached a test port with the rule above
+# absent and present. So report who really governs tailscale0.
+- name: Read the start of the INPUT chain
+  ansible.builtin.command:
+    argv: [iptables, -S, INPUT]
+  register: aegis_ts_input
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: aegis_ts_installed.rc == 0
+
+- name: Read sshd's effective password settings and authorized key types
+  aegis_ssh_audit:
+    sshd_path: "{{ aegis_overlay_sshd_path }}"
+  register: aegis_ssh
+
 - name: Record the overlay finding
   vars:
     aegis_state: >-
       {{ ((aegis_ts_status.stdout | default('{}', true)) | from_json).BackendState | default('unknown')
          if aegis_ts_installed.rc == 0 else 'not installed' }}
+    aegis_bypass: >-
+      {{ aegis_state == 'Running'
+         and (aegis_ts_input.stdout | default('')) is search('(?m)^-A INPUT -j ts-input$') }}
   ansible.builtin.set_fact:
     aegis_findings: >-
       {{ (aegis_findings | default([])) + [
            {'id': 'network.overlay',
-            'status': 'PASS' if aegis_state == 'Running' else 'INFO',
+            'status': 'WARN' if aegis_bypass | bool else ('PASS' if aegis_state == 'Running' else 'INFO'),
             'detail': 'Tailscale: ' ~ aegis_state
-                      ~ ('; SSH allowed on ' ~ aegis_overlay_interface ~ ' only'
-                         if aegis_overlay_ssh_on_tailscale | bool else '; SSH closed')
+                      ~ ('; Tailscale accepts every inbound connection on ' ~ aegis_overlay_interface
+                         ~ ' before ufw (netfilter mode on), so tailnet peers reach every listening port.'
+                         ~ ' Your tailnet access policy and the login at your identity provider decide who'
+                         ~ ' that is: use a passkey or security key there (D-24)'
+                         ~ ('. The SSH rule on ' ~ aegis_overlay_interface ~ ' has no effect in this mode'
+                            if aegis_overlay_ssh_on_tailscale | bool else '')
+                         if aegis_bypass | bool
+                         else ('; ufw governs ' ~ aegis_overlay_interface if aegis_state == 'Running' else ''))
                       ~ ('' if aegis_ts_installed.rc == 0
                          else ' (install with omarchy-install-service-tailscale, then tailscale up)')}
          ] }}
+
+- name: Record the SSH findings (D-24)
+  vars:
+    aegis_password_on: >-
+      {{ aegis_ssh.password_authentication | default('') == 'yes'
+         or aegis_ssh.kbdinteractive_authentication | default('') == 'yes' }}
+    aegis_soft_keys: "{{ aegis_ssh.authorized_keys | default([]) | rejectattr('hardware') | list }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {%- set out = [] -%}
+      {%- if aegis_ssh.installed and aegis_ssh.effective_error -%}
+        {%- set _ = out.append({'id': 'ssh.password_auth', 'status': 'INFO',
+              'detail': 'could not read sshd -T (' ~ aegis_ssh.effective_error
+                        ~ '), so the password setting is unknown'}) -%}
+      {%- elif aegis_ssh.installed -%}
+        {%- set _ = out.append({'id': 'ssh.password_auth',
+              'status': 'WARN' if aegis_password_on | bool else 'PASS',
+              'detail': 'sshd in force: passwordauthentication ' ~ aegis_ssh.password_authentication
+                        ~ ', kbdinteractiveauthentication ' ~ aegis_ssh.kbdinteractive_authentication
+                        ~ ('; password logins are open to every tailnet peer, and to the LAN if its SSH'
+                           ~ ' rule is back. Authorize a key with omarchy-setup-security-sshd, which turns'
+                           ~ ' passwords off' if aegis_password_on | bool else '')}) -%}
+        {%- set _ = out.append({'id': 'ssh.authorized_keys',
+              'status': 'INFO' if aegis_soft_keys else 'PASS',
+              'detail': ((aegis_soft_keys | length | string) ~ ' authorized key(s) not on a hardware key: '
+                         ~ (aegis_soft_keys | map(attribute='user') | zip(aegis_soft_keys | map(attribute='type'))
+                            | map('join', ' ') | join(', '))
+                         ~ '. An sk- key (ssh-keygen -t ed25519-sk) cannot be copied off the machine')
+                        if aegis_soft_keys
+                        else (aegis_ssh.authorized_keys | length | string)
+                             ~ ' authorized key(s), all hardware-backed'}) -%}
+      {%- endif -%}
+      {{ (aegis_findings | default([])) + out }}

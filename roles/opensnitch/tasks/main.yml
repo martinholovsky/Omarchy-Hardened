@@ -85,6 +85,49 @@
       register: aegis_os_ui
       when: aegis_opensnitch_autostart_ui | bool
 
+    # While opensnitch-ui runs, the daemon asks it about each new connection,
+    # and an unanswered prompt applies the UI's own default, which v1.7.2 sets
+    # to deny "until restart" (ui/opensnitch/config.py). Without this, D-09's
+    # "allow" held only while no UI ran; in the VM it cut all egress (2026-10-24).
+    - name: Create the UI settings directory
+      ansible.builtin.file:
+        path: "~{{ aegis_opensnitch_user }}/.config/opensnitch"
+        state: directory
+        mode: "0755"
+      become: true
+      become_user: "{{ aegis_opensnitch_user }}"
+
+    - name: Pin the UI's action for an unanswered prompt
+      community.general.ini_file:
+        path: "~{{ aegis_opensnitch_user }}/.config/opensnitch/settings.conf"
+        section: global
+        option: default_action
+        value: "{{ aegis_opensnitch_ui_actions[aegis_opensnitch_default_action] }}"
+        no_extra_spaces: true
+        create: true
+        mode: "0644"
+      become: true
+      become_user: "{{ aegis_opensnitch_user }}"
+
+    # opensnitch-ui 1.7.2 aborts at login when it finds no system tray: its
+    # tray warning calls notify2 without checking that notify2 initialised
+    # (ui/opensnitch/service.py, _show_systray_msg_error), and Qt aborts on
+    # the exception. Seen in 3 of 3 VM boots (2026-10-25), with and without
+    # the change above. Fixed upstream in 1.8.0 (_has_desktop_notifications);
+    # Arch still ships 1.7.2. With this key the warning returns early and the
+    # UI keeps running, without a tray icon if there is none.
+    - name: Skip the tray warning that crashes opensnitch-ui 1.7.2
+      community.general.ini_file:
+        path: "~{{ aegis_opensnitch_user }}/.config/opensnitch/settings.conf"
+        section: global
+        option: hide_systray_warning
+        value: "true"
+        no_extra_spaces: true
+        create: true
+        mode: "0644"
+      become: true
+      become_user: "{{ aegis_opensnitch_user }}"
+
 - name: Stop OpenSnitch when disabled
   ansible.builtin.systemd_service:
     name: opensnitchd.service
@@ -109,14 +152,30 @@
   register: aegis_os_conf_after
   when: aegis_opensnitch_enabled | bool and not ansible_check_mode
 
-- name: Verify the daemon runs with the chosen default action
+- name: Read the UI settings back
+  ansible.builtin.slurp:
+    src: "~{{ aegis_opensnitch_user }}/.config/opensnitch/settings.conf"
+  register: aegis_os_ui_after
+  become: true
+  become_user: "{{ aegis_opensnitch_user }}"
+  when: aegis_opensnitch_enabled | bool and not ansible_check_mode
+
+- name: Verify the daemon and the UI apply the chosen default action
   vars:
     aegis_action: "{{ (aegis_os_conf_after.content | b64decode | from_json).DefaultAction }}"
+    aegis_ui_text: "{{ aegis_os_ui_after.content | b64decode }}"
+    aegis_ui_index: "{{ aegis_opensnitch_ui_actions[aegis_opensnitch_default_action] }}"
+    aegis_ui_re: '(?ms)^\[global\][^\[]*^default_action={{ aegis_ui_index }}$'
   ansible.builtin.assert:
     that:
       - aegis_os_active.stdout == 'active'
       - aegis_action == aegis_opensnitch_default_action
-    fail_msg: "opensnitchd is {{ aegis_os_active.stdout }}; DefaultAction is {{ aegis_action }}"
+      - aegis_ui_text is search(aegis_ui_re)
+      - "aegis_ui_text is search('(?ms)^\\[global\\][^\\[]*^hide_systray_warning=true$')"
+    fail_msg: >-
+      opensnitchd is {{ aegis_os_active.stdout }}; DefaultAction is {{ aegis_action }};
+      the UI's [global] default_action is not
+      {{ aegis_opensnitch_ui_actions[aegis_opensnitch_default_action] }}
     quiet: true
   when: aegis_opensnitch_enabled | bool and not ansible_check_mode
 
@@ -129,6 +188,7 @@
                       else ('INFO' if not aegis_opensnitch_enabled | bool else 'WARN'),
             'detail': ('opensnitchd ' ~ aegis_os_active.stdout ~ ', default action '
                        ~ aegis_opensnitch_default_action ~ ', ' ~ (aegis_opensnitch_seed_rules | length)
-                       ~ ' seeded rules; prompts appear while opensnitch-ui runs')
+                       ~ ' seeded rules; while opensnitch-ui runs it prompts, and an unanswered prompt applies '
+                       ~ aegis_opensnitch_default_action ~ ' until restart')
                       if aegis_opensnitch_enabled | bool else 'OpenSnitch disabled (aegis_opensnitch_enabled: false)'}
          ] }}
