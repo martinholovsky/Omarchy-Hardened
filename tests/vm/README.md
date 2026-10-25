@@ -191,6 +191,18 @@ netfilter mode and that `network.overlay` WARNs (D-24). As the control, in
 which the mode is set back to `on`. It also checks the SSH findings on the
 harness's key-only sshd.
 
+## 8. Egress report (D-25)
+
+```bash
+tests/vm/egress.sh   # right after tests/vm/run.sh, with the VM still running
+```
+
+It checks that `aegis-egress-collector` runs with a `systemd-analyze security`
+exposure of at most 3.0, lets the packaged `curl` and an unowned copy of it in
+`~/.local/bin` connect out (the copy with a marker on its command line), and
+expects the audit to name the copy only, with the marker in neither the
+collector's state file nor its journal.
+
 ## Traps
 
 - **`ufw limit 22/tcp` drops the 6th connection within 30 s.** A tight
@@ -201,6 +213,14 @@ harness's key-only sshd.
   SSH is not up 140 s later it types it once more (a loaded host reached the
   prompt late on 2026-10-25, and the run stopped at an empty prompt). Raise
   `AEGIS_VM_LUKS_DELAY` on a busy host.
+- Keystrokes typed into the lock screen through VirtualBox can arrive
+  mangled on a loaded host: on 2026-10-24 one wrong password never arrived,
+  and on 2026-10-25 the right one arrived wrong (`pam_unix` rejected it, and
+  typing it again unlocked). `run.sh` types wrong passwords until the tally
+  holds 10 records, and the right one up to 3 times. Omarchy's screensaver
+  (after 150 s idle) would swallow the first key, but it does not start while
+  locked; `run.sh` checks that no screensaver window is up before typing. On
+  any failure `run.sh` saves the guest's screen as `.state/run-failed.png`.
 - Any successful `sudo` as the test user runs `pam_faillock authsucc` and
   clears that user's tally. `run.sh` reads the tally through one root watcher
   started before the lock-screen test, never through `sudo` mid-test. Step 4

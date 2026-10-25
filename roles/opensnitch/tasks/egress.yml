@@ -1,0 +1,47 @@
+---
+# D-25: the local collector that turns opensnitchd's connection log into a
+# table of program -> destination, without command lines.
+- name: Create the collector directory
+  ansible.builtin.file:
+    path: "{{ aegis_egress_collector_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: aegis_egress_report_enabled | bool
+
+- name: Install the collector
+  ansible.builtin.copy:
+    src: aegis-egress-collector.py
+    dest: "{{ aegis_egress_collector_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: aegis_egress_report_enabled | bool
+  notify: Restart aegis-egress-collector
+
+- name: Install the collector unit
+  ansible.builtin.template:
+    src: aegis-egress-collector.service.j2
+    dest: /etc/systemd/system/aegis-egress-collector.service
+    owner: root
+    group: root
+    mode: "0644"
+  when: aegis_egress_report_enabled | bool
+  notify: Restart aegis-egress-collector
+
+- name: Enable and start the collector
+  ansible.builtin.systemd_service:
+    name: aegis-egress-collector.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: aegis_egress_report_enabled | bool
+
+- name: Stop the collector when reporting is off
+  ansible.builtin.systemd_service:
+    name: aegis-egress-collector.service
+    enabled: false
+    state: stopped
+  failed_when: false # the unit may never have been installed
+  when: not aegis_egress_report_enabled | bool

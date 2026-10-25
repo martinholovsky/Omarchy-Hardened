@@ -36,3 +36,26 @@ repos:
         language: system
         pass_filenames: false
         files: \.(ya?ml)$
+      # The egress collector (D-25) is a network-facing service: every ruff
+      # rule, strict mypy and its unit tests. Ansible modules are not covered.
+      - id: ruff
+        name: ruff (collector)
+        entry: uv run --frozen ruff check
+        language: system
+        files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
+      - id: ruff-format
+        name: ruff format (collector)
+        entry: uv run --frozen ruff format --check
+        language: system
+        files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
+      - id: mypy
+        name: mypy --strict (collector)
+        entry: uv run --frozen mypy
+        language: system
+        files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
+      - id: collector-tests
+        name: collector unit tests
+        entry: python3 -I -m unittest discover -s tests/collector
+        language: system
+        pass_filenames: false
+        files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$

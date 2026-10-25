@@ -33,17 +33,31 @@
       register: aegis_os_conf_raw
       when: not ansible_check_mode or aegis_os_installed.rc == 0
 
-    - name: Pin the default action
+    - name: Install the egress collector (D-25)
+      ansible.builtin.import_tasks: egress.yml
+
+    # D-25: one logger entry for the collector; any other loggers the owner
+    # configured are kept.
+    - name: Pin the default action and the collector logger
+      vars:
+        aegis_os_now: "{{ aegis_os_conf_raw.content | b64decode | from_json }}"
+        aegis_os_loggers: >-
+          {{ (aegis_os_now.Server.Loggers | default([], true)
+              | rejectattr('Server', 'defined') | list)
+             + (aegis_os_now.Server.Loggers | default([], true)
+                | selectattr('Server', 'defined')
+                | rejectattr('Server', 'equalto', aegis_egress_logger.Server) | list)
+             + ([aegis_egress_logger] if aegis_egress_report_enabled | bool else []) }}
+        aegis_os_want: >-
+          {{ aegis_os_now | combine({'DefaultAction': aegis_opensnitch_default_action,
+                                     'Server': aegis_os_now.Server | combine({'Loggers': aegis_os_loggers})}) }}
       ansible.builtin.copy:
         dest: "{{ aegis_opensnitch_config }}"
-        content: >-
-          {{ (aegis_os_conf_raw.content | b64decode | from_json)
-             | combine({'DefaultAction': aegis_opensnitch_default_action}) | to_nice_json(indent=4) }}
+        content: "{{ aegis_os_want | to_nice_json(indent=4) }}"
         owner: root
         group: root
         mode: "0644"
-      when: aegis_os_conf_raw.content is defined
-        and (aegis_os_conf_raw.content | b64decode | from_json).DefaultAction != aegis_opensnitch_default_action
+      when: aegis_os_conf_raw.content is defined and aegis_os_want != aegis_os_now
       notify: Restart opensnitchd
 
     # 0755 because opensnitchd resets the directory to that when it starts
@@ -166,14 +180,17 @@
     aegis_ui_text: "{{ aegis_os_ui_after.content | b64decode }}"
     aegis_ui_index: "{{ aegis_opensnitch_ui_actions[aegis_opensnitch_default_action] }}"
     aegis_ui_re: '(?ms)^\[global\][^\[]*^default_action={{ aegis_ui_index }}$'
+    aegis_loggers: "{{ (aegis_os_conf_after.content | b64decode | from_json).Server.Loggers | default([], true) }}"
   ansible.builtin.assert:
     that:
       - aegis_os_active.stdout == 'active'
       - aegis_action == aegis_opensnitch_default_action
       - aegis_ui_text is search(aegis_ui_re)
       - "aegis_ui_text is search('(?ms)^\\[global\\][^\\[]*^hide_systray_warning=true$')"
+      - not aegis_egress_report_enabled | bool or aegis_egress_logger in aegis_loggers
     fail_msg: >-
       opensnitchd is {{ aegis_os_active.stdout }}; DefaultAction is {{ aegis_action }};
+      collector logger {{ 'present' if aegis_egress_logger in aegis_loggers else 'missing' }};
       the UI's [global] default_action is not
       {{ aegis_opensnitch_ui_actions[aegis_opensnitch_default_action] }}
     quiet: true
@@ -192,3 +209,15 @@
                        ~ aegis_opensnitch_default_action ~ ' until restart')
                       if aegis_opensnitch_enabled | bool else 'OpenSnitch disabled (aegis_opensnitch_enabled: false)'}
          ] }}
+
+- name: Verify the egress collector runs (D-25)
+  ansible.builtin.command:
+    argv: [systemctl, is-active, aegis-egress-collector.service]
+  register: aegis_egress_svc
+  changed_when: false
+  failed_when: aegis_egress_svc.stdout != 'active'
+  when: aegis_opensnitch_enabled | bool and aegis_egress_report_enabled | bool and not ansible_check_mode
+
+- name: Report programs that connected out (D-25)
+  ansible.builtin.import_tasks: egress_audit.yml
+  when: aegis_opensnitch_enabled | bool

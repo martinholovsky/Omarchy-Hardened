@@ -20,3 +20,28 @@ aegis_opensnitch_autostart_ui: true
 # role writes the one matching aegis_opensnitch_default_action.
 aegis_opensnitch_ui_actions: {deny: 0, allow: 1, reject: 2}
 aegis_opensnitch_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"
+
+# D-25: report programs that connect out but belong to no pacman package.
+# opensnitchd sends each connection to a local collector, which keeps only the
+# program path and the destination (no command lines) in
+# /var/lib/aegis-egress/egress.json for 30 days.
+aegis_egress_report_enabled: true
+aegis_egress_collector_port: 7811 # below Linux's ephemeral range (32768+)
+aegis_egress_collector_path: /usr/local/lib/aegis/aegis-egress-collector.py
+aegis_egress_state_file: /var/lib/private/aegis-egress/egress.json
+aegis_egress_window_days: 7
+# Programs you trust that no package owns, as shell globs, e.g.
+#   - /home/*/.local/bin/claude
+aegis_egress_known: []
+# The opensnitchd logger entry that feeds the collector (keys from
+# daemon/log/loggers/logger.go at v1.7.2). CSV, because every format carries
+# the command line and CSV lets the collector skip it unread.
+aegis_egress_logger:
+  Name: remote
+  Server: "127.0.0.1:{{ aegis_egress_collector_port }}"
+  Protocol: udp
+  Format: csv
+  Workers: 1
+  MaxConnectAttempts: 0
+# Test seam: tests/container has no systemd, so it skips the service check.
+aegis_egress_check_service: true

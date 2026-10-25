@@ -13,6 +13,11 @@ state="$here/.state"
 
 die() {
   printf 'run.sh: %s\n' "$*" >&2
+  # What the guest showed when the check failed (lock screen, screensaver, prompt).
+  if [[ -n ${vm:-} && -n ${state:-} ]]; then
+    VBoxManage controlvm "$vm" screenshotpng "$state/run-failed.png" >/dev/null 2>&1 &&
+      printf 'run.sh: screenshot in %s\n' "$state/run-failed.png" >&2
+  fi
   exit 1
 }
 
@@ -127,6 +132,13 @@ guest_root sh -c "faillock --user $user --reset; (for i in \$(seq 120); do stat 
 VBoxManage controlvm "$vm" keyboardputscancode e0 5b 1d 26 a6 9d e0 db # Super+Ctrl+L
 sleep 5
 [[ $(locked) == 0 ]] || die "screen did not lock"
+# Omarchy's screensaver (150 s idle) takes the first key to exit
+# (bin/omarchy-screensaver at cbd44ba). It does not start while locked, and
+# locking closes it; this checks that rather than assuming it.
+# shellcheck disable=SC2016 # expanded in the guest, not here
+screensaver=$(guest_ssh 'export XDG_RUNTIME_DIR=/run/user/1000 HYPRLAND_INSTANCE_SIGNATURE=$(ls /run/user/1000/hypr | head -1);
+  hyprctl clients -j | jq "[.[] | select(.class == \"org.omarchy.screensaver\")] | length"')
+[[ $screensaver == 0 ]] || die "a screensaver window is up on the lock screen ($screensaver); typed input would go to it"
 # Typed input can be lost: on 2026-10-24 one of 10 attempts never reached the
 # lock screen (9 pam_unix failures, tally 576 bytes) and the test failed
 # although the lockout was right. Type until the tally holds 10 records.
@@ -145,9 +157,16 @@ sleep 6
 until guest_ssh 'grep -q reset /tmp/aegis-tally-log'; do sleep 7; done
 bytes=$(guest_ssh 'grep -v reset /tmp/aegis-tally-log | tail -1')
 [[ $bytes -ge 640 ]] || die "lock screen recorded $bytes bytes of failures (want 10 records, 640)"
-VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
-sleep 6
-[[ $(locked) == 1 ]] || die "the right password did not unlock after a root reset"
+# The same input loss hit the unlock on 2026-10-25: pam_unix rejected what
+# arrived (one record, 64 bytes) and the same password typed again unlocked.
+# Up to 3 attempts stay far below the 10-failure lockout; a PAM that refuses
+# the right password still fails all three.
+for _ in 1 2 3; do
+  VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
+  sleep 6
+  [[ $(locked) == 1 ]] && break
+done
+[[ $(locked) == 1 ]] || die "the right password did not unlock after a root reset (3 attempts)"
 echo "PASS: lock screen locks out after 10 failures ($bytes bytes of records); a root reset unlocks"
 
 echo "--- sudo and su share one lockout; only wheel may su (G2, step 4)"
