@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=60
+checks_total=61
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -549,6 +549,12 @@ proxy_bin=/usr/local/lib/aegis/agent-proxy/smokescreen
 [[ -x $proxy_bin && $(stat -c %U "$proxy_bin") == root ]] || fail "smokescreen binary not installed root-owned and executable"
 grep -qx '  action: enforce' /etc/aegis/agent-proxy/acl-enforce.yaml || fail "enforce allowlist has the wrong action"
 pass "proxy installed from the checksum-verified release, with one allowlist per mode"
+# A second run must change nothing: unarchive with --no-same-owner and no
+# owner/group reported changed on every run (VM, 2026-10-25).
+out=$(ansible-playbook tests/container/agent-egress.yml 2>&1) || { echo "$out"; fail "agent proxy second run failed"; }
+grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "agent proxy install not idempotent"; }
+[[ $(stat -c %U:%G "$proxy_bin") == root:root ]] || fail "smokescreen binary not root:root after the second run"
+pass "agent proxy install idempotent, binary root:root"
 # Control for the checksum: a wrong pin must stop the run before anything is used.
 rm -f /var/cache/aegis/smokescreen_*.tar.gz
 if ansible-playbook tests/container/agent-egress.yml \

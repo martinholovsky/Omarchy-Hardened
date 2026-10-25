@@ -42,6 +42,13 @@
     dest: "{{ aegis_agent_proxy_dir }}"
     remote_src: true
     include: ["{{ aegis_agent_proxy_tarball | replace('.tar.gz', '') }}/smokescreen"]
+    # The archive's files belong to its builder (`runner`). --no-same-owner
+    # makes the binary root's as tar writes it; owner/group tell unarchive's
+    # changed-check to expect root. Without them every run reported changed
+    # (measured in the VM, 2026-10-25), and without --no-same-owner the
+    # binary kept the builder's numeric uid.
+    owner: root
+    group: root
     extra_opts: [--strip-components=1, --no-same-owner]
   when: not ansible_check_mode
 
@@ -85,7 +92,7 @@
   ansible.builtin.assert:
     that:
       - aegis_agent_proxy_bin.stat.exists and aegis_agent_proxy_bin.stat.executable
-      - aegis_agent_proxy_bin.stat.pw_name == 'root'
+      - aegis_agent_proxy_bin.stat.pw_name == 'root' and aegis_agent_proxy_bin.stat.gr_name == 'root'
       - "(aegis_agent_proxy_acl.results[0].content | b64decode) is search('(?m)^  action: report$')"
       - "(aegis_agent_proxy_acl.results[1].content | b64decode) is search('(?m)^  action: enforce$')"
     fail_msg: "agent proxy files in {{ aegis_agent_proxy_dir }} or {{ aegis_agent_proxy_config_dir }} differ"

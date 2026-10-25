@@ -183,6 +183,9 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- `agent_containment` (D-26): the Smokescreen extract reported `changed` on
+  every run (`--no-same-owner` without `owner`/`group`); the binary is now
+  root:root from extraction and a second run changes nothing (VM, 2026-10-25).
 - `opensnitch` (D-09): `opensnitch-ui` 1.7.2 aborted at every login in the VM
   (no tray found, then an uninitialised notify2 call; fixed upstream in 1.8.0,
   which Arch does not ship yet). The role sets `hide_systray_warning=true` in
