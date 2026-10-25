@@ -562,8 +562,12 @@ pass "a wrong pinned checksum stops the install"
 # wrapper uses, on loopback. Unlisted host: example.org; private: metadata IP.
 proxy_try() { # mode url -> HTTP code of the CONNECT (or of the GET for http://)
   local mode=$1 url=$2
+  # config.yaml names the ACL by its path inside the proxy container, and
+  # Smokescreen loads it while reading the config; put the mode's file there,
+  # as the wrapper's bind mount does.
+  install -D -m 644 "/etc/aegis/agent-proxy/acl-$mode.yaml" /etc/smokescreen/acl.yaml
   "$proxy_bin" --config-file /etc/aegis/agent-proxy/config.yaml --listen-ip 127.0.0.1 --listen-port 4750 \
-    --egress-acl-file "/etc/aegis/agent-proxy/acl-$mode.yaml" >>"/tmp/proxy-$mode.log" 2>&1 &
+    >>"/tmp/proxy-$mode.log" 2>&1 &
   local pid=$!
   for _ in $(seq 20); do ss -ltn | grep -q '127.0.0.1:4750 ' && break; sleep 0.5; done
   if [[ $url == https://* ]]; then
