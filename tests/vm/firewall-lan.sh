@@ -44,7 +44,18 @@ bridge=$(VBoxManage list bridgedifs | sed -n "s/^Name: *\(${host_if}: .*\)$/\1/p
 remove_bridge() {
   VBoxManage controlvm "$vm" poweroff >/dev/null 2>&1 || true
   for _ in $(seq 15); do [[ $(vm_state) == poweroff ]] && break; sleep 2; done
-  VBoxManage modifyvm "$vm" --nic2 none >/dev/null 2>&1 || true
+  # Right after a power-off VirtualBox can still hold the session lock, and
+  # modifyvm fails (it took 2 attempts on 2026-10-25). Retry, then say so if
+  # the NIC is still there: the guest must not stay on the LAN unnoticed.
+  for _ in $(seq 15); do
+    VBoxManage modifyvm "$vm" --nic2 none >/dev/null 2>&1 && break
+    sleep 2
+  done
+  if VBoxManage showvminfo "$vm" --machinereadable | grep -q '^nic2="none"$'; then
+    echo "  bridged NIC removed"
+  else
+    printf 'firewall-lan.sh: could not remove nic2; run: VBoxManage modifyvm %s --nic2 none\n' "$vm" >&2
+  fi
 }
 trap remove_bridge EXIT
 
