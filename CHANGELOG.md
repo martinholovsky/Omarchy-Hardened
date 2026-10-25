@@ -133,6 +133,8 @@ SemVer once 1.0 ships.
 - `tests/container/inside.sh` prints the seconds since the start on every
   `---` section line and the total at exit, to find where the container
   test's time goes before caching anything.
+- `tests/vm/run.sh` enables `ansible.posix.profile_tasks`: every playbook
+  log in `tests/vm/.state/` ends with the 30 slowest tasks.
 - `kernel.perf_event_paranoid` is now 3. That is the same as 2 on mainline
   (verified on linux-omarchy 7.2.8) and no longer lowers linux-hardened's
   default.
