@@ -31,6 +31,9 @@ ssh_port=${AEGIS_VM_SSH_PORT:-2222}
 export ANSIBLE_CONFIG="$repo/ansible.cfg"
 # Keep the test VM's host key out of ~/.ssh/known_hosts.
 export ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s -o UserKnownHostsFile=$state/known_hosts -o StrictHostKeyChecking=accept-new"
+# Time every task (ansible.posix, pinned in requirements.yml): each playbook
+# log ends with the 30 slowest tasks, to find where a 12-minute apply goes.
+export ANSIBLE_CALLBACKS_ENABLED=ansible.posix.profile_tasks PROFILE_TASKS_TASK_OUTPUT_LIMIT=30
 common=(-i "$here/inventory.yml" -u "$user" --private-key "$state/id_ed25519"
   --become-password-file "$state/become-password")
 play=(uv run --project "$repo" ansible-playbook "${common[@]}" -e "@$here/vm-vars.yml"

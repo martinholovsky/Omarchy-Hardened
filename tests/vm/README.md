@@ -149,7 +149,9 @@ It installs `ansible-core` in the guest, as a local user would have it, so
 the D-11 check can run there. It boots and unlocks the VM if it is off. It then applies the playbook twice
 (the second run must change nothing), reboots and unlocks, and runs `--check`
 (nothing may differ after the reboot). Last, it prints the live sysctl values
-and every WARN, FAIL and ACCEPTED finding. Logs go to `tests/vm/.state/`.
+and every WARN, FAIL and ACCEPTED finding. Logs go to `tests/vm/.state/`;
+each playbook log (`run1.log`, `run2.log`, `run3.log`) ends with the 30
+slowest tasks (`profile_tasks`).
 
 `tests/vm/vm-vars.yml` keeps Omarchy's SSH rule, because the test needs it. The
 container test covers removing it.

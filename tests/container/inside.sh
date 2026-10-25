@@ -25,6 +25,14 @@ expect_finding() { # id status
 pass() { checks_passed=$((checks_passed + 1)); echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# Section timing: each "--- name" line also shows the seconds since the start,
+# so a slow section is the jump between two lines. Only "--- " lines change;
+# run.sh still finds "N/N checks passed" as printed.
+echo() {
+  if [[ ${1-} == "--- "* ]]; then builtin echo "$* [t+${SECONDS}s]"; else builtin echo "$@"; fi
+}
+trap 'builtin echo "elapsed: ${SECONDS}s"' EXIT
+
 echo "--- installing ansible"
 pacman -Syu --noconfirm --needed ansible-core python ufw expect sudo git >/dev/null
 ansible --version | head -1
