@@ -181,6 +181,19 @@ destination, and interpreters (`python`, `node`, `curl`, `git`) serve both
 legitimate tools and malware, so per-program rules end up broad while every
 silent block reads as an outage.
 
+**Follow-up (2026-10-25): the prompt UI crashed at every login.** In 3 of 3
+VM boots `opensnitch-ui` 1.7.2 aborted about 16 s after login, with and
+without the change above (a controlled OLD/NEW run: one core dump each). Its
+"no system tray" warning calls notify2 without checking that notify2
+initialised (`ui/opensnitch/service.py`, `_show_systray_msg_error`), and Qt
+aborts on the exception. Upstream fixed it in 1.8.0
+(`_has_desktop_notifications`); Arch ships 1.7.2. The owner chose a fix in
+this role plus raising it upstream; since upstream is already fixed, the
+upstream step is the Arch package being out of date (open-items §2). The role
+sets `[global] hide_systray_warning=true`, which makes that warning return
+early. Why the UI sees no tray although Omarchy's shell registers
+`org.kde.StatusNotifierWatcher` is not known.
+
 ## D-10 — Overlay network: Tailscale or plain WireGuard (Decided 2026-10-21: Tailscale via Omarchy)
 
 Tailscale adds a coordination server you have to trust; WireGuard needs manual

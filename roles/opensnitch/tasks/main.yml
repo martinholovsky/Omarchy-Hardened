@@ -109,6 +109,25 @@
       become: true
       become_user: "{{ aegis_opensnitch_user }}"
 
+    # opensnitch-ui 1.7.2 aborts at login when it finds no system tray: its
+    # tray warning calls notify2 without checking that notify2 initialised
+    # (ui/opensnitch/service.py, _show_systray_msg_error), and Qt aborts on
+    # the exception. Seen in 3 of 3 VM boots (2026-10-25), with and without
+    # the change above. Fixed upstream in 1.8.0 (_has_desktop_notifications);
+    # Arch still ships 1.7.2. With this key the warning returns early and the
+    # UI keeps running, without a tray icon if there is none.
+    - name: Skip the tray warning that crashes opensnitch-ui 1.7.2
+      community.general.ini_file:
+        path: "~{{ aegis_opensnitch_user }}/.config/opensnitch/settings.conf"
+        section: global
+        option: hide_systray_warning
+        value: "true"
+        no_extra_spaces: true
+        create: true
+        mode: "0644"
+      become: true
+      become_user: "{{ aegis_opensnitch_user }}"
+
 - name: Stop OpenSnitch when disabled
   ansible.builtin.systemd_service:
     name: opensnitchd.service
@@ -152,6 +171,7 @@
       - aegis_os_active.stdout == 'active'
       - aegis_action == aegis_opensnitch_default_action
       - aegis_ui_text is search(aegis_ui_re)
+      - "aegis_ui_text is search('(?ms)^\\[global\\][^\\[]*^hide_systray_warning=true$')"
     fail_msg: >-
       opensnitchd is {{ aegis_os_active.stdout }}; DefaultAction is {{ aegis_action }};
       the UI's [global] default_action is not

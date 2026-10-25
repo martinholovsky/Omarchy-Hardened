@@ -34,6 +34,7 @@ two in §3. CI green on `c3d9673` (lint, live sysctl apply, container test).
 | `hardened_malloc` (D-03) | Deferred |
 | Licence check before going public (D-12) | The repo is Apache-2.0. The toolchain it invokes (ansible-core, community.general) is GPL-3.0. That needs a proper look before the repo is public |
 | Egress reporting (D-25) and agent egress proxy (D-26) | Decided 2026-10-24, not built yet |
+| OpenSnitch 1.8.0 in Arch | Arch ships 1.7.2 (last updated 2026-01-10); 1.8.0 (2025-12-15) fixes the UI crash worked around in D-09. Flagging the package out of date needs an Arch account, so it is the owner's step. Once 1.8.0 is in, re-check whether `hide_systray_warning` is still needed |
 | Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)). **Owner, 2026-10-23: none yet.** First the run on real hardware (§1) must pass (the full VM run passed on 2026-10-23), because every role added before the first hardware run widens what that run has to vouch for. Revisit when the real-hardware row in §1 is closed; the items with no desktop effect (18a, #14, #16) come first |
 
 ## 3. Steps for the user on their own machine

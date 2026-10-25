@@ -80,7 +80,7 @@ run on a real machine as a test.
 | After every package install or update, a check runs in the background and may notify "Aegis: hardening drift" | D-11 pacman hook (`/etc/pacman.d/hooks/zz-aegis-drift-check.hook`) | `aegis_drift_check_enabled: false` |
 | A second kernel, `linux-hardened`, appears in the Limine menu (not the default) | D-02 | `aegis_kernel_hardened_install: false` (then `pacman -R linux-hardened`) |
 | After the next reboot AppArmor is active; profiles only log (`journalctl -k \| grep apparmor`) | D-05 `lsm=` drop-in | `aegis_apparmor_enabled: false`, then reboot |
-| OpenSnitch runs; its UI starts with your session and asks about new connections. A prompt you do not answer within 30 s allows the connection until restart (the UI on its own would deny) | D-09 | `aegis_opensnitch_enabled: false` |
+| OpenSnitch runs; its UI starts with your session and asks about new connections. A prompt you do not answer within 30 s allows the connection until restart (the UI on its own would deny). The UI may show no tray icon: version 1.7.2 crashed without one, so its tray warning is switched off | D-09 | `aegis_opensnitch_enabled: false` |
 | With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
 | `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
 

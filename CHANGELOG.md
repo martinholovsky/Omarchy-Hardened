@@ -163,6 +163,11 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- `opensnitch` (D-09): `opensnitch-ui` 1.7.2 aborted at every login in the VM
+  (no tray found, then an uninitialised notify2 call; fixed upstream in 1.8.0,
+  which Arch does not ship yet). The role sets `hide_systray_warning=true` in
+  the UI settings so that path returns early, and reads it back.
+
 - `opensnitch` (D-09): an unanswered prompt denied the connection until
   restart, because `opensnitch-ui` defaults to deny, so "allow by default"
   held only while no UI ran. In the VM it cut all egress after a reboot. The
