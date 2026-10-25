@@ -32,8 +32,10 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
-# No PrivateUsers: inside a user namespace /proc/net/udp shows root's
-# sockets as uid 65534, and the sender check needs to see uid 0.
+# No PrivateUsers: the sender check reads socket owners from /proc/net/udp,
+# and in a private user namespace root is not mapped, so its sockets would be
+# expected to show an overflow uid rather than 0 (expected from how the
+# kernel maps uids, not measured here). Leaving it off avoids the question.
 ProtectProc=invisible
 ProcSubset=pid
 KeyringMode=private
