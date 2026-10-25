@@ -217,7 +217,10 @@ collector's state file nor its journal.
   mangled on a loaded host: on 2026-10-24 one wrong password never arrived,
   and on 2026-10-25 the right one arrived wrong (`pam_unix` rejected it, and
   typing it again unlocked). `run.sh` types wrong passwords until the tally
-  holds 10 records, and the right one up to 3 times.
+  holds 10 records, and the right one up to 3 times. Omarchy's screensaver
+  (after 150 s idle) would swallow the first key, but it does not start while
+  locked; `run.sh` checks that no screensaver window is up before typing. On
+  any failure `run.sh` saves the guest's screen as `.state/run-failed.png`.
 - Any successful `sudo` as the test user runs `pam_faillock authsucc` and
   clears that user's tally. `run.sh` reads the tally through one root watcher
   started before the lock-screen test, never through `sudo` mid-test. Step 4
