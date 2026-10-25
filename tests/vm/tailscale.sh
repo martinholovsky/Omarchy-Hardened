@@ -116,8 +116,20 @@ echo "--- control: netfilter mode nodivert, ufw governs tailscale0"
 guest_root tailscale set --netfilter-mode=nodivert
 # Control: port 22 stays open (Omarchy's SSH rule, kept by vm-vars.yml), so
 # the probe path works and a failure on $PORT is the firewall, not the probe.
-for _ in $(seq 5); do got=$(probe 22); connected "$got" && break; sleep 3; done
-connected "$got" || die "in nodivert mode the probe cannot reach port 22 either ($got)"
+# 10 tries (~110 s): on 2026-10-25 this control failed once and passed on the
+# rerun in the same VM, cause unknown; an OpenSnitch prompt holds a new flow
+# for up to 30 s, so the window outlasts one.
+for _ in $(seq 10); do got=$(probe 22); connected "$got" && break; sleep 3; done
+if ! connected "$got"; then
+  # Diagnostics for the failing control: the probe's view, the INPUT chain,
+  # and what OpenSnitch and ufw logged in the last two minutes.
+  guest_ssh "podman exec aegis-probe tailscale --socket=/tmp/aegis-probe.sock status; \
+    podman exec aegis-probe tailscale --socket=/tmp/aegis-probe.sock ping -c 2 $vm_ip" >&2 || true
+  guest_root sh -c 'iptables -S INPUT | head -5; iptables -S ts-input 2>/dev/null | head -5;
+    journalctl -k --since -2min --no-pager | grep -iE "UFW|tailscale" | tail -10;
+    journalctl -u opensnitchd --since -2min --no-pager | tail -10' >&2 || true
+  die "in nodivert mode the probe cannot reach port 22 either ($got)"
+fi
 for _ in 1 2 3; do
   got=$(probe "$PORT")
   ! connected "$got" || die "in nodivert mode the probe still reached $PORT ($got)"
