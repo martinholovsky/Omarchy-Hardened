@@ -25,14 +25,22 @@ guest_root() {
 
 # Omarchy installs with LUKS, so every boot stops at a passphrase prompt that
 # SSH cannot reach. Wait long enough for the prompt to be on screen, then type
-# the passphrase (the install password) once through VirtualBox. It is typed
-# only once, so a mistimed attempt cannot land in a desktop window.
+# the passphrase (the install password) through VirtualBox. On a loaded host
+# the prompt can come later than the delay and the keystrokes are lost: on
+# 2026-10-25 a run stopped at the prompt with an empty field. So if SSH is not
+# up after the polls, the passphrase is typed once more. Residual risk: if the
+# guest was up but slow to answer SSH, the second attempt lands in the desktop
+# (autologin, no window focused) of this throwaway VM.
 unlock_and_wait() {
+  local attempt
   sleep "${AEGIS_VM_LUKS_DELAY:-45}"
-  VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
-  for _ in $(seq 20); do
-    sleep 7
-    if ssh_up; then return 0; fi
+  for attempt in 1 2; do
+    VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
+    for _ in $(seq 20); do
+      sleep 7
+      if ssh_up; then return 0; fi
+    done
+    echo "unlock attempt $attempt: no SSH after 140 s" >&2
   done
   VBoxManage controlvm "$vm" screenshotpng "$state/boot-failed.png" || true
   die "VM did not come up after unlock; see $state/boot-failed.png"
