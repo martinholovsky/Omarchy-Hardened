@@ -538,3 +538,17 @@ is the proxy. Smokescreen refuses private and internal addresses by default;
 the owner kept that. Its README promises `ghcr.io/stripe/smokescreen`, but the
 image is not public (token 403, package API 404, 2026-10-24), so the release
 binary is used, pinned by SHA-256. Implementation: open-items §2.
+
+**How it is built (2026-10-24).** The role downloads Smokescreen v0.1.0 for
+the machine's architecture, checks it against the SHA-256 pinned from the
+release's `SHA256SUMS` (its SLSA v1 provenance attestation, from
+`stripe/smokescreen`'s `release.yml`, was verified with `gh attestation
+verify` when pinned), and installs only the static binary. `aegis-agent`
+builds a `FROM scratch` image of it (no shell, no libc, no base image) and
+runs one proxy per mode, read-only, as UID 65534, with no capabilities,
+`no-new-privileges`, the agent seccomp profile and memory, CPU and PID
+limits, on two rootless networks: `aegis-agent-int` (internal, no route out)
+and `aegis-agent-ext`. In `report` the agent joins both networks, so traffic
+that ignores the proxy settings still gets out; in `enforce` it joins only
+the internal one. The audit summarises the proxies' JSON log lines
+(`agent.egress`, INFO).

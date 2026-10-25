@@ -1,0 +1,8 @@
+---
+# {{ ansible_managed }}
+# D-26: Smokescreen config (keys from pkg/smokescreen/config_loader.go at
+# {{ aegis_agent_proxy_version }}). Agents send no client certificate, so every
+# request uses the ACL's default entry.
+allow_missing_role: true
+acl_file: /etc/smokescreen/acl.yaml
+max_concurrent_connect_tunnels: 256

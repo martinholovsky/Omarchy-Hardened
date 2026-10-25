@@ -7,6 +7,16 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- `agent_containment` (D-26): `aegis-agent --egress report|enforce|off`.
+  Agents' HTTP(S) goes through Smokescreen v0.1.0 (checksum-pinned release
+  binary, provenance verified), built into a `FROM scratch` image and run
+  read-only as UID 65534 with no capabilities. `report` (default) allows
+  everything and logs hosts outside `aegis_agent_egress_allowlist`; `enforce`
+  puts the agent on an internal network whose only way out is the proxy. The
+  audit lists agent destinations (`agent.egress`). Four container checks (60
+  in all) run the real binary against both allowlists; `tests/vm/agent-egress.sh`
+  covers the wrapper and networks.
+
 - `opensnitch` (D-25): `aegis-egress-collector`, a sandboxed local service
   that receives opensnitchd's connection log over UDP on 127.0.0.1, accepts
   it only from root's socket, and keeps program path and destination for 30
@@ -173,6 +183,9 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- `agent_containment` (D-26): the Smokescreen extract reported `changed` on
+  every run (`--no-same-owner` without `owner`/`group`); the binary is now
+  root:root from extraction and a second run changes nothing (VM, 2026-10-25).
 - `opensnitch` (D-09): `opensnitch-ui` 1.7.2 aborted at every login in the VM
   (no tray found, then an uninitialised notify2 call; fixed upstream in 1.8.0,
   which Arch does not ship yet). The role sets `hide_systray_warning=true` in

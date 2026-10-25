@@ -1,0 +1,7 @@
+# D-26: the agent egress proxy. Nothing but the statically linked Smokescreen
+# binary (checked by SHA-256 when the role installed it): no shell, no libc,
+# no package manager. Built locally by aegis-agent; needs no network.
+FROM scratch
+COPY smokescreen /smokescreen
+USER 65534:65534
+ENTRYPOINT ["/smokescreen"]

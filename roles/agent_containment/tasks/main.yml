@@ -54,6 +54,10 @@
     dest: "{{ aegis_agent_seccomp }}"
   when: aegis_agent_enabled | bool and (aegis_agent_podman.rc == 0 or aegis_agent_install is changed)
 
+- name: Install the agent egress proxy (D-26)
+  ansible.builtin.import_tasks: proxy.yml
+  when: aegis_agent_enabled | bool and aegis_agent_egress != 'off'
+
 - name: Install the aegis-agent wrapper
   ansible.builtin.template:
     src: aegis-agent.sh.j2
@@ -79,3 +83,7 @@
                        ~ ' from a project directory')
                       if aegis_agent_enabled | bool else 'agent wrapper disabled'}
          ] }}
+
+- name: Report agent egress (D-26)
+  ansible.builtin.import_tasks: egress_audit.yml
+  when: aegis_agent_enabled | bool and aegis_agent_egress != 'off'

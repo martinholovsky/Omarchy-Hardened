@@ -1,0 +1,26 @@
+---
+# Container test for D-26: the agent proxy install (download, checksum,
+# extract, config) and the egress audit. No podman here; inside.sh runs the
+# Smokescreen binary directly. Driven by inside.sh.
+- name: Install the agent egress proxy files
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  tasks:
+    - name: Run the proxy install
+      ansible.builtin.include_role:
+        name: agent_containment
+        tasks_from: proxy.yml
+      when: not (audit_only | default(false) | bool)
+
+    - name: Run the egress audit on planted log lines
+      ansible.builtin.include_role:
+        name: agent_containment
+        tasks_from: egress_audit.yml
+      when: audit_only | default(false) | bool
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report
+      when: audit_only | default(false) | bool

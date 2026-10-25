@@ -2,13 +2,24 @@
 # {{ ansible_managed }}
 # aegis-agent: run an AI agent in a rootless Podman container that sees only
 # the current project directory (D-07). No $HOME, no capabilities, no new
-# privileges, no user namespaces inside (D-01).
+# privileges, no user namespaces inside (D-01). Outgoing traffic (D-26):
+#   --egress report   everything allowed; HTTP(S) goes through a proxy that
+#                     logs hosts outside the allowlist (default: {{ aegis_agent_egress }})
+#   --egress enforce  only the allowlist, through the proxy; no other way out
+#   --egress off      the direct network (--network pasta|none), no proxy
 #
-# Usage: aegis-agent [--image IMAGE@sha256:DIGEST] [--network pasta|none] -- COMMAND [ARGS...]
+# Usage: aegis-agent [--image IMAGE@sha256:DIGEST] [--egress report|enforce|off]
+#                    [--network pasta|none] -- COMMAND [ARGS...]
 set -euo pipefail
 
 image=${AEGIS_AGENT_IMAGE:-{{ aegis_agent_image | quote }}}
 network={{ aegis_agent_network | quote }}
+egress={{ aegis_agent_egress | quote }}
+readonly proxy_image=localhost/aegis-agent-proxy:{{ aegis_agent_proxy_version | quote }}
+readonly proxy_dir={{ aegis_agent_proxy_dir | quote }}
+readonly config_dir={{ aegis_agent_proxy_config_dir | quote }}
+readonly proxy_port={{ aegis_agent_proxy_port | int }}
+readonly net_int=aegis-agent-int net_ext=aegis-agent-ext
 
 die() { printf 'aegis-agent: %s\n' "$*" >&2; exit 2; }
 
@@ -16,7 +27,8 @@ while (($#)); do
   case $1 in
     --image) image=${2:?--image needs a value}; shift 2 ;;
     --network) network=${2:?--network needs a value}; shift 2 ;;
-    -h | --help) sed -n '3,8p' "$0"; exit 0 ;;
+    --egress) egress=${2:?--egress needs a value}; shift 2 ;;
+    -h | --help) sed -n '3,13p' "$0"; exit 0 ;;
     --) shift; break ;;
     *) die "unknown option '$1' (did you forget '--'?)" ;;
   esac
@@ -25,12 +37,55 @@ done
 [[ -n $image ]] || die "no image: pass --image or set aegis_agent_image"
 [[ $image == *@sha256:* ]] || die "image must be pinned by digest (IMAGE@sha256:...)"
 [[ $network == pasta || $network == none ]] || die "--network must be pasta or none"
+[[ $egress == report || $egress == enforce || $egress == off ]] || die "--egress must be report, enforce or off"
 ((EUID != 0)) || die "run as your user, not root (rootless Podman)"
 
 project=$(pwd -P)
 case $project in
   / | "$HOME" | "$(dirname "$HOME")") die "run from a project directory, not $project" ;;
 esac
+
+# Start (or reuse) the proxy for this mode. Each mode has its own container
+# and allowlist file, because the action lives in the ACL. A config change is
+# picked up by recreating the container (its label holds a hash of the files).
+start_proxy() {
+  local name=aegis-agent-proxy-$egress hash current running
+  podman network exists "$net_int" || podman network create --internal "$net_int" >/dev/null
+  podman network exists "$net_ext" || podman network create "$net_ext" >/dev/null
+  podman image exists "$proxy_image" ||
+    podman build --quiet --pull=never -t "$proxy_image" -f "$proxy_dir/Containerfile" "$proxy_dir" >/dev/null
+  hash=$(cat "$config_dir/config.yaml" "$config_dir/acl-$egress.yaml" | sha256sum | cut -c1-16)
+  current=$(podman container inspect --format {% raw %}'{{index .Config.Labels "aegis.hash"}}'{% endraw %} "$name" 2>/dev/null || true)
+  if [[ $current != "$hash" ]]; then
+    podman rm -f "$name" >/dev/null 2>&1 || true
+    podman run -d --name "$name" --label "aegis.hash=$hash" \
+      --network "$net_int" --network "$net_ext" \
+      --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+      --security-opt=seccomp={{ aegis_agent_seccomp | quote }} \
+      --memory=256m --memory-swap=256m --cpus=1 --pids-limit=256 \
+      --volume "$config_dir/config.yaml:/etc/smokescreen/config.yaml:ro" \
+      --volume "$config_dir/acl-$egress.yaml:/etc/smokescreen/acl.yaml:ro" \
+      "$proxy_image" --config-file /etc/smokescreen/config.yaml \
+      --listen-ip 0.0.0.0 --listen-port "$proxy_port" >/dev/null
+  fi
+  running=$(podman container inspect --format {% raw %}'{{.State.Running}}'{% endraw %} "$name")
+  [[ $running == true ]] || podman start "$name" >/dev/null
+  printf '%s' "$name"
+}
+
+net_args=()
+env_args=()
+if [[ $egress == off ]]; then
+  net_args=(--network="$network")
+else
+  proxy_url="http://$(start_proxy):$proxy_port"
+  net_args=(--network "$net_int")
+  [[ $egress == report ]] && net_args+=(--network "$net_ext")
+  for var in HTTPS_PROXY https_proxy HTTP_PROXY http_proxy; do
+    env_args+=(--env "$var=$proxy_url")
+  done
+  env_args+=(--env NO_PROXY=localhost,127.0.0.1 --env no_proxy=localhost,127.0.0.1)
+fi
 
 tty=()
 if [[ -t 0 ]]; then tty=(-t); fi
@@ -39,6 +94,7 @@ exec podman run --rm -i "${tty[@]}" \
   --userns=keep-id --cap-drop=ALL --security-opt=no-new-privileges \
   --security-opt=seccomp={{ aegis_agent_seccomp | quote }} \
   --read-only --tmpfs /tmp:rw,nosuid,nodev,size=1g --env HOME=/tmp/home \
-  --network="$network" --memory={{ aegis_agent_memory | quote }} --pids-limit={{ aegis_agent_pids_limit }} \
+  "${net_args[@]}" "${env_args[@]}" \
+  --memory={{ aegis_agent_memory | quote }} --pids-limit={{ aegis_agent_pids_limit }} \
   --volume "$project:/work:rw" --workdir /work \
   "$image" "$@"

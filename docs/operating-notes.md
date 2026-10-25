@@ -84,6 +84,7 @@ run on a real machine as a test.
 | A small service, `aegis-egress-collector`, records which program connected to which host (no command lines) in `/var/lib/private/aegis-egress/egress.json` for 30 days, and the audit WARNs (`egress.unknown_programs`) on programs no package owns, such as a binary in `~/.local/bin` | D-25 | Trust one: add it to `aegis_egress_known` (shell globs). Turn it off: `aegis_egress_report_enabled: false` |
 | With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
 | `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
+| Agents run by `aegis-agent` get `HTTPS_PROXY` set to a local Smokescreen proxy, which logs hosts outside `aegis_agent_egress_allowlist`; the audit lists them (`agent.egress`). `--egress enforce` allows only the list; the proxy refuses LAN and metadata addresses in both modes | D-26 | `--egress off` per run, or `aegis_agent_egress: off` |
 
 ### Being locked out
 
