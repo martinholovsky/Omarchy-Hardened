@@ -145,9 +145,16 @@ sleep 6
 until guest_ssh 'grep -q reset /tmp/aegis-tally-log'; do sleep 7; done
 bytes=$(guest_ssh 'grep -v reset /tmp/aegis-tally-log | tail -1')
 [[ $bytes -ge 640 ]] || die "lock screen recorded $bytes bytes of failures (want 10 records, 640)"
-VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
-sleep 6
-[[ $(locked) == 1 ]] || die "the right password did not unlock after a root reset"
+# The same input loss hit the unlock on 2026-10-25: pam_unix rejected what
+# arrived (one record, 64 bytes) and the same password typed again unlocked.
+# Up to 3 attempts stay far below the 10-failure lockout; a PAM that refuses
+# the right password still fails all three.
+for _ in 1 2 3; do
+  VBoxManage controlvm "$vm" keyboardputfile "$state/become-password"
+  sleep 6
+  [[ $(locked) == 1 ]] && break
+done
+[[ $(locked) == 1 ]] || die "the right password did not unlock after a root reset (3 attempts)"
 echo "PASS: lock screen locks out after 10 failures ($bytes bytes of records); a root reset unlocks"
 
 echo "--- sudo and su share one lockout; only wheel may su (G2, step 4)"
