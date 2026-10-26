@@ -5,6 +5,12 @@ SemVer once 1.0 ships.
 
 ## [Unreleased]
 
+### Changed
+
+- The repository is public. `SECURITY.md` links GitHub's private
+  vulnerability reporting, now enabled; `main` is protected (PRs only, the
+  three CI checks required, no force push or deletion, no bypass).
+
 ## [0.1.0] - 2026-10-26
 
 First release. Tested in an Arch container (CI, 65 checks) and in a VirtualBox
