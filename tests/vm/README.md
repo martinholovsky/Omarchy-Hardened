@@ -218,6 +218,31 @@ direct connection that ignores the proxy all get through; in `enforce` mode
 direct route. It also checks the proxy containers' hardening and that the
 audit (`agent.egress`) names `example.org` as unlisted and refused.
 
+## 10. Firewall from another machine (PRD 3.4)
+
+```bash
+tests/vm/firewall-hostonly.sh   # on its own; it restores pre-aegis-hw first
+```
+
+It gives the VM a second NIC on a VirtualBox host-only network
+(`aegis-fwtest`, `192.168.56.0/24`; created by the script, needs no admin
+rights) and probes the guest from the Mac before and after hardening, with
+`aegis_firewall_remove_ssh: true` as on a real machine. The harness keeps SSH
+through a rule limited to the NAT interface. ufw drops, so a blocked port
+times out, while an allowed port with nothing listening is refused:
+
+| | Omarchy as installed | Hardened |
+|---|---|---|
+| SSH 22 | open | timeout |
+| LocalSend 53317/tcp | refused (allowed) | timeout |
+| Docker DNS from a container | answers | answers; not without its rule |
+
+53317/udp is not tested: a dropped and an unanswered UDP probe look the
+same. The NIC and the network are removed on exit, also on failure. Not
+bridged: a NIC bridged to the Mac's Wi-Fi got no DHCPv4 lease on 2026-10-25,
+and probes to addresses behind the router are unreliable from this host (an
+unused routed address answered "open"), so the script probes on-link only.
+
 ## Traps
 
 - **`ufw limit 22/tcp` drops the 6th connection within 30 s.** A tight
