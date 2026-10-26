@@ -7,6 +7,9 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- `tests/vm/firewall-hostonly.sh`: the firewall probed from another machine
+  over a host-only network, before and after hardening (SSH and LocalSend
+  dropped, Docker DNS kept, with controls). Passed 2026-10-26.
 - `agent_containment` (D-26): `aegis-agent --egress report|enforce|off`.
   Agents' HTTP(S) goes through Smokescreen v0.1.0 (checksum-pinned release
   binary, provenance verified), built into a `FROM scratch` image and run
