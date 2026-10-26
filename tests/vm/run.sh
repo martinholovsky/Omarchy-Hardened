@@ -14,9 +14,15 @@ state="$here/.state"
 die() {
   printf 'run.sh: %s\n' "$*" >&2
   # What the guest showed when the check failed (lock screen, screensaver, prompt).
+  # Keep VirtualBox's error: on 2026-10-25 a failure left no screenshot and,
+  # with the error discarded, no clue why (the same call worked later).
+  local err
   if [[ -n ${vm:-} && -n ${state:-} ]]; then
-    VBoxManage controlvm "$vm" screenshotpng "$state/run-failed.png" >/dev/null 2>&1 &&
+    if err=$(VBoxManage controlvm "$vm" screenshotpng "$state/run-failed.png" 2>&1); then
       printf 'run.sh: screenshot in %s\n' "$state/run-failed.png" >&2
+    else
+      printf 'run.sh: no screenshot: %s\n' "${err:-VBoxManage gave no message}" >&2
+    fi
   fi
   exit 1
 }
