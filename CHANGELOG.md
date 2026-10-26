@@ -5,6 +5,17 @@ SemVer once 1.0 ships.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/threat-model.md`: for every control, the attack or weakness it
+  addresses (ATT&CK/CWE where one fits), the attacker it assumes, whether it
+  enforces or only reports, what it does not stop, and the test that shows it
+  working; plus the boundaries, accepted risks and when to revisit it.
+- Container test (D-26): report mode still refuses the metadata address and a
+  LAN address (407). The enforce-mode metadata check now requires 407 too; it
+  accepted any non-200, which an allowed request to an unreachable address
+  also returns (66 checks).
+
 ### Changed
 
 - The repository is public. `SECURITY.md` links GitHub's private

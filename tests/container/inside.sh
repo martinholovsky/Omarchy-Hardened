@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=65
+checks_total=66
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -231,7 +231,7 @@ grep -q '/usr/local/bin/aegis-test-suid' /var/lib/aegis/audit.jsonl || fail "uno
 rm -f /usr/local/bin/aegis-test-suid
 pass "unowned setuid binary fails the audit"
 
-echo "--- package drift: a modified binary is reported (WARN by default, FAIL when chosen)"
+echo "--- package drift: a modified binary is reported (WARN as set for this test, FAIL as the role default)"
 cp -a /usr/bin/false /tmp/false.orig
 printf 'aegis' >> /usr/bin/false
 ansible-playbook tests/container/playbook.yml >/dev/null || fail "drift at WARN severity failed the run"
@@ -602,9 +602,19 @@ metadata=$(proxy_try enforce http://169.254.169.254/)
 report_unlisted=$(proxy_try report https://example.org/)
 [[ $listed == 200 ]] || { cat /tmp/proxy-enforce.log; fail "enforce: github.com (listed) got $listed"; }
 [[ $unlisted != 200 && $unlisted != 000 ]] || { cat /tmp/proxy-enforce.log; fail "enforce: example.org (unlisted) got $unlisted"; }
-[[ $metadata != 200 ]] || fail "the metadata address was reachable through the proxy"
+# 407 is Smokescreen refusing (denyError); a request it let through to an
+# unreachable address would show 502/504, so != 200 alone could not fail.
+[[ $metadata == 407 ]] || fail "enforce: the metadata address got $metadata, not the proxy's refusal (407)"
 [[ $report_unlisted == 200 ]] || { cat /tmp/proxy-report.log; fail "report: example.org got $report_unlisted"; }
 pass "enforce allows github.com ($listed), refuses example.org ($unlisted) and 169.254.169.254 ($metadata); report allows example.org"
+# Report mode allows every host, so a refusal there can only come from
+# Smokescreen's address rules (classifyAddr: not global unicast, private
+# ranges), which apply after the ACL allows (v0.1.0 smokescreen.go).
+report_metadata=$(proxy_try report http://169.254.169.254/)
+report_lan=$(proxy_try report http://10.0.0.1/)
+[[ $report_metadata == 407 && $report_lan == 407 ]] \
+  || { cat /tmp/proxy-report.log; fail "report: metadata got $report_metadata, LAN got $report_lan (want 407, refused)"; }
+pass "report mode still refuses the metadata address and a LAN address (407)"
 # The audit reads exactly these log lines (plus noise it must skip).
 python3 -I - /tmp/proxy-enforce.log /tmp/proxy-report.log >/tmp/proxy-lines.json <<'PY'
 import json, sys
