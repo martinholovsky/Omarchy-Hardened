@@ -7,6 +7,12 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- `become_check` (D-04): a first play, run without sudo, stops the playbook
+  when it is not root, sudo has `pam_u2f` and a FIDO2 key is plugged in, and
+  says to run `sudo ansible-playbook …` (one touch). Run as root, the main play
+  uses no `become`, so `SUDO_USER` still names the desktop user. Verified in
+  the VM with a YubiKey: as the user it stops in 2 s; as root, one touch,
+  `failed=0`, and nothing written to `/root`.
 - `tests/vm/firewall-hostonly.sh`: the firewall probed from another machine
   over a host-only network, before and after hardening (SSH and LocalSend
   dropped, Docker DNS kept, with controls). Passed 2026-10-26.

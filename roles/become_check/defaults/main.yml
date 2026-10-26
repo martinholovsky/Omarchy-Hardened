@@ -1,0 +1,7 @@
+---
+# Read before any task uses sudo. Omarchy's omarchy-setup-security-fido2 puts
+# `auth sufficient pam_u2f.so cue` at the top of this file.
+aegis_become_check_sudo_pam: /etc/pam.d/sudo
+# Lists the FIDO2 devices this user can open; ships with libfido2, which
+# pam-u2f depends on.
+aegis_become_check_fido2_token: fido2-token

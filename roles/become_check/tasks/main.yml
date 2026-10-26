@@ -1,0 +1,54 @@
+---
+# Runs as the invoking user with no become and no facts: anything that used
+# sudo here would already be the problem this role looks for.
+#
+# With pam_u2f in the sudo stack and a FIDO2 key plugged in, sudo waits for a
+# touch before it asks for a password. Ansible's become for every task then
+# times out waiting for the password prompt (measured in the VM, 2026-10-26:
+# "Timeout (12s) waiting for privilege escalation prompt"). Run as root, the
+# main play needs no become at all, so one touch at the outer sudo is enough.
+- name: Read the invoking user's uid
+  ansible.builtin.command: id -u
+  register: aegis_become_uid
+  changed_when: false
+  check_mode: false
+
+- name: Record whether this run is already root
+  ansible.builtin.set_fact:
+    aegis_run_as_root: "{{ aegis_become_uid.stdout | trim == '0' }}"
+
+- name: Read the sudo PAM stack
+  ansible.builtin.slurp:
+    src: "{{ aegis_become_check_sudo_pam }}"
+  register: aegis_become_sudo_pam
+  failed_when: false
+  when: not aegis_run_as_root
+
+- name: Record whether sudo asks for a FIDO2 key
+  ansible.builtin.set_fact:
+    aegis_sudo_u2f: >-
+      {{ (aegis_become_sudo_pam.content | default('') | b64decode)
+         is search('(?m)^[ \t]*auth[ \t]+(\[[^\]]*\]|\S+)[ \t]+pam_u2f\.so') }}
+  when: not aegis_run_as_root
+
+- name: List the FIDO2 keys plugged in
+  ansible.builtin.command: "{{ aegis_become_check_fido2_token }} -L"
+  register: aegis_become_fido2_keys
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: not aegis_run_as_root and aegis_sudo_u2f | bool
+
+- name: Stop before sudo waits for a key touch on every task
+  ansible.builtin.fail:
+    msg: >-
+      sudo on this machine asks for your FIDO2 key first (pam_u2f in
+      {{ aegis_become_check_sudo_pam }}), and a key is plugged in, so every
+      task's sudo would wait for a touch that Ansible cannot ask for. Run the
+      playbook once as root instead, which needs one touch:
+      sudo ansible-playbook omarchy-harden.yml (same options, without
+      --ask-become-pass). Or unplug the key and run it as before.
+  when:
+    - not aegis_run_as_root
+    - aegis_sudo_u2f | bool
+    - (aegis_become_fido2_keys.stdout | default('') | trim | length) > 0

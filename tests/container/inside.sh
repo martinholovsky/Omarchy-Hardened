@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=61
+checks_total=65
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -643,6 +643,32 @@ if kernel_play /tmp/limine-missing.conf >/tmp/kernel.log 2>&1; then
 fi
 grep -q 'no linux-hardened entry' /tmp/kernel.log || { cat /tmp/kernel.log; fail "failed for the wrong reason"; }
 pass "a menu without linux-hardened fails the run"
+
+echo "--- become: a key-gated sudo stops a non-root run before its first sudo"
+useradd -m becomeuser
+install -d -m 755 /tmp/bc
+printf 'auth    sufficient pam_u2f.so cue authfile=/etc/fido2/fido2\n#%%PAM-1.0\nauth\t\tinclude\t\tsystem-auth\n' >/tmp/bc/sudo-u2f
+printf '#%%PAM-1.0\nauth\t\tinclude\t\tsystem-auth\n' >/tmp/bc/sudo-plain
+printf '#!/bin/sh\necho "/dev/hidraw2: vendor=0x1050, product=0x0407 (Yubico YubiKey OTP+FIDO+CCID)"\n' >/tmp/bc/token-key
+printf '#!/bin/sh\nexit 0\n' >/tmp/bc/token-none
+chmod 755 /tmp/bc/token-key /tmp/bc/token-none
+chmod 644 /tmp/bc/sudo-u2f /tmp/bc/sudo-plain
+become_play() { # pam token -> exit status of the play run as becomeuser
+  su becomeuser -s /bin/bash -c "cd /work && ansible-playbook tests/container/become-check.yml \
+    -e aegis_become_check_sudo_pam=$1 -e aegis_become_check_fido2_token=$2" >/tmp/become.log 2>&1
+}
+ansible-playbook tests/container/become-check.yml >/tmp/become.log 2>&1 || { cat /tmp/become.log; fail "become check failed as root"; }
+grep -q 'aegis_run_as_root=True' /tmp/become.log || { cat /tmp/become.log; fail "a root run was not recognised"; }
+pass "as root the check passes and records a root run"
+if become_play /tmp/bc/sudo-u2f /tmp/bc/token-key; then
+  cat /tmp/become.log; fail "pam_u2f with a key plugged in did not stop a non-root run"
+fi
+grep -q 'Run the playbook once as root' /tmp/become.log || { cat /tmp/become.log; fail "stopped for another reason"; }
+pass "pam_u2f and a plugged-in key stop a non-root run, with the way out"
+become_play /tmp/bc/sudo-u2f /tmp/bc/token-none || { cat /tmp/become.log; fail "pam_u2f without a key stopped the run"; }
+pass "pam_u2f with no key plugged in lets a non-root run go on"
+become_play /tmp/bc/sudo-plain /tmp/bc/token-key || { cat /tmp/become.log; fail "a key without pam_u2f stopped the run"; }
+pass "a key without pam_u2f in sudo lets a non-root run go on"
 
 [[ $checks_passed -eq $checks_total ]] || fail "only $checks_passed/$checks_total checks ran"
 echo "${checks_passed}/${checks_total} checks passed"

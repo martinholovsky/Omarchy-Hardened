@@ -3,13 +3,28 @@
 #
 # Run a dry run first, always:
 #   ansible-playbook omarchy-harden.yml --check --diff --ask-become-pass
+# With a FIDO2 key set up for sudo (omarchy-setup-security-fido2) and plugged
+# in, run it as root instead, which takes one touch:
+#   sudo ansible-playbook omarchy-harden.yml --check --diff
 #
 # Every role is tagged with its PRD section, so a single area can be applied on
 # its own (e.g. `--tags auth`). Roles that are still stubs only report what they
 # will do; see README.md for the status of each.
+# Before anything uses sudo: a run that is not root, with pam_u2f in the sudo
+# stack and a key plugged in, would wait for a touch on every task.
+- name: Check how this run gets root
+  hosts: aegis
+  become: false
+  gather_facts: false
+  roles:
+    - role: become_check
+      tags: [always]
+
 - name: Harden an Omarchy / Arch Linux workstation
   hosts: aegis
-  become: true
+  # Already root (sudo ansible-playbook): no become, so sudo's SUDO_USER, which
+  # the roles use to find the desktop user, stays the invoking user.
+  become: "{{ not (aegis_run_as_root | default(false) | bool) }}"
   gather_facts: true
 
   pre_tasks:
