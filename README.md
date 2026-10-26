@@ -17,6 +17,7 @@ recover.
 
 | Role | PRD | Status | What it changes |
 |---|---|---|---|
+| `become_check` | — | ✅ implemented | Nothing. Runs first, without sudo: stops a non-root run when sudo has `pam_u2f` and a FIDO2 key is plugged in, and says to run it as root (D-04) |
 | `preflight` | — | ✅ implemented | Nothing. Refuses non-Arch hosts, finds the Omarchy install, prints the baseline |
 | `sysctl` | 3.1 | ✅ implemented | Renders `/etc/sysctl.d/99-zz-aegis-hardened.conf` from one variable: the PRD set (`dmesg_restrict`, `kptr_restrict`, `kexec_load_disabled`, `yama.ptrace_scope`) plus roadmap Tier 1 (BPF, perf, userfaultfd, ldisc, `protected_fifos/regular=2`, `suid_dumpable=0`, IPv4/IPv6 redirect and source-route off, loose `rp_filter`, syncookies, rfc1337, IPv6 privacy addresses), plus decisions D-15 to D-17 (`sysrq=16`, ASLR `mmap_rnd_bits=32`/`compat=16`, `oops_limit=100`). Applies it, re-applies on runtime drift, reads every value back, and asserts `vm.mmap_min_addr >= 65536` |
 | `pam_faillock` | 3.2 | ✅ implemented | Sets `deny=10` (Omarchy's count), `unlock_time=900` (Omarchy: 120 s) and a persistent tally dir in `faillock.conf` **and** in the inline arguments Omarchy puts in `system-auth` and the lock-screen PAM stack; routes `su` through `system-auth`, restricted to wheel; locks root too (`even_deny_root`, D-19); then verifies |
@@ -63,6 +64,12 @@ ansible-playbook omarchy-harden.yml --tags sysctl --ask-become-pass
 ansible-playbook omarchy-harden.yml --tags auth   --ask-become-pass
 ansible-playbook omarchy-harden.yml --tags network --ask-become-pass
 ```
+
+If sudo asks for your FIDO2 key (`omarchy-setup-security-fido2`) and the key is
+plugged in, run the same commands as root instead, without `--ask-become-pass`:
+`sudo ansible-playbook omarchy-harden.yml --check --diff`. That takes one touch
+for the whole run. Run as your user, sudo would wait for a touch on every task,
+so the playbook stops before its first sudo and says this.
 
 Tags: `p0` `p1` `p2`, area tags (`kernel`, `auth`, `isolation`, `network`,
 `supply-chain`), and one tag per role. All the tunables are in each role's

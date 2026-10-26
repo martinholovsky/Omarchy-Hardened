@@ -1,0 +1,14 @@
+---
+# Container test for the become_check role (driven by inside.sh). Runs as
+# whoever starts it; the sudo PAM file and fido2-token are planted per arm.
+- name: Check how this run gets root
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  roles:
+    - become_check
+  post_tasks:
+    - name: Report what the check found
+      ansible.builtin.debug:
+        msg: "aegis_run_as_root={{ aegis_run_as_root }}"

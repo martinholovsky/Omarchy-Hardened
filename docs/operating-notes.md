@@ -17,7 +17,7 @@ Everything still open is listed in [open-items.md](open-items.md).
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
 | Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22 and the SnowflakeOS checks (18k–18o), a default 4.0.6 install gives 0 FAIL and 2 WARN, both correct: `accounts.password_hash` and `git.commit_signing` ([open-items.md](open-items.md) §3) | Long-lived installs with more packages |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
-| Decided roles (D-01 to D-11) | **VM (2026-10-22):** after a reboot, AppArmor is active with 83 profiles, all in complain mode; Limine lists `linux-omarchy` first, then `linux-hardened`; `opensnitchd` runs; `aegis-agent` has no capabilities and cannot create user namespaces; a real `pacman -S` triggers the D-11 check, which reports drift without repairing it. FIDO2, Flatpak, commit signing and Tailscale ran in the VM only in their not-set-up state (INFO, or WARN for signing); their planted-problem paths are tested in the container only | Booting `linux-hardened`, FIDO2 and signing keys, a tailnet login ([open-items.md](open-items.md) §1) |
+| Decided roles (D-01 to D-11) | **VM (2026-10-22):** after a reboot, AppArmor is active with 83 profiles, all in complain mode; Limine lists `linux-omarchy` first, then `linux-hardened`; `opensnitchd` runs; `aegis-agent` has no capabilities and cannot create user namespaces; a real `pacman -S` triggers the D-11 check, which reports drift without repairing it. Flatpak, commit signing and Tailscale ran in the VM only in their not-set-up state (INFO, or WARN for signing); their planted-problem paths are tested in the container only. **FIDO2 (2026-10-26):** one YubiKey enrolled with `omarchy-setup-security-fido2`; the playbook keeps `pam_u2f` `sufficient` and WARNs (fewer than 2 keys); with the key plugged in, a run as root took one touch, `failed=0` | Booting `linux-hardened`, FIDO2 and signing keys, a tailnet login ([open-items.md](open-items.md) §1) |
 
 The VM run (section 6) has been done; real hardware has not. Treat the first
 run on a real machine as a test.
@@ -40,6 +40,12 @@ run on a real machine as a test.
   ansible-playbook omarchy-harden.yml --check --diff --ask-become-pass
   ```
 
+- **With a FIDO2 key for sudo** (`omarchy-setup-security-fido2`) plugged in,
+  run every command here as root, without `--ask-become-pass`:
+  `sudo ansible-playbook omarchy-harden.yml --check --diff`. One touch covers
+  the run. As your user, each task's sudo would wait for a touch Ansible
+  cannot ask for (measured in the VM: "Timeout (12s) waiting for privilege
+  escalation prompt"), so the playbook stops first and says so.
 - **Keep a second root shell open** (another TTY, `sudo -i`) while you apply
   `--tags auth`. If the PAM change breaks login, you can repair it from there.
 - **Apply one area at a time** (`--tags sysctl`, then `auth`, then `network`),
@@ -83,6 +89,7 @@ run on a real machine as a test.
 | OpenSnitch runs; its UI starts with your session and asks about new connections. A prompt you do not answer within 30 s allows the connection until restart (the UI on its own would deny). The UI may show no tray icon: version 1.7.2 crashed without one, so its tray warning is switched off | D-09 | `aegis_opensnitch_enabled: false` |
 | A small service, `aegis-egress-collector`, records which program connected to which host (no command lines) in `/var/lib/private/aegis-egress/egress.json` for 30 days, and the audit WARNs (`egress.unknown_programs`) on programs no package owns, such as a binary in `~/.local/bin` | D-25 | Trust one: add it to `aegis_egress_known` (shell globs). Turn it off: `aegis_egress_report_enabled: false` |
 | With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
+| With a FIDO2 key set up for sudo and plugged in, the playbook stops before its first sudo unless it runs as root (`sudo ansible-playbook …`, one touch) | D-04 | Unplug the key and use `--ask-become-pass` |
 | `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
 | Agents run by `aegis-agent` get `HTTPS_PROXY` set to a local Smokescreen proxy, which logs hosts outside `aegis_agent_egress_allowlist`; the audit lists them (`agent.egress`). `--egress enforce` allows only the list; the proxy refuses LAN and metadata addresses in both modes | D-26 | `--egress off` per run, or `aegis_agent_egress: off` |
 
@@ -195,8 +202,8 @@ a full run through it is still open (docs/open-items.md).
 The VirtualBox Extension Pack is under the PUEL licence, not an open-source
 one, so the test setup does not rely on it. It is not needed for USB either:
 in 7.2.22 the EHCI and xHCI controllers are part of the base package (user
-manual §3). Passing a FIDO2 key through to the guest (D-04) is untested. Plan
-to test FIDO2 on hardware.
+manual §3). A FIDO2 key passed through with `usbattach` works in the guest
+(enrolment and sudo by touch, 2026-10-26; `tests/vm/README.md` §5c).
 
 ## 7. For contributors
 
