@@ -5,6 +5,12 @@ SemVer once 1.0 ships.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-26
+
+First release. Tested in an Arch container (CI, 65 checks) and in a VirtualBox
+VM with Omarchy 4.0.6; not yet run on real hardware
+([docs/open-items.md](docs/open-items.md) §1).
+
 ### Added
 
 - `become_check` (D-04): a first play, run without sudo, stops the playbook
