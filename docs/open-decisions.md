@@ -189,7 +189,8 @@ initialised (`ui/opensnitch/service.py`, `_show_systray_msg_error`), and Qt
 aborts on the exception. Upstream fixed it in 1.8.0
 (`_has_desktop_notifications`); Arch ships 1.7.2. The owner chose a fix in
 this role plus raising it upstream; since upstream is already fixed, the
-upstream step is the Arch package being out of date (open-items §2). The role
+upstream step is the Arch package being out of date, which it has been flagged
+since 2025-12-15 (open-items §1). The role
 sets `[global] hide_systray_warning=true`, which makes that warning return
 early. Why the UI sees no tray although Omarchy's shell registers
 `org.kde.StatusNotifierWatcher` is not known.
