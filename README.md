@@ -5,7 +5,8 @@ An Ansible playbook that retrofits defence in depth onto an
 kernel and sysctl lockdown, a stricter login lockout, a tighter firewall,
 package-signature auditing, AppArmor, Flatpak auditing and AI agent
 containment. It keeps the Hyprland desktop Omarchy gives you. The
-requirements are in [docs/PRD.md](docs/PRD.md).
+requirements are in [docs/PRD.md](docs/PRD.md). What each control protects
+against, and what it does not, is in [docs/threat-model.md](docs/threat-model.md).
 
 **Status: alpha.** Every role except `hardened_malloc` (deferred) is
 implemented. Each is tested in a container, in a VirtualBox install of Omarchy,
@@ -154,6 +155,7 @@ docs/PRD.md               requirements
 docs/upstream-baseline.md what Omarchy really ships (verified)
 docs/open-decisions.md    security decisions each stub is waiting on
 docs/operating-notes.md   before/after a run: effects, rollback, untested areas, VM test
+docs/threat-model.md      what each control protects against, its evidence, and what it does not stop
 docs/roadmap.md           ranked backlog merged from the reviews below
 docs/open-items.md        what is still untested or waiting on the owner
 docs/research/            the source reviews (Securix-Linux, secureblue, Kicksecure, SnowflakeOS)

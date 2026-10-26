@@ -91,7 +91,7 @@ run on a real machine as a test.
 | With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
 | With a FIDO2 key set up for sudo and plugged in, the playbook stops before its first sudo unless it runs as root (`sudo ansible-playbook …`, one touch) | D-04 | Unplug the key and use `--ask-become-pass` |
 | `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
-| Agents run by `aegis-agent` get `HTTPS_PROXY` set to a local Smokescreen proxy, which logs hosts outside `aegis_agent_egress_allowlist`; the audit lists them (`agent.egress`). `--egress enforce` allows only the list; the proxy refuses LAN and metadata addresses in both modes | D-26 | `--egress off` per run, or `aegis_agent_egress: off` |
+| Agents run by `aegis-agent` get `HTTPS_PROXY` set to a local Smokescreen proxy, which logs hosts outside `aegis_agent_egress_allowlist`; the audit lists them (`agent.egress`). `--egress enforce` allows only the list; the proxy refuses LAN and metadata addresses in both modes (407; tested in the container) | D-26 | `--egress off` per run, or `aegis_agent_egress: off` |
 
 ### Being locked out
 
