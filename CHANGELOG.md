@@ -7,6 +7,9 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- `tests/vm/firewall-hostonly.sh`: the firewall probed from another machine
+  over a host-only network, before and after hardening (SSH and LocalSend
+  dropped, Docker DNS kept, with controls). Passed 2026-10-26.
 - `agent_containment` (D-26): `aegis-agent --egress report|enforce|off`.
   Agents' HTTP(S) goes through Smokescreen v0.1.0 (checksum-pinned release
   binary, provenance verified), built into a `FROM scratch` image and run
@@ -188,6 +191,9 @@ SemVer once 1.0 ships.
 
 ### Fixed (found by the VM and container tests)
 
+- Container test (D-25): senders hold their socket open, so the collector's
+  owner check no longer races their exit (CI rejected root's first datagram
+  once), and the spoofed datagram is rejected for its uid.
 - `agent_containment` (D-26): the Smokescreen extract reported `changed` on
   every run (`--no-same-owner` without `owner`/`group`); the binary is now
   root:root from extraction and a second run changes nothing (VM, 2026-10-25).

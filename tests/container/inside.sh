@@ -515,16 +515,21 @@ install -d -m 700 /tmp/egress
 python3 -I roles/opensnitch/files/aegis-egress-collector.py --port 7811 --state-dir /tmp/egress 2>/tmp/collector.log &
 collector=$!
 for _ in $(seq 20); do ss -lun | grep -q '127.0.0.1:7811 ' && break; sleep 0.5; done
+# Each sender holds its socket for 2 s: the collector rejects a datagram whose
+# sending socket is gone by the time it reads /proc/self/net/udp (forced with
+# SIGSTOP on 2026-10-26: 5 of 5 rejected closed, 0 of 5 held). CI once read
+# the first datagram after its sender had exited.
 send() {
-  python3 -I -c 'import socket,sys
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("127.0.0.1", 7811)); s.send(sys.argv[1].encode())' "$1"
+  python3 -I -c 'import socket,sys,time
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("127.0.0.1", 7811)); s.send(sys.argv[1].encode()); time.sleep(2)' "$1"
 }
 # Shape of opensnitchd v1.7.2 CSV: 9 fields, then the command line.
 row() { printf '10.0.0.2,40000,140.82.112.3,%s,443,tcp,42,0,%s,[%s --token SECRET-%s],/root,allow,r' "$1" "$2" "$2" "$1"; }
 send "$(row github.com /usr/bin/curl)"
 send "$(row beacon.example /opt/beacon/x)"
 # shellcheck disable=SC2016 # the Python code is for the inner shell, unexpanded
-su sshtest -s /bin/sh -c 'python3 -I -c "import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect((\"127.0.0.1\", 7811)); s.send(b\"10.0.0.2,1,1.1.1.1,spoof.example,443,tcp,1,1500,/opt/spoof,[x],/,allow,r\")"'
+# Held open too, so it is rejected for its uid, not for a socket that is gone.
+su sshtest -s /bin/sh -c 'python3 -I -c "import socket,time; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect((\"127.0.0.1\", 7811)); s.send(b\"10.0.0.2,1,1.1.1.1,spoof.example,443,tcp,1,1500,/opt/spoof,[x],/,allow,r\"); time.sleep(2)"'
 sleep 1
 { kill -TERM "$collector" && wait "$collector"; } || { cat /tmp/collector.log; fail "collector did not stop cleanly"; }
 python3 -I - /tmp/egress/egress.json <<'PY' || { cat /tmp/collector.log; fail "collector state not as expected"; }

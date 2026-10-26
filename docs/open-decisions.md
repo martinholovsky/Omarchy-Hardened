@@ -523,7 +523,10 @@ A rejected sender is logged as `egress_sender_reject` and the audit WARNs on
 it (`egress.collector_sender`). The report is best effort: UDP has no
 retry, and an event sent while the collector is down (a restart, a crash)
 is lost. Measured 2026-10-25: of three probes run right before a restart,
-one arrived after it and one never did. It is a report of what programs
+one arrived after it and one never did. A datagram read after its sending
+socket has closed is rejected too, since its owner can no longer be checked
+(forced 2026-10-26: 5 of 5 rejected), so events opensnitchd sent just before
+it restarted can be lost the same way. It is a report of what programs
 connect out, not an audit log.
 
 ## D-26 — Outgoing traffic of agent containers (Decided 2026-10-24)
