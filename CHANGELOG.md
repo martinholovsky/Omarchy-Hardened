@@ -18,9 +18,31 @@ SemVer once 1.0 ships.
 
 ### Changed
 
+- D-12 closed: the GPL-3.0 toolchain does not affect the Apache-2.0 licence,
+  because the custom modules import only `ansible.module_utils.basic`
+  (Simplified BSD) and no GPL code is shipped.
 - The repository is public. `SECURITY.md` links GitHub's private
   vulnerability reporting, now enabled; `main` is protected (PRs only, the
   three CI checks required, no force push or deletion, no bypass).
+
+### Fixed
+
+- D-11: the drift check's `applied-vars.yml` no longer saves become_check's
+  per-run results. `aegis_become_uid` carries timestamps, so every apply
+  rewrote the file (the VM's second run reported `changed=1`), and a saved
+  non-root answer would have been pinned into the root check run, where a
+  plugged-in FIDO2 key could stop it. The container test now runs
+  become_check and re-applies with the drift check on (67 checks).
+
+### Known issues
+
+- Found in the VM on 2026-10-27, open as D-27 to D-30: `pkexec` refuses the
+  right password because polkit's sandboxed helper cannot open the faillock
+  tally in `/var/lib/faillock` (D-14); after Omarchy's FIDO2 setup, polkit
+  password failures are not counted; booted on `linux-hardened`, the sysctl
+  read-back fails on two keys that kernel does not have, and `aegis-agent`
+  cannot mount overlay. A local run (`ansible_connection: local`, on a pty)
+  showed no "junk after the JSON data" warning.
 
 ## [0.1.0] - 2026-10-26
 

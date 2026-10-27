@@ -22,13 +22,21 @@ aegis_drift_check_notify: true
 
 # Variables that describe the machine rather than your settings, and are not
 # saved for the check run. aegis_omarchy_paths is resolved on the controller,
-# so it would pin the controller's $HOME.
+# so it would pin the controller's $HOME. The become_check results describe how
+# this run got root: saved, they would pin a non-root run's answer into the
+# root check run (extra vars beat set_fact), and aegis_become_uid carries the
+# command's timestamps, so every apply would rewrite the file (VM, 2026-10-27).
 aegis_drift_check_exclude_vars:
   - aegis_drift_check_source
   - aegis_omarchy_paths
   - aegis_omarchy_path
   - aegis_omarchy_stats
   - aegis_omarchy_version_file
+  - aegis_become_uid
+  - aegis_become_sudo_pam
+  - aegis_become_fido2_keys
+  - aegis_run_as_root
+  - aegis_sudo_u2f
 
 # The only collection content the playbook needs: community.general.ufw and
 # ini_file (opensnitch, D-09), which import nothing from the collection, only

@@ -22,6 +22,9 @@
     aegis_drift_check_tags: [auth]
     aegis_drift_check_notify: false
   roles:
+    # First, as in omarchy-harden.yml: its results must stay out of the
+    # drift check's applied-vars.yml (D-11 section of inside.sh).
+    - become_check
     - preflight
     - drift_check
     - sysctl

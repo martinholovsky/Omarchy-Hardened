@@ -29,8 +29,8 @@ vm=${AEGIS_VM_NAME:-aegis-omarchy}
 ssh_port=${AEGIS_VM_SSH_PORT:-2222}
 snapshot=${AEGIS_VM_SNAPSHOT:-pre-aegis-hw}
 readonly alpine=docker.io/library/alpine@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
-# A subnet clear of the LAN (192.168.2.0/24 here), VirtualBox NAT
-# (10.0.2.0/24) and Docker (172.16.0.0/12).
+# A subnet clear of the usual home LAN ranges, VirtualBox NAT (10.0.2.0/24)
+# and Docker (172.16.0.0/12).
 readonly net=aegis-fwtest net_prefix=192.168.56.
 
 export ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPersist=60s -o UserKnownHostsFile=$state/known_hosts -o StrictHostKeyChecking=accept-new"
