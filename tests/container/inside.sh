@@ -423,10 +423,11 @@ grep -q '/etc/pam.d/polkit-1 checks the password with pam_unix' /var/lib/aegis/a
 # Omarchy upstream's form (cbd44ba): pam_u2f, then include system-auth.
 printf '%s\n' 'auth      sufficient pam_u2f.so cue authfile=/etc/fido2/fido2' 'auth      include    system-auth' \
   'account   include    system-auth' >/etc/pam.d/polkit-1
+# sha256sum, not cmp: the image has no diffutils, and cmp's exit 127 read as "changed".
+before=$(sha256sum </etc/pam.d/polkit-1)
 ansible-playbook tests/container/playbook.yml >/dev/null || fail "polkit upstream-stack run failed"
 expect_finding auth.polkit_faillock PASS
-cmp -s /etc/pam.d/polkit-1 <(printf '%s\n' 'auth      sufficient pam_u2f.so cue authfile=/etc/fido2/fido2' \
-  'auth      include    system-auth' 'account   include    system-auth') || fail "the audit changed /etc/pam.d/polkit-1"
+[[ $(sha256sum </etc/pam.d/polkit-1) == "$before" ]] || fail "the audit changed /etc/pam.d/polkit-1"
 rm -rf /etc/pam.d/polkit-1 /usr/lib/pam.d/polkit-1 /usr/lib/systemd/system/polkit-agent-helper@.service \
   /etc/systemd/system/polkit-agent-helper@.service.d
 pass "D-28: Omarchy's FIDO2 polkit stack warns, upstream's form passes, and the file is left as it was"
