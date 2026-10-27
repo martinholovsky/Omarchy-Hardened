@@ -106,7 +106,7 @@ drift), **agent container → host and network** (Podman, proxy), and
 
 | Control | Threat it addresses | Status | Does not stop | Evidence |
 |---|---|---|---|---|
-| `pam_faillock` (D-13, D-14, D-19): `deny=10`, `unlock_time=900` (Omarchy: 120), persistent tally, in `faillock.conf` and the inline arguments of `system-auth` and the lock-screen stack; `su` through `system-auth`, wheel-only; root locks too | A2/A3 guesses the password at sudo, su or the lock screen. T1110.001, CWE-307 | enforces | Offline guessing of a stolen hash (see `accounts.password_hash`); a reboot clears the tally while autologin is on (D-23, accepted); polkit prompts may bypass it on 4.0.6 (open item) | VM: lock screen locks out after 10 failures, sudo and su fill one tally and refuse the right password at 10, su refuses a non-wheel user with root's password (`run.sh`). Container: real `su` logins, tally persistence, `even_deny_root` |
+| `pam_faillock` (D-13, D-14, D-19): `deny=10`, `unlock_time=900` (Omarchy: 120), persistent tally, in `faillock.conf` and the inline arguments of `system-auth` and the lock-screen stack; `su` through `system-auth`, wheel-only; root locks too | A2/A3 guesses the password at sudo, su or the lock screen. T1110.001, CWE-307 | enforces | Offline guessing of a stolen hash (see `accounts.password_hash`); a reboot clears the tally while autologin is on (D-23, accepted); polkit prompts bypass it after Omarchy's FIDO2 setup (measured, D-28), and with the stock stack polkit cannot open the tally at all, so `pkexec` refuses the right password (D-27) | VM: lock screen locks out after 10 failures, sudo and su fill one tally and refuse the right password at 10, su refuses a non-wheel user with root's password (`run.sh`). Container: real `su` logins, tally persistence, `even_deny_root` |
 | `fido2` (D-04): with ≥2 keys per wheel user, sudo needs key **and** password (`pam_u2f required`) | A2/A3 who has the password escalates with sudo. T1548.003 | enforces with ≥2 keys; with 1 key Omarchy's `sufficient` stays and the audit WARNs | With one key: the password alone still works. Login, polkit and LUKS are not changed | VM with a YubiKey: one key stays `sufficient`, WARN (2026-10-26). Container: 0, 1 and 2 keys; 2 keys make sudo key AND password. Two keys on real hardware: untested |
 | `pacman_integrity`: NOPASSWD sudoers rules, docker/libvirt/disk (FAIL) and input (WARN) membership, polkit rules that grant everything | A2 becomes root without any password through a NOPASSWD rule, the docker socket or a blanket polkit rule. T1548.003, T1611 | reports; group membership FAILs (D-20) | Grants it does not know about (other setuid helpers, D-Bus services) | Container: unknown NOPASSWD rule warns, Omarchy's asdcontrol drop-in is known; docker membership fails and `aegis_audit_skip` accepts it; unconditional polkit YES warns |
 | `pacman_integrity`: setuid files no package owns, world-writable and unowned files | A2 left a setuid binary or a writable file root later runs. T1548.001 | reports (unowned setuid FAILs) | setuid files a package does own | Container: an unowned setuid binary fails the audit |
@@ -194,8 +194,11 @@ Stated plainly, so nobody reads more into the green audit than is there:
 | Tailscale bypasses ufw; reported, not changed | D-24 (a′) | owner, 2026-10-24 |
 | Egress report is best effort | D-25 | owner, 2026-10-24 |
 
-Open, not yet decided or tested: polkit's PAM stack on Omarchy 4.0.6 may
-bypass faillock; FIDO2 with two keys on hardware; a full run on hardware
+Open, not yet decided or tested: after Omarchy's FIDO2 setup, polkit password
+guesses bypass faillock (measured, D-28); with the D-14 tally directory,
+`pkexec` refuses the right password (D-27); on `linux-hardened`, the
+playbook's read-back fails and `aegis-agent` does not run (D-29, D-30);
+FIDO2 with two keys on hardware; a full run on hardware
 ([open-items.md](open-items.md)).
 
 ## 6. When to revisit this document

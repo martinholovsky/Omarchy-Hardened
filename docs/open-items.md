@@ -7,19 +7,22 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-26, on `main` after release 0.1.0 and PRs #16 to #18. The
-repo is public with `main` protected (ruleset `protect-main`). CI on PR #18:
-`66/66 checks passed`. VM on 2026-10-26 (`pre-aegis-hw`, a real YubiKey):
-FIDO2 enrolment, D-04 with one key, and the playbook run as root with one
-touch (`failed=0`); `tests/vm/firewall-hostonly.sh` passed the same day.
+Last reviewed: 2026-10-27, on `docs/closure-2026-10-26` (PR #19). The repo is
+public with `main` protected (ruleset `protect-main`). VM on 2026-10-27
+(`pre-aegis-updated`): `tests/vm/run.sh` passed in full after the D-11
+`applied-vars.yml` fix (the run before it failed its idempotence check on
+that); then `linux-hardened` was booted and polkit tested, which opened
+D-27 to D-30. VM on 2026-10-26 (`pre-aegis-hw`, a real YubiKey): FIDO2
+enrolment, D-04 with one key, and the playbook run as root with one touch
+(`failed=0`).
 
 ## 1. Not tested yet
 
 | Item | Tested so far | What closes it |
 |---|---|---|
 | A run on real hardware | VirtualBox VM and container only | Follow [operating-notes.md](operating-notes.md) §2 on a machine you have backed up, then update the table in §1 there |
-| Booting `linux-hardened` (D-02) | The VM checks only that Limine lists it after `linux-omarchy`. It was never booted | Pick it once in the Limine menu, run `--check`, and confirm that the sysctl values, AppArmor and `aegis-agent` work on it |
-| polkit's PAM stack on Omarchy 4.0.6 | Read only: `omarchy-setup-security-fido2` as installed in the 4.0.6 VM writes `/etc/pam.d/polkit-1` with `auth required pam_unix.so` and no `system-auth`, so faillock may not count polkit password failures; upstream at `cbd44ba` writes `include system-auth`. No role touches this file | Ten wrong passwords at a polkit prompt on 4.0.6, then check the faillock tally; decide whether a role should own `polkit-1` |
+| Booting `linux-hardened` (D-02) | VM (2026-10-27): booted 7.2.10-hardened1-3 from the Limine menu. Works: AppArmor (83 profiles, complain), D-01 user namespaces (`unprivileged_userns_clone=1`; `bwrap` runs), the other sysctl values, `systemd-sysctl`. Fails: `--check` (two keys not in this kernel, D-29) and `aegis-agent` (no unprivileged overlay, D-30). Not booted on hardware | D-29 and D-30 decided and implemented, then boot it again and re-run `--check`; once on hardware |
+| polkit's PAM stack on Omarchy 4.0.6 | VM (2026-10-27), `pkexec` over SSH: with the stock stack the D-14 tally directory is read-only for polkit's sandboxed helper, so the right password is refused (D-27); with the stack Omarchy's FIDO2 setup writes, 10 wrong passwords left the tally empty (D-28). A `pkexec` typed in a desktop terminal is untested | D-27 and D-28 decided; then a `pkexec` in a desktop terminal on the VM |
 | OpenSnitch 1.8.0 (D-09) | 1.7.2 only, with `hide_systray_warning` working around its UI crash. Arch ships 1.7.2-4 (last updated 2026-01-10); upstream 1.8.0 (2025-12-15) has the fix. The Arch package has been flagged out of date since 2025-12-15, so nothing is left for the owner to do. Still 1.7.2-4 on 2026-10-27 (archlinux.org package search) | Once Arch ships 1.8.0, check whether `hide_systray_warning` is still needed |
 | FIDO2 second factor for sudo (D-04) | Container: planted `pam_u2f` lines and `/etc/fido2/fido2` files, 0, 1 and 2 keys. VM (2026-10-26, `pre-aegis-hw`, YubiKey via `usbattach`): one key enrolled with `omarchy-setup-security-fido2` (it reads the key's PIN from a terminal, so it ran in the guest's own terminal); the playbook keeps `pam_u2f` `sufficient` and WARNs; run as root with the key plugged in it took one touch. The two-key path (`required`) is untested: it needs a second key | Enrol the first key with `omarchy-setup-security-fido2`. It registers **one** key, and on a second run it stops with "already registered" (read at `dde0d12`, `bin/omarchy-setup-security-fido2`). Append the second key to your line in `/etc/fido2/fido2` with `pamu2fcfg -n` (per `pamu2fcfg(1)`; not run here). Then re-run and check that sudo asks for the key **and** the password |
 | Commit signing with an `ed25519-sk` key (D-08) | Container: key strings only, including refusal of a non-`sk` key | Set `aegis_commit_signing_pubkey`, make a commit, and check `git log --show-signature` |
@@ -32,6 +35,10 @@ touch (`failed=0`); `tests/vm/firewall-hostonly.sh` passed the same day.
 |---|---|
 | AppArmor enforce mode (D-05) | Profiles load in complain mode. After about a week of denials (`journalctl -k \| grep apparmor`), choose profiles for `aegis_apparmor_enforce`, which is empty |
 | `linux-hardened` as the default boot entry (D-02) | The role never changes the default entry. Switching is a manual step after one clean boot (see §1) |
+| polkit and the D-14 tally directory (D-27) | Found 2026-10-27: `pkexec` refuses the right password because polkit's sandboxed helper cannot open `/var/lib/faillock`. Recommendation in [open-decisions.md](open-decisions.md) |
+| Omarchy's FIDO2 polkit stack has no faillock (D-28) | Found 2026-10-27: after `omarchy-setup-security-fido2`, polkit password guesses are not counted |
+| sysctl read-back on `linux-hardened` (D-29) | Found 2026-10-27: two keys do not exist there, so the playbook and the drift check fail on that kernel |
+| `aegis-agent` on `linux-hardened` (D-30) | Found 2026-10-27: rootless Podman cannot mount overlay on that kernel |
 | `hardened_malloc` (D-03) | Deferred until it reaches the official repos. Checked 2026-10-27: not there (archlinux.org package search, 0 results); AUR only, `14-1` |
 | Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)). **Owner, 2026-10-23: none yet.** First the run on real hardware (§1) must pass (the full VM run passed on 2026-10-23), because every role added before the first hardware run widens what that run has to vouch for. Revisit when the real-hardware row in §1 is closed; the items with no desktop effect (18a, #14, #16) come first |
 
@@ -57,5 +64,4 @@ run. Both are correct.
 
 | Item | Detail |
 |---|---|
-| Ansible "junk after the JSON data" on a local run | Cause found in the VM (2026-10-22): Arch's `/etc/pam.d/sudo` (package `sudo` 1.9.17.p2-6, unmodified) runs `pam_systemd.so`, which writes an OSC 3008 sequence when the sudo session ends. Over an SSH pty it trails the module JSON. The VM inventory now sets `ansible_ssh_use_tty: false`: 0 warnings, against 1 with the pty, on the same become task, which returned the right result both times. A user's own run uses `ansible_connection: local`, which was not tested; if the warning shows there it is noise from the same source |
-| Container test time | The `container-test` job took 15m53s and 17m55s in the last two CI runs (`c3d9673`, `cadc647`; 22m03s at most over the last four), and 22m33s on PR #7 (2026-10-25), against `timeout-minutes: 35`. Nothing is cached: every run starts from the pinned Arch image, runs `pacman -Syu` and installs the collections. Since 2026-10-25 every `---` line of `inside.sh` shows the seconds since the start (`[t+Ns]`) and the run ends with `elapsed:`. Measured on PR #9's CI run (2026-10-25, 1287 s in the container): setup (`pacman -Syu` and the collections) took 16 s, so caching an image would save about 1%; the rest is spread over 33 sections of playbook runs, 30 to 110 s each (largest: D-11 drift 109 s, D-04 FIDO2 104 s, polkit 76 s, `su` logins 68 s). Next, if the time matters: split the sections across parallel CI jobs, or make each playbook run cheaper. The VM side: since PR #9, `tests/vm/run.sh` logs end with the 30 slowest tasks (`profile_tasks`); no `run.sh` log with that table has been read yet. Revisit at the latest when a CI run takes more than 28 minutes (80% of the timeout) |
+| Container test time | The `container-test` job took 15m53s and 17m55s in the last two CI runs (`c3d9673`, `cadc647`; 22m03s at most over the last four), and 22m33s on PR #7 (2026-10-25), against `timeout-minutes: 35`. Nothing is cached: every run starts from the pinned Arch image, runs `pacman -Syu` and installs the collections. Since 2026-10-25 every `---` line of `inside.sh` shows the seconds since the start (`[t+Ns]`) and the run ends with `elapsed:`. Measured on PR #9's CI run (2026-10-25, 1287 s in the container): setup (`pacman -Syu` and the collections) took 16 s, so caching an image would save about 1%; the rest is spread over 33 sections of playbook runs, 30 to 110 s each (largest: D-11 drift 109 s, D-04 FIDO2 104 s, polkit 76 s, `su` logins 68 s). Next, if the time matters: split the sections across parallel CI jobs, or make each playbook run cheaper. The VM side (`run.sh` 2026-10-27, `profile_tasks`): run 1 took 12m32s, run 2 9m58s, run 3 (`--check`) 11m41s; the slowest tasks of run 1 were the D-11 playbook copy (125 s), the integrity sweep (90 s), two AppArmor complain-mode loops (84 s and 71 s) and two sysctl reads (45 s each). Revisit at the latest when a CI run takes more than 28 minutes (80% of the timeout) |

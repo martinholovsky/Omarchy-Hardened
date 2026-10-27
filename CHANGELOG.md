@@ -34,6 +34,16 @@ SemVer once 1.0 ships.
   plugged-in FIDO2 key could stop it. The container test now runs
   become_check and re-applies with the drift check on (67 checks).
 
+### Known issues
+
+- Found in the VM on 2026-10-27, open as D-27 to D-30: `pkexec` refuses the
+  right password because polkit's sandboxed helper cannot open the faillock
+  tally in `/var/lib/faillock` (D-14); after Omarchy's FIDO2 setup, polkit
+  password failures are not counted; booted on `linux-hardened`, the sysctl
+  read-back fails on two keys that kernel does not have, and `aegis-agent`
+  cannot mount overlay. A local run (`ansible_connection: local`, on a pty)
+  showed no "junk after the JSON data" warning.
+
 ## [0.1.0] - 2026-10-26
 
 First release. Tested in an Arch container (CI, 65 checks) and in a VirtualBox

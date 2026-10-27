@@ -568,3 +568,89 @@ and `aegis-agent-ext`. In `report` the agent joins both networks, so traffic
 that ignores the proxy settings still gets out; in `enforce` it joins only
 the internal one. The audit summarises the proxies' JSON log lines
 (`agent.egress`, INFO).
+
+## D-27 — polkit cannot open the faillock tally in `/var/lib/faillock` (Open, 2026-10-27)
+
+Found in the VM (2026-10-27, `pre-aegis-updated` after `run.sh`, Omarchy
+4.0.6, polkit 127-3). polkit 127 authenticates through a socket-activated
+`polkit-agent-helper@.service` with `ProtectSystem=strict`. The stock
+`/usr/lib/pam.d/polkit-1` includes `system-auth`, so `pam_faillock` runs in
+that sandbox, and with the D-14 tally directory it logs `Error opening the
+tally file for aegis: Read-only file system`; PAM returns a system error and
+**`pkexec` refuses the right password**. Differential: the same stack with
+`dir = /run/faillock` gave no such error and passed PAM. Measured over SSH
+(`pkexec` with a textual agent); there the `/run` attempt then failed at "No
+session for cookie", an SSH-only problem after authentication. A `pkexec`
+typed in a desktop terminal was **not** tested (the keystrokes did not reach a
+terminal), so the desktop path is inferred: it goes through the same helper
+unit. Omarchy 4.0.6 starts no graphical polkit agent, so a terminal `pkexec`
+is the main way to hit this.
+
+Options: (a) a drop-in `polkit-agent-helper@.service.d/` with
+`ReadWritePaths=/var/lib/faillock`, which keeps D-14 and widens the helper's
+sandbox by that one directory; (b) move the tally back to `/run/faillock`,
+which reverses D-14 (a reboot clears a lockout again); (c) accept that
+`pkexec` does not work and document it.
+**Recommendation:** (a). It is the smallest change that keeps both the
+lockout's persistence and polkit, and the helper can already write to the
+tally in Omarchy's default (`/run/faillock`). Needs a VM check that `pkexec`
+then accepts the right password and records failures.
+
+## D-28 — Omarchy's FIDO2 polkit stack has no faillock (Open, 2026-10-27)
+
+`omarchy-setup-security-fido2` (4.0.6, `/usr/bin/omarchy-setup-security-fido2`)
+**creates** `/etc/pam.d/polkit-1` when it does not exist, which is the stock
+case, with `pam_u2f` `sufficient`, then `pam_unix` only; no `system-auth`, so
+no faillock (upstream at `cbd44ba` writes `include system-auth`). Measured in
+the VM (2026-10-27, `pam-u2f` 1.4.0-2, no key enrolled, the file exactly as the
+script writes it): 10 wrong `pkexec` passwords gave 10 `pam_unix` failures and
+a tally of 0 bytes, and the right password then passed PAM. So once a user has
+run Omarchy's FIDO2 setup, a process running as the user can guess the
+(wheel) password at a polkit prompt without limit. No role touches this file.
+
+Options: (a) audit only: WARN when `/etc/pam.d/polkit-1` authenticates with
+`pam_unix` and does not include `system-auth` (or call `pam_faillock`);
+(b) a role that rewrites the file to Omarchy upstream's form (`pam_u2f`
+`sufficient`, then `include system-auth`), behind a variable defaulting to
+off; (c) leave it.
+**Recommendation:** (a) now, (b) once Omarchy ships its upstream form in a
+release. (a) changes nothing on the machine; (b) edits a file Omarchy's own
+script owns, and upstream has already fixed it. D-27 decides whether the
+`system-auth` form works under polkit at all, so (b) waits on D-27 either way.
+
+## D-29 — sysctl read-back on `linux-hardened`, where two keys do not exist (Open, 2026-10-27)
+
+Booting `linux-hardened` (7.2.10-hardened1-3) in the VM (2026-10-27): its
+`/proc/config.gz` has `# CONFIG_KEXEC is not set`, `# CONFIG_KEXEC_FILE is not
+set` and `# CONFIG_USERFAULTFD is not set`, so `kernel.kexec_load_disabled` and
+`vm.unprivileged_userfaultfd` do not exist. `systemd-sysctl` logs "ignoring"
+for both and the boot is fine, but the `sysctl` role's read-back fails on them
+(`sysctl: cannot stat …`), so **the playbook, and with it the D-11 drift check,
+fails on that kernel** (`--check`: `failed=1`). The features are compiled
+out, which is stronger than the sysctl.
+
+Options: (a) a short list of keys whose absence counts as compliant
+(`kernel.kexec_load_disabled`, `vm.unprivileged_userfaultfd`), reported as
+INFO "not in this kernel"; (b) skip any missing key; (c) leave it, and make
+`linux-hardened` a kernel the playbook does not support.
+**Recommendation:** (a). (b) would also hide a typo in a key name, which is
+the silent-match failure AGENTS.md warns about; (c) contradicts D-02.
+
+## D-30 — `aegis-agent` does not run on `linux-hardened` (Open, 2026-10-27)
+
+The same boot: `linux-hardened` builds without `CONFIG_OVERLAY_FS_UNPRIVILEGED`,
+so a mount of `overlay` inside a user namespace is refused (`permission
+denied`, measured) and rootless Podman stops with "'overlay' is not supported
+over btrfs". `aegis-agent` (D-07) therefore fails on that kernel (exit 125).
+On `linux-omarchy` it works (`run.sh`, the same day).
+
+Options: (a) install `fuse-overlayfs` and point rootless Podman's storage at it
+when the running kernel lacks unprivileged overlay; it is a new package
+dependency and a FUSE daemon per container; (b) the `vfs` driver: no new
+package, but a full copy of each image layer per container, slow and large;
+(c) document that `aegis-agent` needs `linux-omarchy`, and have the audit say
+so when booted on `linux-hardened`.
+**Recommendation:** (c) now, while `linux-hardened` is an opt-in second entry
+that nobody has made the default; revisit (a) if the owner makes it the
+default (D-02). (a) adds a FUSE daemon to the containment boundary, which
+deserves its own look.
