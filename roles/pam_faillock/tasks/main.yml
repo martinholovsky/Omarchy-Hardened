@@ -26,6 +26,81 @@
     group: root
     mode: "0644"
 
+- name: Look for polkit's sandboxed PAM helper unit (D-27)
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/{{ aegis_faillock_polkit_helper_unit }}
+  register: aegis_faillock_polkit_helper
+
+- name: Let polkit's PAM helper write the faillock tally (D-27)
+  when: aegis_faillock_polkit_helper.stat.exists
+  block:
+    - name: Create the polkit helper drop-in directory
+      ansible.builtin.file:
+        path: "{{ aegis_faillock_polkit_helper_dropin | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the polkit helper drop-in
+      ansible.builtin.copy:
+        dest: "{{ aegis_faillock_polkit_helper_dropin }}"
+        content: |
+          # Managed by Omarchy-Hardened (pam_faillock role, D-27).
+          # ProtectSystem=strict makes the tally directory read-only for
+          # pam_faillock in this unit; without this, pkexec refuses every password.
+          [Service]
+          ReadWritePaths={{ aegis_faillock_dir }}
+        owner: root
+        group: root
+        mode: "0644"
+      register: aegis_faillock_polkit_dropin_written
+
+    # Each authentication starts a new instance, so a reload is all it needs.
+    - name: Reload systemd after the drop-in changed
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: aegis_faillock_polkit_dropin_written is changed and not ansible_check_mode
+      failed_when: false # no systemd in a container; the drop-in is still read back below
+
+    - name: Check whether systemd is running
+      ansible.builtin.stat:
+        path: /run/systemd/system
+      register: aegis_faillock_systemd
+
+    - name: Read the helper's writable paths as systemd loads them
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - show
+          - -P
+          - ReadWritePaths
+          - "{{ aegis_faillock_polkit_helper_unit | replace('@.', '@aegis-check.') }}"
+      register: aegis_faillock_polkit_rw
+      changed_when: false
+      check_mode: false
+      when: aegis_faillock_systemd.stat.exists
+
+    - name: Read back the polkit helper drop-in
+      ansible.builtin.slurp:
+        src: "{{ aegis_faillock_polkit_helper_dropin }}"
+      register: aegis_faillock_polkit_dropin
+      when: not ansible_check_mode or aegis_faillock_polkit_dropin_written is not changed
+
+    - name: Assert polkit's PAM helper may write the tally directory
+      ansible.builtin.assert:
+        that:
+          - (aegis_faillock_polkit_dropin.content | b64decode)
+            is search('(?m)^ReadWritePaths=' ~ (aegis_faillock_dir | regex_escape) ~ '$')
+          - not aegis_faillock_systemd.stat.exists
+            or aegis_faillock_dir in (aegis_faillock_polkit_rw.stdout | split)
+        fail_msg: >-
+          {{ aegis_faillock_polkit_helper_unit }} cannot write {{ aegis_faillock_dir }}
+          (systemd reports ReadWritePaths={{ aegis_faillock_polkit_rw.stdout | default('n/a') }}),
+          so pkexec would refuse every password (D-27).
+        quiet: true
+      when: not ansible_check_mode or aegis_faillock_polkit_dropin_written is not changed
+
 - name: Set the faillock defaults in faillock.conf
   ansible.builtin.lineinfile:
     path: "{{ aegis_faillock_conf }}"
@@ -156,3 +231,41 @@
 - name: Bring su and su-l under the policy
   ansible.builtin.include_tasks: su.yml
   when: aegis_faillock_su_files | length > 0
+
+# D-28, audit only. omarchy-setup-security-fido2 (4.0.6) creates
+# /etc/pam.d/polkit-1 with pam_u2f, then pam_unix and no system-auth, so
+# polkit password failures never reach faillock (VM, 2026-10-27: 10 wrong
+# passwords, empty tally). The role does not rewrite a file Omarchy's own
+# script owns; it reports it. /etc wins over the package's /usr/lib copy.
+- name: Read polkit's PAM stack (D-28)
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - /etc/pam.d/polkit-1
+    - /usr/lib/pam.d/polkit-1
+  register: aegis_faillock_polkit_pam
+  failed_when: false
+
+- name: Record whether polkit password failures reach faillock
+  vars:
+    aegis_found: "{{ aegis_faillock_polkit_pam.results | selectattr('content', 'defined') | list }}"
+    aegis_path: "{{ (aegis_found | first).item if aegis_found else '' }}"
+    aegis_text: "{{ ((aegis_found | first).content | b64decode) if aegis_found else '' }}"
+    aegis_unix: "{{ aegis_text is search('(?m)^[ \\t]*auth[ \\t]+(\\[[^\\]]*\\]|\\S+)[ \\t]+pam_unix\\.so') }}"
+    aegis_counted: >-
+      {{ aegis_text is search('(?m)^[ \t]*auth[ \t]+(include|substack)[ \t]+system-auth[ \t]*$')
+         or aegis_text is search('(?m)^[ \t]*auth[ \t]+(\[[^\]]*\]|\S+)[ \t]+pam_faillock\.so') }}
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'auth.polkit_faillock',
+            'status': 'INFO' if not aegis_found
+                      else ('WARN' if (aegis_unix | bool and not aegis_counted | bool) else 'PASS'),
+            'detail': 'polkit has no PAM stack (not installed)' if not aegis_found
+                      else (aegis_path ~ ' checks the password with pam_unix but neither includes system-auth nor calls'
+                            ~ ' pam_faillock, so polkit (pkexec) password failures are never counted (D-28;'
+                            ~ ' omarchy-setup-security-fido2 writes this). Fix: replace its "auth required pam_unix.so"'
+                            ~ ' line with "auth include system-auth"'
+                            if (aegis_unix | bool and not aegis_counted | bool)
+                            else aegis_path ~ ' counts password failures in faillock')}
+         ] }}

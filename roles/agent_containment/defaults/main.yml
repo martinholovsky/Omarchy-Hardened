@@ -14,6 +14,11 @@ aegis_agent_network: pasta # "none" for no network at all
 aegis_agent_memory: 8g
 aegis_agent_pids_limit: 2048
 aegis_agent_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"
+# D-30: rootless Podman needs overlayfs inside a user namespace. linux-hardened
+# (D-02) is built without it (# CONFIG_OVERLAY_FS_UNPRIVILEGED is not set), so
+# aegis-agent fails there; the audit says so (agent.kernel_overlay) when the
+# running kernel's config shows it.
+aegis_agent_kernel_config: /proc/config.gz
 
 # D-26 (decided 2026-10-24): agent egress through Smokescreen (Go, MIT,
 # github.com/stripe/smokescreen), an allowlisting HTTP(S) proxy.

@@ -1,0 +1,17 @@
+---
+# Container test for D-30: the agent's kernel check against a planted kernel
+# config, passed as -e aegis_agent_kernel_config=... Driven by inside.sh.
+- name: Check a planted kernel config for unprivileged overlayfs
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  tasks:
+    - name: Run the agent's kernel check
+      ansible.builtin.include_role:
+        name: agent_containment
+        tasks_from: kernel_overlay.yml
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report

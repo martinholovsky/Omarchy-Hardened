@@ -40,4 +40,21 @@ out=$(play)
 grep -Eq "changed=[1-9]" <<<"$out" || { echo "$out"; fail "runtime drift was not re-applied"; }
 [[ $(sysctl -n kernel.dmesg_restrict) == 1 ]] || fail "kernel.dmesg_restrict not restored"
 echo "PASS: a value changed at runtime is detected and re-applied"
+
+# D-29: a key this kernel does not have passes only when it is on
+# aegis_sysctl_absent_ok; the same key without the allowance must fail (a
+# typo in a key name must never read as compiled out). Last, because it
+# rewrites the drop-in with two keys only.
+[[ ! -e /proc/sys/kernel/aegis_no_such_key ]] || fail "the planted key exists"
+planted="{\"aegis_sysctl_settings\":{\"kernel.dmesg_restrict\":1,\"kernel.aegis_no_such_key\":1}"
+if play -e "${planted}}" >/tmp/absent.log 2>&1; then
+  cat /tmp/absent.log; fail "a missing key that is not on aegis_sysctl_absent_ok passed"
+fi
+out=$(play -v -e "${planted},\"aegis_sysctl_absent_ok\":[\"kernel.aegis_no_such_key\"]}") \
+  || { echo "$out"; fail "an allowed compiled-out key failed the run"; }
+grep -q "sysctl.compiled_out" <<<"$out" || { echo "$out"; fail "no sysctl.compiled_out finding"; }
+grep -Eq "changed=[0-9]+ .*failed=0" <<<"$out" || { echo "$out"; fail "allowed compiled-out key: run not clean"; }
+out=$(play -e "${planted},\"aegis_sysctl_absent_ok\":[\"kernel.aegis_no_such_key\"]}")
+grep -Eq "changed=0 .*failed=0" <<<"$out" || { echo "$out"; fail "compiled-out key: second run not idempotent"; }
+echo "PASS: a compiled-out key on aegis_sysctl_absent_ok is reported, not failed, and stays idempotent; off the list it fails"
 '
