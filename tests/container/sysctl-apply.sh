@@ -36,6 +36,13 @@ grep -Eq "changed=0 .*failed=0" <<<"$out" || { echo "$out"; fail "second apply n
 echo "PASS: second apply changed nothing"
 
 sysctl -w kernel.dmesg_restrict=0 >/dev/null
+# D-32: a --check run (as the drift check does) must see the runtime change.
+out=$(play --check) || { echo "$out"; fail "check run failed"; }
+if ! { grep -Eq "changed=[1-9]" <<<"$out" && grep -q "kernel.dmesg_restrict is 0, want 1" <<<"$out"; }; then
+  echo "$out"; fail "a --check run did not report the runtime change (D-32)"
+fi
+[[ $(sysctl -n kernel.dmesg_restrict) == 0 ]] || fail "the --check run changed the kernel"
+echo "PASS: a --check run reports a value changed at runtime, without changing it (D-32)"
 out=$(play)
 grep -Eq "changed=[1-9]" <<<"$out" || { echo "$out"; fail "runtime drift was not re-applied"; }
 [[ $(sysctl -n kernel.dmesg_restrict) == 1 ]] || fail "kernel.dmesg_restrict not restored"

@@ -79,6 +79,36 @@
   check_mode: false
   when: aegis_sysctl_apply | bool
 
+- name: Start the list of live values that differ from the drop-in
+  ansible.builtin.set_fact:
+    aegis_sysctl_drifted: []
+
+- name: Collect the live values that differ from the drop-in
+  ansible.builtin.set_fact:
+    aegis_sysctl_drifted: >-
+      {{ aegis_sysctl_drifted + [item.item.key ~ ' is '
+         ~ ((item.stdout | trim) if item.rc == 0 else 'unreadable') ~ ', want ' ~ item.item.value] }}
+  loop: "{{ aegis_sysctl_before.results | default([]) | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when: item.rc != 0 or (item.stdout | trim) != (item.item.value | string)
+
+# D-32: in check mode the apply step below is skipped and the live assert does
+# not run, so without this a --check run (run.sh after a reboot, the D-11
+# drift check) could not see a live value that something else changed, such
+# as ufw's rp_filter at boot (D-31). Reported as changed, which the drift
+# check treats as drift.
+- name: Report live values that differ from the drop-in (check mode, D-32)
+  ansible.builtin.debug:
+    msg: >-
+      Live sysctl values differ from {{ aegis_sysctl_file }}; a run would
+      re-apply them: {{ aegis_sysctl_drifted | join('; ') }}
+  changed_when: true
+  when:
+    - aegis_sysctl_apply | bool
+    - ansible_check_mode
+    - aegis_sysctl_drifted | length > 0
+
 # Apply when the file changed, or when a live value differs from it (someone
 # changed it at runtime). Keys removed from the settings disappear from the
 # file, but the kernel keeps their old values until the next reboot. With a
