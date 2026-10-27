@@ -678,7 +678,7 @@ deserves its own look.
 `# CONFIG_OVERLAY_FS_UNPRIVILEGED is not set`, PASS when it does not, INFO when
 the config cannot be read. Revisit (a) if `linux-hardened` becomes the default.
 
-## D-31 — ufw resets `rp_filter` to strict at boot (Open, 2026-10-27)
+## D-31 — ufw resets `rp_filter` to strict at boot (Decided 2026-10-27: (a))
 
 Found in the VM (2026-10-27) while verifying D-29 on `linux-hardened`: right
 after boot, `net.ipv4.conf.{all,default}.rp_filter` read **1**, although
@@ -702,3 +702,35 @@ loose `rp_filter` from the sysctl role.
 **Recommendation:** (a). One edit to a config file ufw re-reads at every
 start, no ordering to reason about, and it keeps roadmap #4's reason for
 loose mode. Needs a VM reboot test on both kernels.
+
+**Decided (owner, 2026-10-27):** (a), the recommendation. The `firewall` role
+sets the two `rp_filter` lines in `/etc/ufw/sysctl.conf` to
+`aegis_firewall_ufw_rp_filter` (2) and asserts that no `rp_filter` line in
+either spelling carries another value. **Correction (2026-10-27):** this was
+not seen on `linux-hardened` only. On `linux-omarchy` too, `rp_filter` read 1
+right after a boot; `run.sh`'s "state survives a reboot" passed anyway,
+because its `--check` run cannot see live sysctl values (D-32). Measured in
+the VM after the change: right after a boot, 2 on both keys on both kernels,
+with ufw still starting after `systemd-sysctl` (280.5 s after 279.5 s on
+`linux-hardened`, 1059.2 s after 1057.5 s on `linux-omarchy`).
+
+## D-32 — a `--check` run cannot see live sysctl drift (Open, 2026-10-27)
+
+Found while verifying D-31. In check mode the `sysctl` role reads the live
+values, but its apply step (a `command` task) is skipped and its live
+assert runs only outside check mode, so nothing compares them: in today's
+`run.sh` log, run 1 (apply) shows the apply and assert tasks, run 3 (`--check`
+after the reboot) shows neither, while `rp_filter` was in fact 1. Two
+controls rely on a `--check` run: `run.sh`'s "state survives a reboot" and the
+D-11 drift check after each package transaction. Neither can report a live
+sysctl value that something else reset; both still see the drop-in file.
+
+Options: (a) in check mode, report the differing keys as changed (a task
+that is `changed` when a live value differs, so the drift check notifies and
+`run.sh` fails); (b) a separate audit finding (WARN `sysctl.live_drift`) in
+both modes, which the drift check does not count as drift; (c) leave it, and
+say in the docs that the drift check covers files only.
+**Recommendation:** (a). It makes `--check` mean what its users read it as,
+and the drift check exists for exactly this; with D-31 fixed, a clean
+machine has no live drift to report. Needs the container test (a planted
+live difference in check mode) and a `run.sh` pass.

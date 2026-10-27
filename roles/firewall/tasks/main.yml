@@ -39,6 +39,38 @@
   loop: "{{ aegis_firewall_docker_dns_sources }}"
   when: aegis_firewall_remove_docker_dns | bool
 
+- name: Give ufw's sysctl file the same rp_filter as the sysctl role (D-31)
+  when: aegis_firewall_ufw_rp_filter is not none
+  block:
+    - name: Set rp_filter in ufw's sysctl file
+      ansible.builtin.replace:
+        path: "{{ aegis_firewall_ufw_sysctl_conf }}"
+        regexp: '^(net/ipv4/conf/(all|default)/rp_filter)[ \t]*=[ \t]*[0-9]+[ \t]*$'
+        replace: '\1={{ aegis_firewall_ufw_rp_filter }}'
+
+    - name: Read back ufw's sysctl file
+      ansible.builtin.slurp:
+        src: "{{ aegis_firewall_ufw_sysctl_conf }}"
+      register: aegis_firewall_ufw_sysctl
+      when: not ansible_check_mode
+
+    # Every rp_filter assignment, in either spelling, must carry the value: a
+    # line the replace above did not match (a future ufw) fails here instead
+    # of resetting the kernel value at the next boot.
+    - name: Assert ufw sets no other rp_filter value
+      vars:
+        aegis_values: >-
+          {{ (aegis_firewall_ufw_sysctl.content | b64decode)
+             | regex_findall('(?m)^[ \t]*net[/.]ipv4[/.]conf[/.][^=\s]+[/.]rp_filter[ \t]*=[ \t]*([0-9]+)') }}
+      ansible.builtin.assert:
+        that:
+          - aegis_values | reject('equalto', aegis_firewall_ufw_rp_filter | string) | list | length == 0
+        fail_msg: >-
+          {{ aegis_firewall_ufw_sysctl_conf }} sets rp_filter to {{ aegis_values | join(', ') }}; ufw would
+          apply that at every start, after the sysctl role's {{ aegis_firewall_ufw_rp_filter }} (D-31).
+        quiet: true
+      when: not ansible_check_mode
+
 - name: Enable the firewall
   community.general.ufw:
     state: enabled

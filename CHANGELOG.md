@@ -52,11 +52,15 @@ SemVer once 1.0 ships.
   refused the right password again.
 - D-29: on `linux-hardened` the playbook, and with it the drift check,
   failed on two sysctl keys that kernel is built without.
+- D-31: after every boot, on both kernels, ufw set `rp_filter` to 1 from
+  `/etc/ufw/sysctl.conf`, after `systemd-sysctl` had set 2. The firewall
+  role now gives ufw's file the same value; measured 2 after a boot on
+  both kernels (container: 71 checks).
 
 ### Known issues
 
-- D-31 (open): after a boot, ufw can set `rp_filter` back to 1 (strict) from
-  `/etc/ufw/sysctl.conf`; the next playbook run restores 2 (VM, 2026-10-27).
+- D-32 (open): a `--check` run, and so the D-11 drift check, cannot see a
+  live sysctl value that something else changed (VM, 2026-10-27).
 - A local run (`ansible_connection: local`, on a pty) showed no "junk after
   the JSON data" warning (VM, 2026-10-27).
 

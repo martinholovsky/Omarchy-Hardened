@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=70
+checks_total=71
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -512,6 +512,20 @@ pass "LocalSend and SSH rules removed, Docker DNS kept"
 out=$(ansible-playbook tests/container/firewall.yml)
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "firewall role not idempotent"; }
 pass "firewall role idempotent"
+
+# D-31: ufw applies its own sysctl.conf at every start; it must agree with the
+# sysctl role (rp_filter=2), or the boot ends in strict mode.
+[[ $(grep -cxE 'net/ipv4/conf/(all|default)/rp_filter=2' /etc/ufw/sysctl.conf) == 2 ]] \
+  || { grep -n rp_filter /etc/ufw/sysctl.conf; fail "ufw's sysctl.conf does not set rp_filter=2 on all and default"; }
+! grep -qE 'rp_filter=1' /etc/ufw/sysctl.conf || fail "ufw's sysctl.conf still sets rp_filter=1"
+# A value in the dotted spelling is not rewritten, so the read-back must catch it.
+echo 'net.ipv4.conf.all.rp_filter = 1' >>/etc/ufw/sysctl.conf
+if ansible-playbook tests/container/firewall.yml >/tmp/ufw-rp.log 2>&1; then
+  fail "a dotted rp_filter=1 line in ufw's sysctl.conf passed the run"
+fi
+grep -q 'D-31' /tmp/ufw-rp.log || { cat /tmp/ufw-rp.log; fail "failed for another reason than D-31"; }
+sed -i '/^net\.ipv4\.conf\.all\.rp_filter = 1$/d' /etc/ufw/sysctl.conf
+pass "D-31: ufw's sysctl.conf sets rp_filter=2, and a stray other value fails the run"
 
 echo "--- D-10: SSH on tailscale0 only when opted in"
 ansible-playbook tests/container/firewall.yml -e aegis_overlay_ssh_on_tailscale=true >/dev/null || fail "overlay run failed"

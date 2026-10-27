@@ -18,3 +18,12 @@ aegis_firewall_remove_docker_dns: false
 aegis_firewall_docker_dns_sources:
   - 172.16.0.0/12
   - 192.168.0.0/16
+
+# D-31 (decided 2026-10-27, (a)): ufw applies /etc/ufw/sysctl.conf each time it
+# starts, which at boot is after systemd-sysctl, and ufw ships rp_filter=1
+# there. The sysctl role sets 2 (loose; strict drops asymmetric WireGuard and
+# Tailscale traffic), so ufw's file gets the same value. Keep the two in step
+# if you change net.ipv4.conf.*.rp_filter in aegis_sysctl_settings.
+# null leaves ufw's file alone.
+aegis_firewall_ufw_rp_filter: 2
+aegis_firewall_ufw_sysctl_conf: /etc/ufw/sysctl.conf
