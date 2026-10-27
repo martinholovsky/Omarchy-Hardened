@@ -47,7 +47,9 @@ SemVer once 1.0 ships.
   `polkit-agent-helper@.service` with `ProtectSystem=strict`, so
   `pam_faillock` could not open the tally in `/var/lib/faillock` (D-14). A
   drop-in now gives that unit `ReadWritePaths=` the tally directory; in the
-  VM, 10 wrong `pkexec` passwords then filled the tally and locked the user.
+  VM, 10 wrong `pkexec` passwords then filled the tally and locked the user,
+  and `pkexec` in a desktop terminal worked; with the drop-in removed it
+  refused the right password again.
 - D-29: on `linux-hardened` the playbook, and with it the drift check,
   failed on two sysctl keys that kernel is built without.
 

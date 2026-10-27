@@ -581,9 +581,9 @@ tally file for aegis: Read-only file system`; PAM returns a system error and
 `dir = /run/faillock` gave no such error and passed PAM. Measured over SSH
 (`pkexec` with a textual agent); there the `/run` attempt then failed at "No
 session for cookie", an SSH-only problem after authentication. A `pkexec`
-typed in a desktop terminal was **not** tested (the keystrokes did not reach a
-terminal), so the desktop path is inferred: it goes through the same helper
-unit. Omarchy 4.0.6 starts no graphical polkit agent, so a terminal `pkexec`
+typed in a desktop terminal fails the same way (measured 2026-10-27, after the
+fix: with the drop-in removed, "Read-only file system" and no command run; with
+it, `pkexec` ran the command as root). Omarchy 4.0.6 starts no graphical polkit agent, so a terminal `pkexec`
 is the main way to hit this.
 
 Options: (a) a drop-in `polkit-agent-helper@.service.d/` with
