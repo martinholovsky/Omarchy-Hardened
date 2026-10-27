@@ -19,7 +19,7 @@ dev = [
   # code: every ruff rule and strict mypy. Each pinned to a release at least
   # two weeks old when added (2026-10-24).
   "mypy==2.4.0",
-  "ruff==0.17.0",
+  "ruff==0.17.2",
 ]
 
 [tool.ruff]
