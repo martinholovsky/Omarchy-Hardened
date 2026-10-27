@@ -220,10 +220,22 @@ anything by itself.
 
 ## D-12 — Licence (Decided: Apache-2.0)
 
-The repo is private for now, but the PRD says it will be open source. Apache-2.0
-was chosen to match the permissive-only policy. Note that the runtime toolchain
-(ansible-core, community.general) is GPL-3.0. The playbook only invokes it and
-does not link to it, but this needs a proper look before the repo goes public.
+Apache-2.0 was chosen to match the permissive-only policy. The runtime
+toolchain (ansible-core, community.general) is GPL-3.0. The playbook only
+invokes it and does not link to it.
+
+**GPL check closed 2026-10-27** (the repo went public on 2026-10-26, before
+this check was raised; open-items §2 tracked it). Options were: (a) keep
+Apache-2.0; (b) relicense the custom modules GPL-3.0; (c) a lawyer's review.
+Chosen: (a), as the recommendation, under the owner's standing instruction
+to act on recommended options; this is an engineering reading, not legal
+advice. Evidence: the 8 custom modules (`roles/*/library/*.py`) import only
+`ansible.module_utils.basic`, whose header says Simplified BSD License
+(ansible-core 2.21.5); no GPL text is in any tracked file except docs that
+discuss it; the GPL tools are installed by the user, never shipped here; the
+Omarchy fixtures keep Omarchy's own licence (`tests/fixtures/omarchy/LICENSE.omarchy`).
+Revisit if a module imports a GPL `module_utils` (most of community.general's
+are GPL-3.0) or if GPL code is vendored.
 
 ## D-13 — faillock lockout count (Decided: deny=10, unlock_time=900)
 

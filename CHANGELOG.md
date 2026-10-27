@@ -18,6 +18,9 @@ SemVer once 1.0 ships.
 
 ### Changed
 
+- D-12 closed: the GPL-3.0 toolchain does not affect the Apache-2.0 licence,
+  because the custom modules import only `ansible.module_utils.basic`
+  (Simplified BSD) and no GPL code is shipped.
 - The repository is public. `SECURITY.md` links GitHub's private
   vulnerability reporting, now enabled; `main` is protected (PRs only, the
   three CI checks required, no force push or deletion, no bypass).

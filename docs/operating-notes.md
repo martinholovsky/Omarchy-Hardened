@@ -211,6 +211,8 @@ manual §3). A FIDO2 key passed through with `usbattach` works in the guest
   settings cannot be undone until reboot. It refuses to run without
   `AEGIS_ALLOW_HOST_SYSCTL=1`. Only CI sets that, on a throwaway runner. Never
   set it on your workstation or on the podman machine.
-- Before the repo goes public, settle the licence question (D-12, listed in
-  [open-items.md](open-items.md) §2).
+- The custom modules import only `ansible.module_utils.basic` (Simplified
+  BSD), which is what keeps them Apache-2.0 (D-12). Importing a GPL-3.0
+  `module_utils` (most of community.general's) or vendoring GPL code reopens
+  D-12.
 - New checks need a planted-problem test (see `AGENTS.md`).
