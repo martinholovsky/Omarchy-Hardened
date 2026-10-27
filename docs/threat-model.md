@@ -100,7 +100,7 @@ drift), **agent container → host and network** (Podman, proxy), and
 | `firewall`: ufw default-deny inbound; removes LocalSend 53317/tcp+udp and the opt-in SSH rule; keeps Docker DNS | A1 reaches a listening service the user never meant to expose (LocalSend file transfer, sshd) and exploits it or guesses its password. T1021.004 (SSH) | enforces | Services Omarchy or the user re-allow later; traffic over `tailscale0` (row below); 53317/udp is not tested from outside | VM, from another machine: SSH 22 open → timeout, LocalSend 53317/tcp refused → timeout, Docker DNS still answers and fails without its rule (`firewall-hostonly.sh`). Container: "LocalSend and SSH rules removed, Docker DNS kept" |
 | `overlay_network` (D-10, D-24): reports Tailscale; opt-in SSH on `tailscale0` only | A5 reaches every listening port, because Tailscale's default netfilter mode accepts `tailscale0` before ufw | reports (WARN `network.overlay`) | The bypass itself: the role reports it, it does not switch Tailscale to `nodivert` (D-24 a′) | VM with Headscale: a tailnet peer reaches a port ufw denies and the audit WARNs; in `nodivert` the port is closed and the finding passes (`tailscale.sh`) |
 | `overlay_network`: sshd audit | A1/A5 brute-forces sshd password logins, or uses a stolen software key file. T1110.001, T1021.004 | reports (`ssh.password_auth`, `ssh.authorized_keys`) | A key the attacker already holds; sshd on a non-default config path | Container: Arch's stock sshd_config warns, Omarchy's key-only drop-in passes, an `ssh-ed25519` key is reported as not hardware-backed, an `sk-` key passes |
-| `sysctl` network keys: redirects and source routing off (IPv4/IPv6), loose `rp_filter`, `tcp_syncookies`, `tcp_rfc1337`, IPv6 temporary addresses | A1 on the same segment redirects traffic through itself with ICMP redirects or source-routed packets (T1557); SYN floods; tracking the machine by a stable IPv6 address | enforces (values read back after apply) | ARP/DHCP spoofing, rogue Wi-Fi, anything at layer 2; after a boot ufw can set `rp_filter` back to strict until the next run (D-31) | Container: all values written and read back; VM: live values after reboot. The effect of each key is the kernel's documented behaviour, not measured here |
+| `sysctl` network keys: redirects and source routing off (IPv4/IPv6), loose `rp_filter`, `tcp_syncookies`, `tcp_rfc1337`, IPv6 temporary addresses | A1 on the same segment redirects traffic through itself with ICMP redirects or source-routed packets (T1557); SYN floods; tracking the machine by a stable IPv6 address | enforces (values read back after apply) | ARP/DHCP spoofing, rogue Wi-Fi, anything at layer 2 | Container: all values written and read back; VM: live values after reboot. The effect of each key is the kernel's documented behaviour, not measured here |
 
 ### 3.2 User → root (A2, A3)
 
@@ -195,8 +195,8 @@ Stated plainly, so nobody reads more into the green audit than is there:
 | Egress report is best effort | D-25 | owner, 2026-10-24 |
 
 Open, not yet decided or tested: after Omarchy's FIDO2 setup, polkit password
-guesses bypass faillock (measured; reported by D-28, not repaired); ufw can
-reset `rp_filter` to strict at boot (D-31);
+guesses bypass faillock (measured; reported by D-28, not repaired); a
+`--check` run, and with it the drift check, cannot see live sysctl drift (D-32);
 FIDO2 with two keys on hardware; a full run on hardware
 ([open-items.md](open-items.md)).
 
