@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=66
+checks_total=67
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -163,6 +163,13 @@ if ! { [[ -x /usr/local/libexec/aegis-drift-check ]] && grep -q 'systemctl start
 fi
 grep -qx 'aegis_faillock_deny: 10' "$copy/applied-vars.yml" || fail "applied settings not saved"
 ! grep -q '^aegis_drift_check_source:' "$copy/applied-vars.yml" || fail "controller path saved in applied-vars"
+! grep -Eq '^aegis_(become_(uid|sudo_pam|fido2_keys)|run_as_root|sudo_u2f):' "$copy/applied-vars.yml" ||
+  fail "become_check results saved in applied-vars"
+# The idempotence run above has the drift check off. aegis_become_uid carries
+# timestamps, so saving it rewrote applied-vars.yml on every apply (VM, 2026-10-27).
+out=$(ansible-playbook tests/container/playbook.yml -e aegis_drift_check_enabled=true)
+grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "drift-check install not idempotent"; }
+pass "drift-check install idempotent; become_check results not saved"
 /usr/local/libexec/aegis-drift-check >/dev/null 2>&1 || { cat /var/lib/aegis/drift-check.log; fail "clean state reported as drift"; }
 # What an omarchy-update that rewrites system-auth would do.
 sed -i 's/deny=10 unlock_time=900/deny=10 unlock_time=120/' /etc/pam.d/system-auth

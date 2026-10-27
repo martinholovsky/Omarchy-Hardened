@@ -25,6 +25,15 @@ SemVer once 1.0 ships.
   vulnerability reporting, now enabled; `main` is protected (PRs only, the
   three CI checks required, no force push or deletion, no bypass).
 
+### Fixed
+
+- D-11: the drift check's `applied-vars.yml` no longer saves become_check's
+  per-run results. `aegis_become_uid` carries timestamps, so every apply
+  rewrote the file (the VM's second run reported `changed=1`), and a saved
+  non-root answer would have been pinned into the root check run, where a
+  plugged-in FIDO2 key could stop it. The container test now runs
+  become_check and re-applies with the drift check on (67 checks).
+
 ## [0.1.0] - 2026-10-26
 
 First release. Tested in an Arch container (CI, 65 checks) and in a VirtualBox
