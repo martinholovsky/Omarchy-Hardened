@@ -18,6 +18,15 @@ aegis_faillock_conf: /etc/security/faillock.conf
 # unlock_time, or with `faillock --user NAME --reset` as root.
 aegis_faillock_dir: /var/lib/faillock
 
+# D-27: polkit 127 runs PAM in polkit-agent-helper@.service, which has
+# ProtectSystem=strict, so pam_faillock could not open a tally in
+# aegis_faillock_dir ("Read-only file system") and pkexec refused the right
+# password (VM, 2026-10-27). A drop-in gives that unit write access to the
+# tally directory and nothing else. Skipped when the unit does not exist.
+aegis_faillock_polkit_helper_unit: polkit-agent-helper@.service
+aegis_faillock_polkit_helper_dropin: >-
+  /etc/systemd/system/{{ aegis_faillock_polkit_helper_unit }}.d/aegis-faillock.conf
+
 # Omarchy repeats deny=/unlock_time= inline on the pam_faillock lines of these
 # files, and inline arguments override faillock.conf — so writing the conf file
 # alone would change nothing. Files that do not exist are skipped.

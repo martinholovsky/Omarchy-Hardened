@@ -84,6 +84,10 @@
                       if aegis_agent_enabled | bool else 'agent wrapper disabled'}
          ] }}
 
+- name: Check that aegis-agent can run on this kernel (D-30)
+  ansible.builtin.import_tasks: kernel_overlay.yml
+  when: aegis_agent_enabled | bool
+
 - name: Report agent egress (D-26)
   ansible.builtin.import_tasks: egress_audit.yml
   when: aegis_agent_enabled | bool and aegis_agent_egress != 'off'

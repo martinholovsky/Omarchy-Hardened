@@ -28,6 +28,36 @@
          | combine(aegis_sysctl_ipv6_settings if aegis_sysctl_ipv6.stat.exists else {})
          | combine(aegis_sysctl_optional) }}
 
+# D-29: a key on aegis_sysctl_absent_ok that this kernel does not have is left
+# out of the live checks below. The file keeps it (systemd-sysctl logs
+# "ignoring" for a missing key), so it stays the same on every kernel.
+- name: Look for the keys a kernel may be built without (D-29)
+  ansible.builtin.stat:
+    path: "/proc/sys/{{ item | replace('.', '/') }}"
+  loop: "{{ aegis_sysctl_absent_ok | intersect(aegis_sysctl_effective.keys() | list) }}"
+  register: aegis_sysctl_absent_stat
+
+- name: Leave the compiled-out keys out of the live checks
+  ansible.builtin.set_fact:
+    aegis_sysctl_absent: >-
+      {{ aegis_sysctl_absent_stat.results | rejectattr('stat.exists') | map(attribute='item') | list }}
+    aegis_sysctl_checked: >-
+      {{ aegis_sysctl_effective | dict2items
+         | rejectattr('key', 'in', aegis_sysctl_absent_stat.results | rejectattr('stat.exists')
+                                   | map(attribute='item') | list)
+         | items2dict }}
+
+- name: Record the keys this kernel does not have
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'sysctl.compiled_out', 'status': 'INFO',
+            'detail': 'not in the running kernel, so the feature is compiled out: '
+                      ~ (aegis_sysctl_absent | join(', '))
+                      ~ ' (allowed by aegis_sysctl_absent_ok, D-29)'}
+         ] }}
+  when: aegis_sysctl_absent | length > 0
+
 - name: Write the hardened sysctl drop-in
   ansible.builtin.template:
     src: aegis-hardened.conf.j2
@@ -40,7 +70,7 @@
 - name: Read the live kernel values
   ansible.builtin.command:
     cmd: sysctl -n {{ item.key }}
-  loop: "{{ aegis_sysctl_effective | dict2items }}"
+  loop: "{{ aegis_sysctl_checked | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
   register: aegis_sysctl_before
@@ -51,10 +81,13 @@
 
 # Apply when the file changed, or when a live value differs from it (someone
 # changed it at runtime). Keys removed from the settings disappear from the
-# file, but the kernel keeps their old values until the next reboot.
+# file, but the kernel keeps their old values until the next reboot. With a
+# compiled-out key in the file, -e makes sysctl skip unknown keys only (still
+# exit 1 on any other error; measured with procps-ng 4.0.7); the read-back
+# below still fails on a missing key that is not on aegis_sysctl_absent_ok.
 - name: Apply the drop-in to the running kernel
   ansible.builtin.command:
-    cmd: sysctl --load={{ aegis_sysctl_file }}
+    cmd: sysctl {{ '-e ' if aegis_sysctl_absent else '' }}--load={{ aegis_sysctl_file }}
   changed_when: true
   when:
     - aegis_sysctl_apply | bool
@@ -72,7 +105,7 @@
 - name: Read back the live kernel values
   ansible.builtin.command:
     cmd: sysctl -n {{ item.key }}
-  loop: "{{ aegis_sysctl_effective | dict2items }}"
+  loop: "{{ aegis_sysctl_checked | dict2items }}"
   loop_control:
     label: "{{ item.key }}"
   register: aegis_sysctl_live

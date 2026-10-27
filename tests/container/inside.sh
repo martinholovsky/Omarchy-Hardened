@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=67
+checks_total=70
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -395,6 +395,43 @@ if ! { ! grep -qx 'audit' /etc/security/faillock.conf && grep -qx 'even_deny_roo
 fi
 pass "faillock audit/even_deny_root toggle cleanly and default to D-18/D-19"
 
+echo "--- D-27/D-28: polkit's PAM helper may write the tally; a polkit stack without faillock warns"
+# The image has no polkit: the drop-in is skipped and the stack check says so.
+expect_finding auth.polkit_faillock INFO
+[[ ! -e /etc/systemd/system/polkit-agent-helper@.service.d ]] || fail "polkit drop-in written without the polkit unit"
+# Plant what polkit 127 ships: the sandboxed helper unit and the stock stack.
+install -D -m 644 /dev/null /usr/lib/systemd/system/polkit-agent-helper@.service
+printf '#%%PAM-1.0\n\nauth       include      system-auth\naccount    include      system-auth\n' >/tmp/polkit-1.stock
+install -D -m 644 /tmp/polkit-1.stock /usr/lib/pam.d/polkit-1
+ansible-playbook tests/container/playbook.yml >/tmp/polkit.log 2>&1 || { cat /tmp/polkit.log; fail "polkit run failed"; }
+grep -qx 'ReadWritePaths=/var/lib/faillock' /etc/systemd/system/polkit-agent-helper@.service.d/aegis-faillock.conf \
+  || fail "polkit helper drop-in does not grant the tally directory"
+expect_finding auth.polkit_faillock PASS
+# Someone edits the drop-in: the next run puts it back.
+sed -i 's|^ReadWritePaths=.*|ReadWritePaths=/tmp|' /etc/systemd/system/polkit-agent-helper@.service.d/aegis-faillock.conf
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "polkit drop-in repair run failed"
+grep -qx 'ReadWritePaths=/var/lib/faillock' /etc/systemd/system/polkit-agent-helper@.service.d/aegis-faillock.conf \
+  || fail "an edited polkit drop-in was not restored"
+pass "D-27: with polkit's helper unit present, the drop-in grants the tally directory and is restored after an edit"
+# Exactly what omarchy-setup-security-fido2 (4.0.6) writes when /etc/pam.d/polkit-1 does not exist.
+printf '%s\n' 'auth      sufficient pam_u2f.so cue authfile=/etc/fido2/fido2' 'auth      required pam_unix.so' '' \
+  'account   required pam_unix.so' 'password  required pam_unix.so' 'session   required pam_unix.so' >/etc/pam.d/polkit-1
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "polkit fido2-stack run failed"
+expect_finding auth.polkit_faillock WARN
+grep -q '/etc/pam.d/polkit-1 checks the password with pam_unix' /var/lib/aegis/audit.jsonl \
+  || { cat /var/lib/aegis/audit.jsonl; fail "polkit WARN does not name /etc/pam.d/polkit-1"; }
+# Omarchy upstream's form (cbd44ba): pam_u2f, then include system-auth.
+printf '%s\n' 'auth      sufficient pam_u2f.so cue authfile=/etc/fido2/fido2' 'auth      include    system-auth' \
+  'account   include    system-auth' >/etc/pam.d/polkit-1
+# sha256sum, not cmp: the image has no diffutils, and cmp's exit 127 read as "changed".
+before=$(sha256sum </etc/pam.d/polkit-1)
+ansible-playbook tests/container/playbook.yml >/dev/null || fail "polkit upstream-stack run failed"
+expect_finding auth.polkit_faillock PASS
+[[ $(sha256sum </etc/pam.d/polkit-1) == "$before" ]] || fail "the audit changed /etc/pam.d/polkit-1"
+rm -rf /etc/pam.d/polkit-1 /usr/lib/pam.d/polkit-1 /usr/lib/systemd/system/polkit-agent-helper@.service \
+  /etc/systemd/system/polkit-agent-helper@.service.d
+pass "D-28: Omarchy's FIDO2 polkit stack warns, upstream's form passes, and the file is left as it was"
+
 echo "--- D-04 FIDO2: no pam_u2f means nothing changes"
 printf '#%%PAM-1.0\nauth include system-auth\naccount include system-auth\nsession include system-auth\n' > /etc/pam.d/sudo
 cp /etc/pam.d/sudo /tmp/sudo.pam.orig
@@ -660,6 +697,19 @@ if kernel_play /tmp/limine-missing.conf >/tmp/kernel.log 2>&1; then
 fi
 grep -q 'no linux-hardened entry' /tmp/kernel.log || { cat /tmp/kernel.log; fail "failed for the wrong reason"; }
 pass "a menu without linux-hardened fails the run"
+
+echo "--- D-30: aegis-agent's kernel check (unprivileged overlayfs)"
+printf 'CONFIG_OVERLAY_FS=m\n# CONFIG_OVERLAY_FS_UNPRIVILEGED is not set\n' | gzip >/tmp/config-hardened.gz
+printf 'CONFIG_OVERLAY_FS=m\nCONFIG_USER_NS=y\n' | gzip >/tmp/config-mainline.gz
+agent_kernel_play() { ansible-playbook tests/container/agent-kernel.yml -e "aegis_agent_kernel_config=$1" >/tmp/agent-kernel.log 2>&1 \
+  || { cat /tmp/agent-kernel.log; fail "agent kernel check failed on $1"; }; }
+agent_kernel_play /tmp/config-hardened.gz
+expect_finding agent.kernel_overlay WARN
+agent_kernel_play /tmp/config-mainline.gz
+expect_finding agent.kernel_overlay PASS
+agent_kernel_play /tmp/no-such-config.gz
+expect_finding agent.kernel_overlay INFO
+pass "D-30: a kernel without unprivileged overlayfs warns, mainline passes, an unreadable config is INFO"
 
 echo "--- become: a key-gated sudo stops a non-root run before its first sudo"
 useradd -m becomeuser

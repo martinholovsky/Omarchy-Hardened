@@ -1,0 +1,25 @@
+---
+# D-30. zgrep exits 0 when the line is there (no unprivileged overlayfs),
+# 1 when it is not (mainline has no such option), 2 when the config cannot
+# be read; each gets its own status, so an unreadable config never reads as fine.
+- name: Read whether the running kernel allows overlayfs in a user namespace (D-30)
+  ansible.builtin.command:
+    cmd: zgrep -c -x -F '# CONFIG_OVERLAY_FS_UNPRIVILEGED is not set' {{ aegis_agent_kernel_config }}
+  register: aegis_agent_overlay
+  changed_when: false
+  failed_when: aegis_agent_overlay.rc not in [0, 1, 2]
+  check_mode: false
+
+- name: Record whether aegis-agent can run on this kernel
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'agent.kernel_overlay',
+            'status': {0: 'WARN', 1: 'PASS'}.get(aegis_agent_overlay.rc, 'INFO'),
+            'detail': {0: 'the running kernel (' ~ ansible_facts['kernel'] ~ ') is built without unprivileged'
+                          ~ ' overlayfs, so aegis-agent cannot start a container on it; boot linux-omarchy'
+                          ~ ' to use it (D-30)',
+                       1: 'the running kernel allows overlayfs in a user namespace (rootless Podman)'}
+                      .get(aegis_agent_overlay.rc, 'cannot read ' ~ aegis_agent_kernel_config ~ ': '
+                           ~ (aegis_agent_overlay.stderr | default('') | trim))}
+         ] }}

@@ -10,8 +10,9 @@ aegis_sysctl_apply: true
 
 # The whole file is rendered from the settings below, and the live read-back
 # checks the same keys, so the file and the check cannot drift apart. Every
-# key must exist on the running kernel, or the apply step fails — on purpose,
-# so a value that silently does nothing is not reported as applied.
+# key must exist on the running kernel, or the run fails — on purpose, so a
+# value that silently does nothing is not reported as applied. The only
+# exception is aegis_sysctl_absent_ok below.
 aegis_sysctl_settings:
   # PRD 3.1
   kernel.dmesg_restrict: 1
@@ -52,6 +53,16 @@ aegis_sysctl_settings:
   net.ipv4.conf.default.rp_filter: 2
   net.ipv4.tcp_syncookies: 1
   net.ipv4.tcp_rfc1337: 1
+
+# D-29: keys that may be missing from the running kernel because the feature
+# itself is compiled out, which is stronger than the setting. linux-hardened
+# (D-02) builds without CONFIG_KEXEC, CONFIG_KEXEC_FILE and CONFIG_USERFAULTFD
+# (its /proc/config.gz, VM 2026-10-27). A missing key on this list is reported
+# (INFO sysctl.compiled_out) instead of failing the run; a missing key not on
+# it still fails, so a typo in a key name cannot pass as compiled out.
+aegis_sysctl_absent_ok:
+  - kernel.kexec_load_disabled
+  - vm.unprivileged_userfaultfd
 
 # Written only when the kernel has IPv6 (/proc/sys/net/ipv6 exists), so a
 # machine booted with ipv6.disable=1 does not fail the run.
