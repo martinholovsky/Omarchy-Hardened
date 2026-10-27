@@ -15,6 +15,16 @@ SemVer once 1.0 ships.
   LAN address (407). The enforce-mode metadata check now requires 407 too; it
   accepted any non-200, which an allowed request to an unreachable address
   also returns (66 checks).
+- D-28: audit finding `auth.polkit_faillock` WARNs when polkit's PAM stack
+  checks passwords without faillock (what `omarchy-setup-security-fido2`
+  writes to `/etc/pam.d/polkit-1`); the file is not changed.
+- D-29: `aegis_sysctl_absent_ok` (`kernel.kexec_load_disabled`,
+  `vm.unprivileged_userfaultfd`): such a key missing from the running kernel
+  is reported (INFO `sysctl.compiled_out`) instead of failing the run; any
+  other missing key still fails. CI's real-kernel job tests both.
+- D-30: audit finding `agent.kernel_overlay` WARNs when the running kernel has
+  no unprivileged overlayfs, where `aegis-agent` cannot run (`linux-hardened`).
+- Container test: 70 checks (D-27, D-28 and D-30 against planted files).
 
 ### Changed
 
@@ -33,16 +43,20 @@ SemVer once 1.0 ships.
   non-root answer would have been pinned into the root check run, where a
   plugged-in FIDO2 key could stop it. The container test now runs
   become_check and re-applies with the drift check on (67 checks).
+- D-27: `pkexec` refused the right password. polkit 127 runs PAM in
+  `polkit-agent-helper@.service` with `ProtectSystem=strict`, so
+  `pam_faillock` could not open the tally in `/var/lib/faillock` (D-14). A
+  drop-in now gives that unit `ReadWritePaths=` the tally directory; in the
+  VM, 10 wrong `pkexec` passwords then filled the tally and locked the user.
+- D-29: on `linux-hardened` the playbook, and with it the drift check,
+  failed on two sysctl keys that kernel is built without.
 
 ### Known issues
 
-- Found in the VM on 2026-10-27, open as D-27 to D-30: `pkexec` refuses the
-  right password because polkit's sandboxed helper cannot open the faillock
-  tally in `/var/lib/faillock` (D-14); after Omarchy's FIDO2 setup, polkit
-  password failures are not counted; booted on `linux-hardened`, the sysctl
-  read-back fails on two keys that kernel does not have, and `aegis-agent`
-  cannot mount overlay. A local run (`ansible_connection: local`, on a pty)
-  showed no "junk after the JSON data" warning.
+- D-31 (open): after a boot, ufw can set `rp_filter` back to 1 (strict) from
+  `/etc/ufw/sysctl.conf`; the next playbook run restores 2 (VM, 2026-10-27).
+- A local run (`ansible_connection: local`, on a pty) showed no "junk after
+  the JSON data" warning (VM, 2026-10-27).
 
 ## [0.1.0] - 2026-10-26
 

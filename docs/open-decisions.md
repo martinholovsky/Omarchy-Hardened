@@ -569,7 +569,7 @@ that ignores the proxy settings still gets out; in `enforce` it joins only
 the internal one. The audit summarises the proxies' JSON log lines
 (`agent.egress`, INFO).
 
-## D-27 — polkit cannot open the faillock tally in `/var/lib/faillock` (Open, 2026-10-27)
+## D-27 — polkit cannot open the faillock tally in `/var/lib/faillock` (Decided 2026-10-27: (a))
 
 Found in the VM (2026-10-27, `pre-aegis-updated` after `run.sh`, Omarchy
 4.0.6, polkit 127-3). polkit 127 authenticates through a socket-activated
@@ -596,7 +596,14 @@ lockout's persistence and polkit, and the helper can already write to the
 tally in Omarchy's default (`/run/faillock`). Needs a VM check that `pkexec`
 then accepts the right password and records failures.
 
-## D-28 — Omarchy's FIDO2 polkit stack has no faillock (Open, 2026-10-27)
+**Decided (owner, 2026-10-27):** (a), the recommendation. The
+`pam_faillock` role installs
+`/etc/systemd/system/polkit-agent-helper@.service.d/aegis-faillock.conf` with
+`ReadWritePaths=` the tally directory, only when the unit exists, and asserts
+it from the file and from `systemctl show`. The helper's other sandboxing is
+unchanged.
+
+## D-28 — Omarchy's FIDO2 polkit stack has no faillock (Decided 2026-10-27: (a), audit only)
 
 `omarchy-setup-security-fido2` (4.0.6, `/usr/bin/omarchy-setup-security-fido2`)
 **creates** `/etc/pam.d/polkit-1` when it does not exist, which is the stock
@@ -618,7 +625,11 @@ release. (a) changes nothing on the machine; (b) edits a file Omarchy's own
 script owns, and upstream has already fixed it. D-27 decides whether the
 `system-auth` form works under polkit at all, so (b) waits on D-27 either way.
 
-## D-29 — sysctl read-back on `linux-hardened`, where two keys do not exist (Open, 2026-10-27)
+**Decided (owner, 2026-10-27):** (a), the recommendation. Finding
+`auth.polkit_faillock` (WARN) in the `pam_faillock` role; the role never
+writes `polkit-1`. (b) stays open for when Omarchy ships its upstream form.
+
+## D-29 — sysctl read-back on `linux-hardened`, where two keys do not exist (Decided 2026-10-27: (a))
 
 Booting `linux-hardened` (7.2.10-hardened1-3) in the VM (2026-10-27): its
 `/proc/config.gz` has `# CONFIG_KEXEC is not set`, `# CONFIG_KEXEC_FILE is not
@@ -636,7 +647,14 @@ INFO "not in this kernel"; (b) skip any missing key; (c) leave it, and make
 **Recommendation:** (a). (b) would also hide a typo in a key name, which is
 the silent-match failure AGENTS.md warns about; (c) contradicts D-02.
 
-## D-30 — `aegis-agent` does not run on `linux-hardened` (Open, 2026-10-27)
+**Decided (owner, 2026-10-27):** (a), the recommendation. Variable
+`aegis_sysctl_absent_ok`; a listed key missing from the kernel gives INFO
+`sysctl.compiled_out`. The file keeps the key, so it is the same on both
+kernels. `sysctl --load` then runs with `-e`, which skips unknown keys only
+(measured, procps-ng 4.0.7: still exit 1 on a permission error); systemd's
+`-key` prefix did not help there (exit 1 either way).
+
+## D-30 — `aegis-agent` does not run on `linux-hardened` (Decided 2026-10-27: (c))
 
 The same boot: `linux-hardened` builds without `CONFIG_OVERLAY_FS_UNPRIVILEGED`,
 so a mount of `overlay` inside a user namespace is refused (`permission
@@ -654,3 +672,33 @@ so when booted on `linux-hardened`.
 that nobody has made the default; revisit (a) if the owner makes it the
 default (D-02). (a) adds a FUSE daemon to the containment boundary, which
 deserves its own look.
+
+**Decided (owner, 2026-10-27):** (c), the recommendation. Finding
+`agent.kernel_overlay`: WARN when the running kernel's config says
+`# CONFIG_OVERLAY_FS_UNPRIVILEGED is not set`, PASS when it does not, INFO when
+the config cannot be read. Revisit (a) if `linux-hardened` becomes the default.
+
+## D-31 — ufw resets `rp_filter` to strict at boot (Open, 2026-10-27)
+
+Found in the VM (2026-10-27) while verifying D-29 on `linux-hardened`: right
+after boot, `net.ipv4.conf.{all,default}.rp_filter` read **1**, although
+`/etc/sysctl.d/99-zz-aegis-hardened.conf` sets **2** (loose, roadmap #4: strict
+drops asymmetric WireGuard/Tailscale traffic). ufw applies its own
+`/etc/ufw/sysctl.conf`, which sets both to 1, when it starts, and in that boot
+`ufw.service` started at 34.46 s, after `systemd-sysctl` finished at 34.44 s.
+On `linux-omarchy` the same day, `run.sh` read 2 after its reboot, so this is
+the order of two units, seen to lose once; it is not shown to be specific to
+one kernel. Effect: strict reverse-path filtering until the next playbook
+run, which re-applies 2 (so each run reports `changed`), and the D-11 drift
+check reports it after a package update. Not a weakening: 1 is stricter.
+
+Options: (a) the firewall role sets the two `rp_filter` lines in
+`/etc/ufw/sysctl.conf` to 2, so both writers agree (pacman keeps a changed
+`/etc/ufw/sysctl.conf` on upgrade: it is in the `backup=()` array of Arch's
+ufw 0.36.2-7 PKGBUILD, read 2026-10-27); (b) re-run
+`systemd-sysctl` after `ufw.service` with a drop-in, which leaves ufw's file
+as shipped but adds a boot-order dependency; (c) accept strict mode, and drop
+loose `rp_filter` from the sysctl role.
+**Recommendation:** (a). One edit to a config file ufw re-reads at every
+start, no ordering to reason about, and it keeps roadmap #4's reason for
+loose mode. Needs a VM reboot test on both kernels.

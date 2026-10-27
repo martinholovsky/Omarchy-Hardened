@@ -7,12 +7,12 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-27, on `docs/closure-2026-10-26` (PR #19). The repo is
-public with `main` protected (ruleset `protect-main`). VM on 2026-10-27
-(`pre-aegis-updated`): `tests/vm/run.sh` passed in full after the D-11
-`applied-vars.yml` fix (the run before it failed its idempotence check on
-that); then `linux-hardened` was booted and polkit tested, which opened
-D-27 to D-30. VM on 2026-10-26 (`pre-aegis-hw`, a real YubiKey): FIDO2
+Last reviewed: 2026-10-27, on `feat/d27-d30`. The repo is public with `main`
+protected (ruleset `protect-main`); PRs #19 to #21 merged, CI on `main`
+`67/67 checks passed`. VM on 2026-10-27 (`pre-aegis-updated`): `tests/vm/run.sh`
+passed in full with D-27 to D-30; `pkexec` then recorded failures in the tally
+(D-27), and `linux-hardened` applied and checked clean (D-29, D-30), which
+also found D-31. VM on 2026-10-26 (`pre-aegis-hw`, a real YubiKey): FIDO2
 enrolment, D-04 with one key, and the playbook run as root with one touch
 (`failed=0`).
 
@@ -21,8 +21,8 @@ enrolment, D-04 with one key, and the playbook run as root with one touch
 | Item | Tested so far | What closes it |
 |---|---|---|
 | A run on real hardware | VirtualBox VM and container only | Follow [operating-notes.md](operating-notes.md) §2 on a machine you have backed up, then update the table in §1 there |
-| Booting `linux-hardened` (D-02) | VM (2026-10-27): booted 7.2.10-hardened1-3 from the Limine menu. Works: AppArmor (83 profiles, complain), D-01 user namespaces (`unprivileged_userns_clone=1`; `bwrap` runs), the other sysctl values, `systemd-sysctl`. Fails: `--check` (two keys not in this kernel, D-29) and `aegis-agent` (no unprivileged overlay, D-30). Not booted on hardware | D-29 and D-30 decided and implemented, then boot it again and re-run `--check`; once on hardware |
-| polkit's PAM stack on Omarchy 4.0.6 | VM (2026-10-27), `pkexec` over SSH: with the stock stack the D-14 tally directory is read-only for polkit's sandboxed helper, so the right password is refused (D-27); with the stack Omarchy's FIDO2 setup writes, 10 wrong passwords left the tally empty (D-28). A `pkexec` typed in a desktop terminal is untested | D-27 and D-28 decided; then a `pkexec` in a desktop terminal on the VM |
+| Booting `linux-hardened` (D-02) | VM (2026-10-27, booted twice from the Limine menu, 7.2.10-hardened1-3): with D-29 the playbook applies (`failed=0`) and a `--check` after it is clean (`changed=0`); `sysctl.compiled_out` INFO names the two compiled-out keys; AppArmor (83 profiles, complain), D-01 user namespaces and `bwrap` work; `aegis-agent` cannot start a container there and the audit WARNs (`agent.kernel_overlay`, D-30, by design). After a boot, ufw had reset `rp_filter` to 1 (D-31). Not booted on hardware | Once on hardware |
+| polkit's PAM stack on Omarchy 4.0.6 | VM (2026-10-27), `pkexec` over SSH: with the D-27 drop-in, 10 wrong passwords leave 10 tally records (640 bytes) and lock the user, where before the helper could not open the tally and refused even the right password. D-28's WARN on Omarchy's FIDO2 stack is tested in the container only. A `pkexec` typed in a desktop terminal is untested (the VM's keystrokes did not reach a terminal) | A `pkexec` in a desktop terminal, on the VM or on hardware |
 | OpenSnitch 1.8.0 (D-09) | 1.7.2 only, with `hide_systray_warning` working around its UI crash. Arch ships 1.7.2-4 (last updated 2026-01-10); upstream 1.8.0 (2025-12-15) has the fix. The Arch package has been flagged out of date since 2025-12-15, so nothing is left for the owner to do. Still 1.7.2-4 on 2026-10-27 (archlinux.org package search) | Once Arch ships 1.8.0, check whether `hide_systray_warning` is still needed |
 | FIDO2 second factor for sudo (D-04) | Container: planted `pam_u2f` lines and `/etc/fido2/fido2` files, 0, 1 and 2 keys. VM (2026-10-26, `pre-aegis-hw`, YubiKey via `usbattach`): one key enrolled with `omarchy-setup-security-fido2` (it reads the key's PIN from a terminal, so it ran in the guest's own terminal); the playbook keeps `pam_u2f` `sufficient` and WARNs; run as root with the key plugged in it took one touch. The two-key path (`required`) is untested: it needs a second key | Enrol the first key with `omarchy-setup-security-fido2`. It registers **one** key, and on a second run it stops with "already registered" (read at `dde0d12`, `bin/omarchy-setup-security-fido2`). Append the second key to your line in `/etc/fido2/fido2` with `pamu2fcfg -n` (per `pamu2fcfg(1)`; not run here). Then re-run and check that sudo asks for the key **and** the password |
 | Commit signing with an `ed25519-sk` key (D-08) | Container: key strings only, including refusal of a non-`sk` key | Set `aegis_commit_signing_pubkey`, make a commit, and check `git log --show-signature` |
@@ -35,10 +35,7 @@ enrolment, D-04 with one key, and the playbook run as root with one touch
 |---|---|
 | AppArmor enforce mode (D-05) | Profiles load in complain mode. After about a week of denials (`journalctl -k \| grep apparmor`), choose profiles for `aegis_apparmor_enforce`, which is empty |
 | `linux-hardened` as the default boot entry (D-02) | The role never changes the default entry. Switching is a manual step after one clean boot (see §1) |
-| polkit and the D-14 tally directory (D-27) | Found 2026-10-27: `pkexec` refuses the right password because polkit's sandboxed helper cannot open `/var/lib/faillock`. Recommendation in [open-decisions.md](open-decisions.md) |
-| Omarchy's FIDO2 polkit stack has no faillock (D-28) | Found 2026-10-27: after `omarchy-setup-security-fido2`, polkit password guesses are not counted |
-| sysctl read-back on `linux-hardened` (D-29) | Found 2026-10-27: two keys do not exist there, so the playbook and the drift check fail on that kernel |
-| `aegis-agent` on `linux-hardened` (D-30) | Found 2026-10-27: rootless Podman cannot mount overlay on that kernel |
+| ufw resets `rp_filter` to strict at boot (D-31) | Found 2026-10-27: `/etc/ufw/sysctl.conf` sets 1 when ufw starts, after `systemd-sysctl`; each playbook run then re-applies 2. Recommendation in [open-decisions.md](open-decisions.md) |
 | `hardened_malloc` (D-03) | Deferred until it reaches the official repos. Checked 2026-10-27: not there (archlinux.org package search, 0 results); AUR only, `14-1` |
 | Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)). **Owner, 2026-10-23: none yet.** First the run on real hardware (§1) must pass (the full VM run passed on 2026-10-23), because every role added before the first hardware run widens what that run has to vouch for. Revisit when the real-hardware row in §1 is closed; the items with no desktop effect (18a, #14, #16) come first |
 
