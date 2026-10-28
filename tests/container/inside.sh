@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=71
+checks_total=72
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -431,6 +431,28 @@ expect_finding auth.polkit_faillock PASS
 rm -rf /etc/pam.d/polkit-1 /usr/lib/pam.d/polkit-1 /usr/lib/systemd/system/polkit-agent-helper@.service \
   /etc/systemd/system/polkit-agent-helper@.service.d
 pass "D-28: Omarchy's FIDO2 polkit stack warns, upstream's form passes, and the file is left as it was"
+
+echo "--- D-32: a --check run reports a live sysctl value that differs from the drop-in"
+# /proc/sys is read-only here, so the live value is whatever the host kernel
+# has; the test sets the wanted value against it. One key, its own file, and
+# none of the keys the role adds on its own.
+live=$(sysctl -n kernel.dmesg_restrict)
+other=$((1 - live))
+d32_play() { # wanted value, then extra ansible-playbook args
+  local want=$1; shift
+  ansible-playbook tests/container/sysctl-play.yml -e "{\"aegis_sysctl_file\": \"/tmp/aegis-d32.conf\",
+    \"aegis_sysctl_settings\": {\"kernel.dmesg_restrict\": $want}, \"aegis_sysctl_ipv6_settings\": {},
+    \"aegis_sysctl_sysrq\": null, \"aegis_sysctl_oops_limit\": null, \"aegis_sysctl_mmap_rnd_max\": false}" "$@"
+}
+d32_play "$other" -e aegis_sysctl_apply=false >/dev/null || fail "D-32: writing the planted drop-in failed"
+out=$(d32_play "$other" --check -e aegis_sysctl_apply=true) || { echo "$out"; fail "D-32: check run failed"; }
+grep -Eq 'changed=[1-9]' <<<"$out" || { echo "$out"; fail "D-32: a differing live value was not reported as changed"; }
+grep -q "kernel.dmesg_restrict is $live, want $other" <<<"$out" || { echo "$out"; fail "D-32: report does not name the key"; }
+d32_play "$live" -e aegis_sysctl_apply=false >/dev/null || fail "D-32: writing the matching drop-in failed"
+out=$(d32_play "$live" --check -e aegis_sysctl_apply=true) || { echo "$out"; fail "D-32: control check run failed"; }
+grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "D-32: matching live values reported as changed"; }
+rm -f /tmp/aegis-d32.conf
+pass "D-32: --check reports a differing live sysctl value by name, and stays clean when they match"
 
 echo "--- D-04 FIDO2: no pam_u2f means nothing changes"
 printf '#%%PAM-1.0\nauth include system-auth\naccount include system-auth\nsession include system-auth\n' > /etc/pam.d/sudo

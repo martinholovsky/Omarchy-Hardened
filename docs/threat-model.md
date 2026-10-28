@@ -131,7 +131,7 @@ drift), **agent container → host and network** (Podman, proxy), and
 | `pacman_integrity`: `SigLevel` (including `Include=` files), mirror transport | A4 serves an unsigned or altered package, or tampers with plain-HTTP traffic. T1195.002, CWE-494, CWE-319 | reports (weak SigLevel and HTTP mirrors FAIL) | A malicious package correctly signed by an Arch packager; the AUR (not managed) | Container: `SigLevel = Never` fails, the exception list lets a named repo through, an `Include=` file is audited, a plain-HTTP mirror fails |
 | `pacman_integrity`: last full upgrade age | Running known-vulnerable packages because updates stopped | reports (WARN after 7 days) | Zero-days | Container: a 2-day-old install passes, a 30-day-old never-upgraded one warns |
 | `pacman_integrity` (D-21, D-22): `pacman -Qkk` drift | Someone (A2 after escalation, or a bad update) modifies a packaged binary or config. T1554 | reports (content drift FAILs; known-benign and tightened permissions are INFO) | Files no package owns; changes made and reverted between runs | Container: a modified binary is reported, a file with several reasons is listed once, tightened permissions accepted, loosened ones are drift |
-| `drift_check` (D-11): after every pacman transaction, a root-owned copy of the playbook runs in check mode | An update (`omarchy-update`, a package) silently reverts the hardening (PAM, sysctl, ufw) | reports (journal and desktop notice); never re-applies | Changes made outside pacman transactions until the next manual run | VM: a real `pacman -S` triggered the check, which reported a reverted PAM file without repairing it. Container: clean after apply, warns after a revert |
+| `drift_check` (D-11): after every pacman transaction, a root-owned copy of the playbook runs in check mode | An update (`omarchy-update`, a package) silently reverts the hardening (PAM, sysctl, ufw) | reports (journal and desktop notice); never re-applies | Changes made outside pacman transactions until the next manual run; the roles after `commit_signing` (`firewall`, `opensnitch`, `overlay_network`, `pacman_integrity`): the check stops there (D-33) | VM: a real `pacman -S` triggered the check, which reported a reverted PAM file without repairing it. Container: clean after apply, warns after a revert A run that fails also reads as drift, and the test accepted it (D-33). Live sysctl values: reported since D-32 (VM, 2026-10-28) |
 | `flatpak` (D-06): Flathub limited to verified apps; apps with host, home, device or bus access reported | A4 publishes a look-alike unverified app; an app with broad permissions escapes Flatpak's sandbox in practice | enforces (remote filter) and reports | Verified apps that are malicious; apps not installed through Flatpak | Container: without Flatpak the role only reports. Flatpak installed: not tested yet |
 
 ### 3.5 Agent container → host and network (A2: a prompt-injected or malicious AI agent)
@@ -195,8 +195,8 @@ Stated plainly, so nobody reads more into the green audit than is there:
 | Egress report is best effort | D-25 | owner, 2026-10-24 |
 
 Open, not yet decided or tested: after Omarchy's FIDO2 setup, polkit password
-guesses bypass faillock (measured; reported by D-28, not repaired); a
-`--check` run, and with it the drift check, cannot see live sysctl drift (D-32);
+guesses bypass faillock (measured; reported by D-28, not repaired); the
+drift check never reaches `firewall` and the roles after it (D-33);
 FIDO2 with two keys on hardware; a full run on hardware
 ([open-items.md](open-items.md)).
 

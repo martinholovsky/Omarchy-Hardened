@@ -31,6 +31,8 @@ SemVer once 1.0 ships.
 - D-12 closed: the GPL-3.0 toolchain does not affect the Apache-2.0 licence,
   because the custom modules import only `ansible.module_utils.basic`
   (Simplified BSD) and no GPL code is shipped.
+- A local run (`ansible_connection: local`, on a pty) showed no "junk after
+  the JSON data" warning (VM, 2026-10-27); the open item is closed.
 - The repository is public. `SECURITY.md` links GitHub's private
   vulnerability reporting, now enabled; `main` is protected (PRs only, the
   three CI checks required, no force push or deletion, no bypass).
@@ -56,13 +58,17 @@ SemVer once 1.0 ships.
   `/etc/ufw/sysctl.conf`, after `systemd-sysctl` had set 2. The firewall
   role now gives ufw's file the same value; measured 2 after a boot on
   both kernels (container: 71 checks).
+- D-32: a `--check` run, and so the D-11 drift check, could not see a live
+  sysctl value that something else changed; the sysctl role now reports
+  such keys as changed in check mode (container: 72 checks; VM: the drift
+  check reported a live `rp_filter` change after a real `pacman -S`).
 
 ### Known issues
 
-- D-32 (open): a `--check` run, and so the D-11 drift check, cannot see a
-  live sysctl value that something else changed (VM, 2026-10-27).
-- A local run (`ansible_connection: local`, on a pty) showed no "junk after
-  the JSON data" warning (VM, 2026-10-27).
+- D-33 (open): the drift check stops at `commit_signing`, where tasks that act
+  as the desktop user fail without `sudo`, so `firewall`, `opensnitch`,
+  `overlay_network` and `pacman_integrity` are not checked after a package
+  update; and a failed check reads as drift (VM, 2026-10-28).
 
 ## [0.1.0] - 2026-10-26
 
