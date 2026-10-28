@@ -274,3 +274,25 @@ unused routed address answered "open"), so the script probes on-link only.
   average about 3 on 12 cores, no other VM running) the whole run took 40
   minutes on 2026-10-23.
   `AEGIS_VM_UI=headless` avoids the GUI window's host CPU.
+- **A `--check` run used to be blind to live sysctl values** (fixed by D-32,
+  2026-10-28). Read a "state survives a reboot" pass from before that date as
+  "the files survived", not "the kernel values did": on 2026-10-27 it passed
+  while ufw had reset `rp_filter` to 1 (D-31).
+- **A failed drift check reads as drift.** Both exit non-zero and log "Hardening
+  drift". Read `failed=` in `/var/lib/aegis/drift-check.log` before taking the
+  message as a finding (D-33: on 2026-10-28 every run had `failed=1`).
+- **`guest_root` feeds the sudo password on stdin**, so data piped into it is
+  lost: `printf … | guest_root tee FILE` writes an empty file, at exit 0.
+  Copy with `guest_ssh 'cat >/tmp/x' <file`, then `guest_root install`.
+- **Booting `linux-hardened` once.** Reboot, press Down every second for about
+  30 s (any key stops Limine's countdown), take a screenshot, and press Down
+  until `linux-hardened` is highlighted: the cursor wraps, so where it stops
+  varies. Then Enter, and `unlock_and_wait`.
+- **Starting a program in the desktop session.** Hyprland 0.56 parses
+  `hyprctl dispatch` as Lua; use
+  `hyprctl eval 'hl.exec_cmd("uwsm-app -- xdg-terminal-exec CMD")'` (the call
+  Omarchy's own bindings make), with `XDG_RUNTIME_DIR` and
+  `HYPRLAND_INSTANCE_SIGNATURE` exported. Typed keys then reach the new
+  terminal; a Super+Enter sent with `keyboardputscancode` was lost twice on
+  2026-10-27. After a resize the VBoxVGA screen can be garbled; judge by the
+  guest's own state (files, journal), not the screenshot.

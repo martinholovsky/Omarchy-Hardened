@@ -7,14 +7,15 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-27, on `feat/d27-d30`. The repo is public with `main`
-protected (ruleset `protect-main`); PRs #19 to #21 merged, CI on `main`
-`67/67 checks passed`. VM on 2026-10-27 (`pre-aegis-updated`): `tests/vm/run.sh`
-passed in full with D-27 to D-30; `pkexec` then recorded failures in the tally
-(D-27), and `linux-hardened` applied and checked clean (D-29, D-30), which
-also found D-31. VM on 2026-10-26 (`pre-aegis-hw`, a real YubiKey): FIDO2
-enrolment, D-04 with one key, and the playbook run as root with one touch
-(`failed=0`).
+Last reviewed: 2026-10-28, on `main` after PRs #22 to #25 (D-27 to D-32). The
+repo is public with `main` protected (ruleset `protect-main`); CI on PR #25
+`72/72 checks passed`. VM on 2026-10-28 (`pre-aegis-updated` after an in-place
+`pacman -Syu`): `tests/vm/run.sh` passed in full; its post-reboot `--check`,
+which now sees live sysctl values (D-32), was clean; the drift check reported a
+live `rp_filter` change, and showed D-33. VM on 2026-10-27: D-27 (`pkexec`, SSH
+and desktop terminal), D-29/D-30 on `linux-hardened`, D-31 on both kernels. VM
+on 2026-10-26 (`pre-aegis-hw`, a real YubiKey): FIDO2 enrolment, D-04 with one
+key, and the playbook run as root with one touch (`failed=0`).
 
 ## 1. Not tested yet
 
@@ -60,5 +61,5 @@ run. Both are correct.
 
 | Item | Detail |
 |---|---|
-| Container test time | The `container-test` job took 18m46s to 26m56s over the last nine green CI runs (2026-10-26 and 2026-10-27, `gh run list`), against `timeout-minutes: 35`. The longest, 26m56s, was PR #22 at 70 checks; the same code took 20m37s on `main` minutes later, so most of the spread is the runner, not the suite. Nothing is cached: every run starts from the pinned Arch image, runs `pacman -Syu` and installs the collections. Since 2026-10-25 every `---` line of `inside.sh` shows the seconds since the start (`[t+Ns]`) and the run ends with `elapsed:`. Measured on PR #9's CI run (2026-10-25, 1287 s in the container): setup (`pacman -Syu` and the collections) took 16 s, so caching an image would save about 1%; the rest is spread over 33 sections of playbook runs, 30 to 110 s each (largest: D-11 drift 109 s, D-04 FIDO2 104 s, polkit 76 s, `su` logins 68 s). Next, if the time matters: split the sections across parallel CI jobs, or make each playbook run cheaper. The VM side (`run.sh` 2026-10-27, `profile_tasks`): run 1 took 12m32s, run 2 9m58s, run 3 (`--check`) 11m41s; the slowest tasks of run 1 were the D-11 playbook copy (125 s), the integrity sweep (90 s), two AppArmor complain-mode loops (84 s and 71 s) and two sysctl reads (45 s each). Revisit at the latest when a CI run takes more than 28 minutes (80% of the timeout) |
+| Container test time | The `container-test` job took 19m42s to 27m07s over the last 12 green CI runs (2026-10-27 and 2026-10-28, `gh run list` and each run's job times), against `timeout-minutes: 35`, at 66 to 72 checks. The longest, 27m07s (PR #25, 72 checks), is 53 s under the 28-minute trigger below; the same code ran 22m52s on `main` afterwards, so most of the spread is the runner, not the suite. Nothing is cached: every run starts from the pinned Arch image, runs `pacman -Syu` and installs the collections. Since 2026-10-25 every `---` line of `inside.sh` shows the seconds since the start (`[t+Ns]`) and the run ends with `elapsed:`. Measured on PR #9's CI run (2026-10-25, 1287 s in the container): setup (`pacman -Syu` and the collections) took 16 s, so caching an image would save about 1%; the rest is spread over 33 sections of playbook runs, 30 to 110 s each (largest: D-11 drift 109 s, D-04 FIDO2 104 s, polkit 76 s, `su` logins 68 s). Next, if the time matters: split the sections across parallel CI jobs, or make each playbook run cheaper. The VM side (`run.sh` 2026-10-27, `profile_tasks`): run 1 took 12m32s, run 2 9m58s, run 3 (`--check`) 11m41s; the slowest tasks of run 1 were the D-11 playbook copy (125 s), the integrity sweep (90 s), two AppArmor complain-mode loops (84 s and 71 s) and two sysctl reads (45 s each). Revisit at the latest when a CI run takes more than 28 minutes (80% of the timeout) |
 | VM snapshot `pre-aegis-updated` is behind the package mirror | 2026-10-28: run 1 of `tests/vm/run.sh` failed installing OpenSnitch, because `stable-mirror.omarchy.org` returned 404 for `python-platformdirs-4.13.0-1`, a version the snapshot's pacman databases still name. Worked around by running `pacman -Syu` in the restored VM before `run.sh`. `tests/vm/update-snapshot.sh` refreshes it, but it deletes and retakes `pre-aegis-updated`, which `pre-aegis-hw` (the enrolled YubiKey) hangs off: the owner's call |
