@@ -120,7 +120,7 @@ uv sync                                    # locked ansible-core, ansible-lint, 
 uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
-tests/container/run.sh                     # 44 checks in a pinned Arch image
+tests/container/run.sh                     # planted-problem checks in a pinned Arch image; ends "N/N checks passed"
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,

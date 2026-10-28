@@ -688,9 +688,9 @@ drops asymmetric WireGuard/Tailscale traffic). ufw applies its own
 `ufw.service` started at 34.46 s, after `systemd-sysctl` finished at 34.44 s.
 On `linux-omarchy` the same day, `run.sh` read 2 after its reboot, so this is
 the order of two units, seen to lose once; it is not shown to be specific to
-one kernel. Effect: strict reverse-path filtering until the next playbook
+one kernel (wrong, corrected below). Effect: strict reverse-path filtering until the next playbook
 run, which re-applies 2 (so each run reports `changed`), and the D-11 drift
-check reports it after a package update. Not a weakening: 1 is stricter.
+check reports it after a package update (wrong, corrected below). Not a weakening: 1 is stricter.
 
 Options: (a) the firewall role sets the two `rp_filter` lines in
 `/etc/ufw/sysctl.conf` to 2, so both writers agree (pacman keeps a changed
@@ -709,7 +709,8 @@ sets the two `rp_filter` lines in `/etc/ufw/sysctl.conf` to
 either spelling carries another value. **Correction (2026-10-27):** this was
 not seen on `linux-hardened` only. On `linux-omarchy` too, `rp_filter` read 1
 right after a boot; `run.sh`'s "state survives a reboot" passed anyway,
-because its `--check` run cannot see live sysctl values (D-32). Measured in
+because its `--check` run cannot see live sysctl values (D-32). For the same
+reason the D-11 drift check did not report it either (corrected 2026-10-28). Measured in
 the VM after the change: right after a boot, 2 on both keys on both kernels,
 with ufw still starting after `systemd-sysctl` (280.5 s after 279.5 s on
 `linux-hardened`, 1059.2 s after 1057.5 s on `linux-omarchy`).
@@ -761,8 +762,11 @@ failure, so **the roles after it are never checked by the drift check:
 `firewall`, `opensnitch`, `overlay_network`, `pacman_integrity`**. The
 check still reports "Hardening drift", because a failed run exits non-zero
 like a drifted one, and `run.sh`'s D-11 test accepts any non-zero result.
-So D-11 has caught PAM and sysctl drift, but not ufw drift, since it was
-introduced.
+So D-11 has caught PAM drift and changes to the sysctl drop-in (live sysctl
+values only since D-32), but not ufw drift. The code that causes this is
+unchanged since D-11 landed (`c6d0e01`, 2026-10-22: the `become_user` git read,
+`-e ansible_become=false`, `commit_signing` before `firewall`); the failure was
+observed on 2026-10-28.
 
 Options: (a) tasks that need the desktop user are skipped when the run
 cannot become (a variable the drift script sets beside `ansible_become=false`),
