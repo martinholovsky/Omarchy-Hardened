@@ -714,7 +714,7 @@ the VM after the change: right after a boot, 2 on both keys on both kernels,
 with ufw still starting after `systemd-sysctl` (280.5 s after 279.5 s on
 `linux-hardened`, 1059.2 s after 1057.5 s on `linux-omarchy`).
 
-## D-32 — a `--check` run cannot see live sysctl drift (Open, 2026-10-27)
+## D-32 — a `--check` run cannot see live sysctl drift (Decided 2026-10-28: (a))
 
 Found while verifying D-31. In check mode the `sysctl` role reads the live
 values, but its apply step (a `command` task) is skipped and its live
@@ -734,3 +734,46 @@ say in the docs that the drift check covers files only.
 and the drift check exists for exactly this; with D-31 fixed, a clean
 machine has no live drift to report. Needs the container test (a planted
 live difference in check mode) and a `run.sh` pass.
+
+**Decided (owner, 2026-10-28):** (a), the recommendation. The `sysctl` role
+collects every live value that differs from the drop-in and, in check mode,
+reports them by name as `changed` ("kernel.dmesg_restrict is 0, want 1"); the
+D-11 drift check and `run.sh`'s post-reboot `--check` treat that as drift.
+Container: a planted live difference is reported, a matching value is not
+(a mutant that never reports fails the test). CI `sysctl-apply`: a value
+changed at runtime is reported by `--check`, which leaves the kernel as it is. VM (2026-10-28, `pre-aegis-updated` after `pacman -Syu`): `run.sh`
+passed in full, and its post-reboot `--check` (which now sees live values)
+found none differing; then a live `rp_filter=1` set with `sysctl -w` was
+reported by the D-11 drift check after a real `pacman -S` ("net.ipv4.conf.all.rp_filter
+is 1, want 2"), and the kernel value was left as it was.
+
+## D-33 — the drift check stops at `commit_signing` (Open, 2026-10-28)
+
+Found while verifying D-32. The drift check runs the playbook from a systemd
+unit with `NoNewPrivileges=yes` and `ProtectHome=read-only`, so it cannot
+`sudo`, and its script passes `-e ansible_become=false` (since D-11,
+`c6d0e01`, 2026-10-22). Tasks that act as the desktop user (`become_user`:
+`commit_signing` 3, `opensnitch` 5, the agent egress audit 1) then run as
+root with no `$HOME`; the first, `git config --global --get` in
+`commit_signing`, fails with "fatal: $HOME not set" (VM, 2026-10-28,
+`/var/lib/aegis/drift-check.log`). Ansible stops a host at its first
+failure, so **the roles after it are never checked by the drift check:
+`firewall`, `opensnitch`, `overlay_network`, `pacman_integrity`**. The
+check still reports "Hardening drift", because a failed run exits non-zero
+like a drifted one, and `run.sh`'s D-11 test accepts any non-zero result.
+So D-11 has caught PAM and sysctl drift, but not ufw drift, since it was
+introduced.
+
+Options: (a) tasks that need the desktop user are skipped when the run
+cannot become (a variable the drift script sets beside `ansible_become=false`),
+each recording INFO "not checked by the drift check"; the drift script tells
+a failed run ("drift check broken", with the task) from a drifted one, and
+`run.sh` requires `failed=0` in the drift log; (b) the same reads run as root
+with `HOME` set to the user's home (root can read it under
+`ProtectHome=read-only`), which needs care per task and still cannot write;
+(c) let the drift unit `sudo` (drop `NoNewPrivileges`), which widens a root
+service that runs on every package transaction.
+**Recommendation:** (a). It restores the drift check for the four roles that
+matter most to it (ufw, OpenSnitch's daemon, the overlay network, package
+integrity) without widening the unit, makes a broken check loud instead of
+reading as drift, and adds the test that would have caught this.
