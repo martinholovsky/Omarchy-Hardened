@@ -164,8 +164,9 @@ After the reboot it also checks:
 - `aegis-agent` has no capabilities, cannot create user namespaces, and can
   write to the project
 - a real `pacman -S` triggers the D-11 check, which reports a reverted PAM
-  file without repairing it. The check took 9m21s on 2026-10-22; `run.sh`
-  waits up to 20 minutes and fails if it is still running
+  file without repairing it, and runs to the end (`failed=0` in its log,
+  D-33). The check took 9m21s on 2026-10-22; `run.sh` waits up to 20 minutes
+  and fails if it is still running
 - the lock screen locks out after 10 failures (step 3)
 - `sudo` and `su` fill one faillock tally, and `su` refuses a non-wheel user
   with root's right password (step 4). `tests/vm/pty-auth.py` drives `su` on
@@ -287,9 +288,11 @@ unused routed address answered "open"), so the script probes on-link only.
   2026-10-28). Read a "state survives a reboot" pass from before that date as
   "the files survived", not "the kernel values did": on 2026-10-27 it passed
   while ufw had reset `rp_filter` to 1 (D-31).
-- **A failed drift check reads as drift.** Both exit non-zero and log "Hardening
-  drift". Read `failed=` in `/var/lib/aegis/drift-check.log` before taking the
-  message as a finding (D-33: on 2026-10-28 every run had `failed=1`).
+- **A failed drift check read as drift until D-33** (fixed 2026-10-29). Both
+  exited 1 and logged "Hardening drift"; on 2026-10-28 every run had
+  `failed=1`. A broken check now exits 2 and logs "Aegis drift check broken",
+  and `run.sh` requires `failed=0` in `/var/lib/aegis/drift-check.log`. Read
+  a D-11 pass from before that date as "it exited non-zero".
 - **`guest_root` feeds the sudo password on stdin**, so data piped into it is
   lost: `printf … | guest_root tee FILE` writes an empty file, at exit 0.
   Copy with `guest_ssh 'cat >/tmp/x' <file`, then `guest_root install`.

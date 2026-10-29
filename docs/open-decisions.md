@@ -750,7 +750,7 @@ found none differing; then a live `rp_filter=1` set with `sysctl -w` was
 reported by the D-11 drift check after a real `pacman -S` ("net.ipv4.conf.all.rp_filter
 is 1, want 2"), and the kernel value was left as it was.
 
-## D-33 — the drift check stops at `commit_signing` (Open, 2026-10-28)
+## D-33 — the drift check stops at `commit_signing` (Decided 2026-10-29: (a))
 
 Found while verifying D-32. The drift check runs the playbook from a systemd
 unit with `NoNewPrivileges=yes` and `ProtectHome=read-only`, so it cannot
@@ -783,3 +783,22 @@ service that runs on every package transaction.
 matter most to it (ufw, OpenSnitch's daemon, the overlay network, package
 integrity) without widening the unit, makes a broken check loud instead of
 reading as drift, and adds the test that would have caught this.
+
+**Decided (owner, 2026-10-29):** (a), the recommendation. The drift script
+passes `aegis_drift_check_run=true`. `commit_signing` then records INFO
+`git.commit_signing` "not checked by the drift check" and ends the role;
+the agent egress audit records INFO `agent.egress` the same way instead of
+reading root's empty container store (as root, `podman logs` with
+`failed_when: false` would have reported "no agent traffic", a wrong answer
+rather than a failure). The OpenSnitch user-file tasks stay: their paths
+name the user's home and in check mode they only read it, which root can. The
+script exits 2 with "Aegis drift check broken" (journal priority `err`, its
+own desktop title) when a task other than the audit's verdict failed, the host
+was unreachable, or the log has no recap; drift and an audit FAIL still exit 1
+with "Hardening drift". `run.sh` requires `failed=0` in the drift log.
+Container: the drift check now runs in a service's environment (`env -i`, no
+`$HOME`) and with the `signing` tag; before the fix that run failed exactly as
+in the VM (`fatal: $HOME not set`, `failed=1`), after it the run is clean and
+lists the INFO. Planted: a broken Python interpreter (a failed task) and an
+unparsable settings file (no recap) both exit 2; a FAIL finding planted in the
+settings still exits 1.

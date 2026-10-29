@@ -1,6 +1,23 @@
 ---
 # D-08: configure SSH commit/tag signing for one user. Only acts when
 # aegis_commit_signing_pubkey is set; otherwise reports the current setup.
+
+# D-33: the drift check is a system service that cannot become the signing
+# user, and git --global needs that user's $HOME. Say so instead of failing,
+# which would end the check before the roles after this one.
+- name: Record that the drift check does not check commit signing
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'git.commit_signing', 'status': 'INFO',
+            'detail': 'not checked by the drift check: it cannot act as '
+                      ~ aegis_commit_signing_user ~ ' (D-33)'}] }}
+  when: aegis_drift_check_run | default(false) | bool
+
+- name: Skip the rest of this role in the drift check
+  ansible.builtin.meta: end_role
+  when: aegis_drift_check_run | default(false) | bool
+
 - name: Look up the signing user
   ansible.builtin.getent:
     database: passwd

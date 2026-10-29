@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=72
+checks_total=74
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -171,6 +171,33 @@ out=$(ansible-playbook tests/container/playbook.yml -e aegis_drift_check_enabled
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "drift-check install not idempotent"; }
 pass "drift-check install idempotent; become_check results not saved"
 /usr/local/libexec/aegis-drift-check >/dev/null 2>&1 || { cat /var/lib/aegis/drift-check.log; fail "clean state reported as drift"; }
+# D-33: the pacman hook starts the check as a system service, which has no
+# $HOME and cannot become the desktop user. Run it with that environment: the
+# commit_signing role (tag signing) once failed there and ended the run.
+unit_env=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin)
+drift_log=/var/lib/aegis/drift-check.log
+"${unit_env[@]}" /usr/local/libexec/aegis-drift-check >/dev/null 2>&1 || { cat "$drift_log"; fail "clean state not clean in the service's environment (D-33)"; }
+if ! { grep -Eq ' failed=0 ' "$drift_log" && grep -q 'INFO | git.commit_signing | not checked by the drift check' "$drift_log"; }; then
+  cat "$drift_log"; fail "drift check did not finish, or did not say what it skipped (D-33)"
+fi
+pass "D-33: drift check clean in the service's environment; the desktop-user checks are reported as skipped"
+# A check that cannot run is "broken" (exit 2), never drift; an audit FAIL is
+# still drift (exit 1). Plant each in the copy's settings, then restore them.
+cp "$copy/applied-vars.yml" /tmp/applied-vars.yml
+drift_case() { # extra settings, expected exit, expected message
+  cp /tmp/applied-vars.yml "$copy/applied-vars.yml"
+  printf '%s\n' "$1" >>"$copy/applied-vars.yml"
+  local out rc=0
+  out=$("${unit_env[@]}" /usr/local/libexec/aegis-drift-check 2>&1) || rc=$?
+  if ! { [[ $rc -eq $2 ]] && grep -q "$3" <<<"$out"; }; then
+    echo "$out"; cat "$drift_log"; fail "drift check: exit $rc, expected $2 with '$3'"
+  fi
+}
+drift_case 'ansible_python_interpreter: /nonexistent/python3' 2 'drift check broken.*become_check'
+drift_case 'aegis_faillock_deny: [' 2 'drift check broken.*no recap'
+drift_case "aegis_findings: [{id: test.planted, status: FAIL, detail: planted}]" 1 'Hardening drift'
+cp /tmp/applied-vars.yml "$copy/applied-vars.yml"
+pass "D-33: a broken drift check is reported as broken (exit 2), an audit FAIL as drift (exit 1)"
 # What an omarchy-update that rewrites system-auth would do.
 sed -i 's/deny=10 unlock_time=900/deny=10 unlock_time=120/' /etc/pam.d/system-auth
 if /usr/local/libexec/aegis-drift-check >/dev/null 2>&1; then fail "reverted PAM not reported as drift"; fi

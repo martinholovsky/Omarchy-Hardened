@@ -15,11 +15,11 @@
     aegis_integrity_drift_severity: WARN
     # D-11: off except in its own test (-e aegis_drift_check_enabled=true),
     # because refreshing the copy slows down every one of the ~30 runs. Copy
-    # from the writable work tree, check only the PAM area (the container has
-    # no real sysctl/ufw state to compare), no desktop.
+    # from the writable work tree, check only the PAM area and commit signing
+    # (the container has no real sysctl/ufw state to compare), no desktop.
     aegis_drift_check_enabled: false
     aegis_drift_check_source: /work
-    aegis_drift_check_tags: [auth]
+    aegis_drift_check_tags: [auth, signing] # signing: D-33
     aegis_drift_check_notify: false
   roles:
     # First, as in omarchy-harden.yml: its results must stay out of the

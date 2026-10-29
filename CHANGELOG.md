@@ -73,12 +73,14 @@ SemVer once 1.0 ships.
   such keys as changed in check mode (container: 72 checks; VM: the drift
   check reported a live `rp_filter` change after a real `pacman -S`).
 
-### Known issues
-
-- D-33 (open): the drift check stops at `commit_signing`, where tasks that act
-  as the desktop user fail without `sudo`, so `firewall`, `opensnitch`,
-  `overlay_network` and `pacman_integrity` are not checked after a package
-  update; and a failed check reads as drift (VM, 2026-10-28).
+- D-33: the drift check stopped at `commit_signing`, whose `git config
+  --global` fails in a system service with no `$HOME`, so `firewall`,
+  `opensnitch`, `overlay_network` and `pacman_integrity` were never checked
+  after a package update, and the failed run was reported as drift. The
+  drift check now skips commit signing and the agent egress audit with an
+  INFO finding each, and a check that breaks part-way says "Aegis drift check
+  broken" and exits 2 instead of 1. The container test runs the check in a
+  service's environment (74 checks); `run.sh` requires `failed=0`.
 
 ## [0.1.0] - 2026-10-26
 

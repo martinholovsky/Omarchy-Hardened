@@ -124,6 +124,11 @@ journal=$(guest_root journalctl -t aegis-drift-check -n 5 --no-pager)
 if ! { [[ $result == exit-code ]] && grep -q 'Hardening drift' <<<"$journal"; }; then
   die "drift not reported (Result=$result): $journal"
 fi
+# D-33: a check that failed part-way also exits non-zero, so the run itself
+# must have reached the end: every role checked, none failed.
+recap=$(guest_root grep -E '^[^ ]+ +: ok=' /var/lib/aegis/drift-check.log | tail -1)
+[[ $recap == *' failed=0 '* ]] || die "drift check did not run to the end (D-33): ${recap:-no recap}"
+echo "  drift check: $recap"
 grep -q 'unlock_time=120' <<<"$(guest_root cat /etc/pam.d/system-auth)" || die "the drift check changed the system"
 echo "PASS: pacman hook ran the check; the reverted PAM file was reported, not repaired"
 
