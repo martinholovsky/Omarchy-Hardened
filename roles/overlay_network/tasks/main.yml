@@ -27,6 +27,7 @@
     proto: tcp
     comment: aegis-ssh-overlay
     delete: "{{ not aegis_overlay_ssh_on_tailscale | bool }}"
+  when: not (aegis_drift_check_run | default(false) | bool)
 
 - name: Read the firewall back
   ansible.builtin.command:
@@ -34,6 +35,7 @@
   register: aegis_ts_ufw
   changed_when: false
   check_mode: false
+  when: not (aegis_drift_check_run | default(false) | bool)
 
 - name: Verify the overlay SSH rule matches the setting
   vars:
@@ -46,6 +48,32 @@
       {{ 'open' if aegis_overlay_ssh_on_tailscale | bool else 'closed' }}
     quiet: true
   when: not ansible_check_mode
+
+# D-33: in the drift check, ufw cannot run (no write access to /run/ufw.lock
+# or /etc/ufw), so read its rule files. The pattern is the rule the task above
+# adds: allow tcp <port> from any to any, in on the interface.
+- name: Read ufw's rule files (drift check, D-33)
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop: "{{ aegis_overlay_ufw_rules_files }}"
+  register: aegis_ts_rules
+  when: aegis_drift_check_run | default(false) | bool
+
+- name: Report a run would change the overlay SSH rule (drift check, D-33)
+  vars:
+    aegis_text: "{{ aegis_ts_rules.results | map(attribute='content') | map('b64decode') | join('\n') }}"
+    aegis_re: >-
+      (?m)^### tuple ### allow tcp {{ aegis_overlay_ssh_port }} (0\.0\.0\.0/0|::/0) any (0\.0\.0\.0/0|::/0)
+      in_{{ aegis_overlay_interface | regex_escape }}( comment=\S*)?$
+    aegis_present: "{{ aegis_text is search(aegis_re) }}"
+  ansible.builtin.debug:
+    msg: >-
+      SSH on {{ aegis_overlay_interface }} should be
+      {{ 'open' if aegis_overlay_ssh_on_tailscale | bool else 'closed' }}; a run would fix it
+  changed_when: true
+  when:
+    - aegis_drift_check_run | default(false) | bool
+    - aegis_present | bool != aegis_overlay_ssh_on_tailscale | bool
 
 # D-24: with Tailscale's default --netfilter-mode=on, INPUT jumps to ts-input
 # before every ufw chain and ts-input accepts all of tailscale0. Measured in

@@ -802,3 +802,25 @@ in the VM (`fatal: $HOME not set`, `failed=1`), after it the run is clean and
 lists the INFO. Planted: a broken Python interpreter (a failed task) and an
 unparsable settings file (no recap) both exit 2; a FAIL finding planted in the
 settings still exits 1.
+
+**A second blocker, found in the VM (2026-10-29).** With `commit_signing`
+skipped, the check reached `firewall` and stopped there, now correctly as
+"drift check broken … failed: firewall : Set the default incoming policy":
+ufw opens `/run/ufw.lock` for writing even for `ufw status`
+(`OSError: [Errno 30] Read-only file system`), and its `--dry-run` refuses
+unless `/etc/ufw/user.rules` is writable. The unit's `ProtectSystem=strict`
+allows neither. Two probes in transient units with the same sandbox showed
+that with both writable the check runs to the end (`failed=0`, the two INFO
+findings, OpenSnitch's tasks fine as root, the only change the planted PAM
+revert, ufw's rule files byte-identical before and after). Options: (a) in
+the drift check, `firewall` and `overlay_network` read ufw's own files
+(`/etc/default/ufw`, `/etc/ufw/ufw.conf`, `user.rules`, `user6.rules`) and
+report what a run would change, as D-32 does for sysctl; (b) widen the unit
+with `ReadWritePaths=-/run/ufw.lock /etc/ufw`; (c) skip `firewall` with an
+INFO. **Decided (owner, 2026-10-29): (a)**, as recommended: (b) would let a
+root service started on every package transaction write the firewall config,
+against the unit's rule that nothing outside `/var/lib/aegis` is written,
+the same widening D-33 (c) was turned down for; (c) drops the ufw reverts
+D-11 exists to catch. Each pattern matches exactly what the role's ufw task
+would delete, so a rule a run would leave alone is not reported. The live
+netfilter rules are not read: ufw loads these files when it starts.

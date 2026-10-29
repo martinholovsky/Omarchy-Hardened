@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=74
+checks_total=76
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -583,6 +583,41 @@ ufw status | grep -Eq '^22/tcp on tailscale0 +ALLOW' || { ufw status; fail "SSH 
 ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run failed"
 ! ufw status | grep -q 'tailscale0' || { ufw status; fail "overlay rule not removed when opted out"; }
 pass "opt-in opens SSH on tailscale0 only; opting out removes it"
+
+echo "--- D-33: the drift check reads ufw's files, as ufw cannot run in its unit"
+# The drift unit cannot write /run/ufw.lock (nor /etc/ufw), and ufw opens the
+# lock for writing even for `status`. A directory in its place fails ufw the
+# same way while every file stays readable.
+drift_fw=(ansible-playbook tests/container/firewall.yml --check -e aegis_drift_check_run=true)
+block_ufw() { rm -f /run/ufw.lock && mkdir /run/ufw.lock; }
+unblock_ufw() { rmdir /run/ufw.lock; }
+block_ufw
+if ansible-playbook tests/container/firewall.yml --check >/dev/null 2>&1; then
+  fail "control: ufw ran although its lock could not be opened"
+fi
+out=$("${drift_fw[@]}") || { echo "$out"; fail "drift-check read of the hardened ufw failed"; }
+grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "the hardened ufw reported as drift"; }
+unblock_ufw
+pass "D-33: with ufw unable to run, the drift check reads a hardened ufw as clean"
+# What an Omarchy script could put back, plus a policy and a disabled ufw.
+ufw allow 53317/tcp >/dev/null
+ufw limit 22/tcp >/dev/null
+ufw default allow incoming >/dev/null
+ufw disable >/dev/null
+ansible-playbook tests/container/firewall.yml --check >/tmp/ufw-check.log 2>&1 \
+  || { cat /tmp/ufw-check.log; fail "--check of the reverted ufw failed"; }
+grep -Eq 'changed=[1-9]' /tmp/ufw-check.log || fail "control: --check with ufw did not see the reverts"
+block_ufw
+out=$("${drift_fw[@]}" -e aegis_overlay_ssh_on_tailscale=true) || { echo "$out"; fail "drift-check read of the reverted ufw failed"; }
+for want in 'ufw is not enabled at boot' 'default incoming policy is ACCEPT, want DROP' \
+  'LocalSend rule 53317/tcp is back' 'SSH rule limit 22/tcp on all interfaces is back' \
+  'SSH on tailscale0 should be open'; do
+  grep -qF "$want" <<<"$out" || { echo "$out"; fail "drift check missed: $want"; }
+done
+! grep -qF '53317/udp is back' <<<"$out" || { echo "$out"; fail "drift check reported a rule that is not there"; }
+unblock_ufw
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "re-apply after the ufw reverts failed"
+pass "D-33: the drift check names each ufw revert that --check with ufw also sees"
 
 echo "--- D-24: sshd password logins and key types"
 ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run without sshd failed"

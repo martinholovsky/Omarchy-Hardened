@@ -79,8 +79,12 @@ SemVer once 1.0 ships.
   after a package update, and the failed run was reported as drift. The
   drift check now skips commit signing and the agent egress audit with an
   INFO finding each, and a check that breaks part-way says "Aegis drift check
-  broken" and exits 2 instead of 1. The container test runs the check in a
-  service's environment (74 checks); `run.sh` requires `failed=0`.
+  broken" and exits 2 instead of 1. In the drift check, `firewall` and
+  `overlay_network` read ufw's own files instead of running ufw, which needs
+  write access to `/run/ufw.lock` and `/etc/ufw` that the unit does not give
+  it (found in the VM once the check got past `commit_signing`). The
+  container test runs the check in a service's environment and with ufw
+  unable to run (76 checks); `run.sh` requires `failed=0`.
 
 ## [0.1.0] - 2026-10-26
 
