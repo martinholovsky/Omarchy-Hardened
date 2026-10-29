@@ -135,7 +135,7 @@ These were confirmed against Omarchy's source:
 - Blocking bluetooth or thunderbolt.
 - Removing sudo, global setuid stripping, `chattr +i` dotfiles.
 - Xwayland off.
-- A global `/etc/ld.so.preload` hardened_malloc. The AUR package was flagged out of date on 2026-02-23, and `no_rlimit_as` is not packaged anywhere.
+- A global `/etc/ld.so.preload` hardened_malloc. The AUR package was flagged out of date on 2026-02-23 (no longer flagged on 2026-10-29), and `no_rlimit_as` is not packaged anywhere.
 - Default USBGuard.
 - `ia32_emulation=0` with Steam.
 - `noexec` on `/var` or `/home`.

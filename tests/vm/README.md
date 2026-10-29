@@ -173,6 +173,15 @@ After the reboot it also checks:
 
 To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
 
+If run 1 fails installing a package with a 404 from the mirror, the
+snapshot's pacman databases name versions the mirror no longer has
+(2026-10-28: `python-platformdirs-4.13.0-1`). Run a full `pacman -Syu` in the
+restored VM first, with `OMARCHY_ALLOW_DIRECT_PACMAN=1` as
+`update-snapshot.sh` does, then `run.sh`. `update-snapshot.sh` would fix the
+snapshot for good, but it deletes and retakes `pre-aegis-updated`, which
+`pre-aegis-hw` hangs off, so for now the workaround stays
+([open-items.md](../../docs/open-items.md) §4).
+
 ## 7. Tailscale (D-10, D-24)
 
 ```bash

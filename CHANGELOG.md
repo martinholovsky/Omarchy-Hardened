@@ -36,6 +36,11 @@ SemVer once 1.0 ships.
 - The repository is public. `SECURITY.md` links GitHub's private
   vulnerability reporting, now enabled; `main` is protected (PRs only, the
   three CI checks required, no force push or deletion, no bypass).
+- CI: `container-test` may run 45 minutes instead of 35. A run on `main`
+  took 28m19s on 2026-10-28, past the 28-minute revisit line; splitting the
+  suite into parallel jobs is the follow-up (open-items.md §4).
+- `tests/vm/README.md` §6: what to do when the VM snapshot's package
+  databases are behind the mirror (a 404 in run 1).
 
 ### Fixed
 

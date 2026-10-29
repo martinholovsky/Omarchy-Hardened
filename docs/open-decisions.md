@@ -89,7 +89,9 @@ allowlist through wrapper or `LD_PRELOAD` drop-ins, not a global preload.
 **Deferred (owner, 2026-10-21).** It is only available from the AUR, where it
 was flagged out of date on 2026-02-23. Building it from a root playbook is a
 supply-chain risk that outweighs the gain. Revisit if it reaches the official
-repos. The role stays a stub.
+repos. The role stays a stub. Checked 2026-10-29: still AUR only (`14-1`);
+the AUR entry was last modified 2026-10-26 and is no longer flagged out of
+date, which does not change the reason above.
 
 ## D-04 — FIDO2 for LUKS and sudo: recovery path (Decided 2026-10-21: audit + second factor for sudo)
 

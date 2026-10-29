@@ -27,7 +27,7 @@ recover.
 | `audit_report` | — | ✅ implemented | Runs last: prints every finding, writes `/var/lib/aegis/audit.jsonl` (0600), fails on any FAIL not listed in `aegis_audit_skip` |
 | `drift_check` | — | ✅ implemented | D-11: after every pacman transaction, runs a root-owned copy of this playbook in `--check` mode, saved with the settings you applied, and warns in the journal and on the desktop if anything would change. Never re-applies |
 | `kernel` | 3.1 | ✅ implemented | D-02: installs `linux-hardened` **alongside** `linux-omarchy` with its own Limine entry; `linux-omarchy` stays the default until you switch it, and the audit names the default entry. Keeps unprivileged user namespaces on under it (D-01) |
-| `hardened_malloc` | 3.1 | ⏸ deferred | D-03: AUR-only and flagged out of date; not built from a root playbook |
+| `hardened_malloc` | 3.1 | ⏸ deferred | D-03: AUR-only; not built from a root playbook |
 | `fido2` | 3.2 | ✅ implemented | D-04: reports FIDO2 status. Once every wheel user has ≥2 keys, sudo needs key **and** password (`pam_u2f` `required` instead of Omarchy's `sufficient`). Login, polkit and LUKS untouched |
 | `apparmor` | 3.3 | ✅ implemented | D-05: installs AppArmor, adds it to `lsm=` through a Limine drop-in (active after a reboot), every profile in complain mode |
 | `flatpak` | 3.3 | ✅ implemented | D-06: no apps moved. If Flatpak is installed: Flathub limited to verified apps, apps with host/home/device/bus access reported |
