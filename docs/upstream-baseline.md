@@ -4,8 +4,34 @@ The roles are written against what Omarchy really does, not against the PRD's
 description of it. Everything below was read from
 [basecamp/omarchy](https://github.com/basecamp/omarchy) at commit
 `dde0d123bb7e130cb7c8a679ed9d3b8b2a11887e` (2026-10-20, `version` = `4.0.0.alpha`).
-Re-check it when Omarchy changes. Each row names the upstream file, so a
-re-check is a `git diff` of those paths.
+Re-check it on each Omarchy release or release candidate. Each row names the
+upstream file, so a re-check is a `git diff` of those paths.
+
+**Re-checked 2026-10-29 against `v4.5.0-rc2` (`5978d93`, 2026-10-27).** The
+paths this repo cites (57 backticked paths that exist upstream, plus the 5
+files in `tests/fixtures/omarchy/`) were diffed from `cbd44ba` to the tag.
+Six changed: `AGENTS.md`, `bin/omarchy-hibernation-setup` (resume device
+named by UUID), `docs/update-process.md`, `install/provisioning/setup-form.sh`
+(translated prompts), and the two below. No row in the table changed. D-23's
+revisit condition is still unmet: TPM or `clevis` unlock appears only in the
+same test fixture, and no autologin or SDDM file changed. Two changes in
+`v4.5.0-rc2` matter once 4.5.0 ships (`v4.0.6` has neither; open-items.md §2):
+
+- `install/omarchy-base.packages` replaces `power-profiles-daemon` with
+  `omarchy-power-profiles-daemon`, and `install/config/fix-powerprofilesctl-shebang.sh`
+  is gone (`701f1599`). The D-22 expected-drift entry for
+  `/usr/bin/powerprofilesctl` exists only because of that script; on 4.5 it
+  would accept a content change that no longer has a benign cause.
+  (`bin/omarchy-upgrade-to-quattro` still rewrites the shebang for a channel
+  that keeps the stock package.)
+- `bin/omarchy-update` runs AUR builds under the update's sudo authorization
+  (`24f59da2`, "Authorize omarchy update once, AUR and boot check included",
+  2026-10-25). Before, `yay` ran after the keepalive stopped, through the
+  no-update wrapper, so PKGBUILD code got no reusable sudo timestamp; now it
+  runs while the keepalive is live. This playbook installs nothing from the
+  AUR, but a PKGBUILD of any AUR package the user has can now run `sudo`
+  without a prompt during `omarchy-update` (read from the code at the tag,
+  not run).
 
 **Re-checked 2026-10-23 against `cbd44ba` (41 commits, 226 files later).** Of
 the 58 upstream files this repo cites, the changed ones are

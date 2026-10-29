@@ -39,6 +39,11 @@ SemVer once 1.0 ships.
 - CI: `container-test` may run 45 minutes instead of 35. A run on `main`
   took 28m19s on 2026-10-28, past the 28-minute revisit line; splitting the
   suite into parallel jobs is the follow-up (open-items.md §4).
+- `docs/upstream-baseline.md`: re-checked against Omarchy `v4.5.0-rc2`; no
+  row changed. Two 4.5 changes are recorded for when it ships (the
+  `powerprofilesctl` shebang rewrite is gone; AUR builds run under the
+  update's sudo authorization). The re-check trigger is now each release or
+  release candidate.
 - `tests/vm/README.md` §6: what to do when the VM snapshot's package
   databases are behind the mirror (a 404 in run 1).
 
