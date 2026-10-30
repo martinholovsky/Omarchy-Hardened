@@ -1,13 +1,22 @@
 ---
+# D-33: ufw needs write access to /run/ufw.lock and /etc/ufw even for status
+# and --dry-run, which the drift check's unit does not give it. There, the ufw
+# tasks below are skipped and ufw's own files are compared instead.
+- name: Compare ufw's files with the settings (drift check, D-33)
+  ansible.builtin.import_tasks: drift_read.yml
+  when: aegis_drift_check_run | default(false) | bool
+
 - name: Set the default incoming policy
   community.general.ufw:
     direction: incoming
     default: "{{ aegis_firewall_default_incoming }}"
+  when: not (aegis_drift_check_run | default(false) | bool)
 
 - name: Set the default outgoing policy
   community.general.ufw:
     direction: outgoing
     default: "{{ aegis_firewall_default_outgoing }}"
+  when: not (aegis_drift_check_run | default(false) | bool)
 
 - name: Remove the LocalSend allowances
   community.general.ufw:
@@ -16,7 +25,9 @@
     proto: "{{ item }}"
     delete: true
   loop: [tcp, udp]
-  when: aegis_firewall_remove_localsend | bool
+  when:
+    - aegis_firewall_remove_localsend | bool
+    - not (aegis_drift_check_run | default(false) | bool)
 
 - name: Remove the SSH rule added by omarchy-setup-security-sshd
   community.general.ufw:
@@ -25,7 +36,9 @@
     proto: tcp
     delete: true
   loop: [limit, allow]
-  when: aegis_firewall_remove_ssh | bool
+  when:
+    - aegis_firewall_remove_ssh | bool
+    - not (aegis_drift_check_run | default(false) | bool)
 
 - name: Remove the Docker DNS allowances
   community.general.ufw:
@@ -37,7 +50,9 @@
     port: "53"
     delete: true
   loop: "{{ aegis_firewall_docker_dns_sources }}"
-  when: aegis_firewall_remove_docker_dns | bool
+  when:
+    - aegis_firewall_remove_docker_dns | bool
+    - not (aegis_drift_check_run | default(false) | bool)
 
 - name: Give ufw's sysctl file the same rp_filter as the sysctl role (D-31)
   when: aegis_firewall_ufw_rp_filter is not none
@@ -74,6 +89,7 @@
 - name: Enable the firewall
   community.general.ufw:
     state: enabled
+  when: not (aegis_drift_check_run | default(false) | bool)
 
 - name: Read back the active rule set
   ansible.builtin.command:

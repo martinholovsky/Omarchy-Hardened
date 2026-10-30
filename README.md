@@ -25,14 +25,14 @@ recover.
 | `firewall` | 3.4 | ✅ implemented | ufw default-deny incoming; removes LocalSend (53317) and the opt-in SSH rule; keeps Docker DNS (configurable); sets ufw's own `rp_filter` to the sysctl role's 2, so ufw does not reset it at boot (D-31) |
 | `pacman_integrity` | 3.5 | ✅ audit only | Emits findings: weak `SigLevel` (including `Include=` files), non-HTTPS mirrors, last full upgrade older than 7 days, setuid files no package owns, world-writable and unowned files, `pacman -Qkk` drift (known-benign and permission-tightening changes reported as INFO, D-22), NOPASSWD sudoers rules, members of docker/libvirt/disk/input |
 | `audit_report` | — | ✅ implemented | Runs last: prints every finding, writes `/var/lib/aegis/audit.jsonl` (0600), fails on any FAIL not listed in `aegis_audit_skip` |
-| `drift_check` | — | ✅ implemented | D-11: after every pacman transaction, runs a root-owned copy of this playbook in `--check` mode, saved with the settings you applied, and warns in the journal and on the desktop if anything would change. Never re-applies |
+| `drift_check` | — | ✅ implemented | D-11: after every pacman transaction, runs a root-owned copy of this playbook in `--check` mode, saved with the settings you applied, and warns in the journal and on the desktop if anything would change, or if the check itself broke (D-33). Never re-applies; ufw is checked from its files, and commit signing and agent egress are left to a manual run |
 | `kernel` | 3.1 | ✅ implemented | D-02: installs `linux-hardened` **alongside** `linux-omarchy` with its own Limine entry; `linux-omarchy` stays the default until you switch it, and the audit names the default entry. Keeps unprivileged user namespaces on under it (D-01) |
-| `hardened_malloc` | 3.1 | ⏸ deferred | D-03: AUR-only and flagged out of date; not built from a root playbook |
+| `hardened_malloc` | 3.1 | ⏸ deferred | D-03: AUR-only; not built from a root playbook |
 | `fido2` | 3.2 | ✅ implemented | D-04: reports FIDO2 status. Once every wheel user has ≥2 keys, sudo needs key **and** password (`pam_u2f` `required` instead of Omarchy's `sufficient`). Login, polkit and LUKS untouched |
 | `apparmor` | 3.3 | ✅ implemented | D-05: installs AppArmor, adds it to `lsm=` through a Limine drop-in (active after a reboot), every profile in complain mode |
 | `flatpak` | 3.3 | ✅ implemented | D-06: no apps moved. If Flatpak is installed: Flathub limited to verified apps, apps with host/home/device/bus access reported |
 | `agent_containment` | 3.3 | ✅ implemented | D-07: rootless Podman and `aegis-agent`, which runs an agent with only the current project mounted, no `$HOME`, no capabilities and no user namespaces inside (D-01). D-26: its HTTP(S) goes through a Smokescreen proxy, `report` by default (allows all, logs hosts outside the allowlist), `enforce` on request. WARNs when the running kernel has no unprivileged overlayfs, where it cannot run (`linux-hardened`, D-30) |
-| `commit_signing` | 3.3 | ✅ implemented | D-08: SSH commit and tag signing for a public key you name (hardware `sk-` key required by default). Reports only until a key is set |
+| `commit_signing` | 3.3 | ✅ implemented | D-08: SSH signing of release tags for a public key you name (hardware `sk-` key required by default); commits are signed only with `aegis_commit_signing_commits: true`. Reports only until a key is set |
 | `opensnitch` | 3.4 | ✅ implemented | D-09: OpenSnitch running with default action `allow` (an unanswered prompt allows too), seeded rules for pacman/Tailscale/time/DNS, prompt UI autostarted. D-25: `aegis-egress-collector` records which program connected where (no command lines) and the audit WARNs on programs no package owns |
 | `overlay_network` | 3.4 | ✅ implemented | D-10: reports Tailscale; opt-in `aegis_overlay_ssh_on_tailscale` adds a ufw rule on `tailscale0`, which Tailscale's default netfilter mode bypasses, so the audit WARNs (D-24). Audits sshd password logins and non-hardware keys |
 
@@ -121,6 +121,7 @@ uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
 tests/container/run.sh                     # planted-problem checks in a pinned Arch image; ends "N/N checks passed"
+tests/container/run.sh 2                   # one of the 3 shards CI runs in parallel (setup, then its sections)
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,

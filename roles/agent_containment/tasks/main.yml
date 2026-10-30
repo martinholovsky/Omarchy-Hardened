@@ -90,4 +90,19 @@
 
 - name: Report agent egress (D-26)
   ansible.builtin.import_tasks: egress_audit.yml
-  when: aegis_agent_enabled | bool and aegis_agent_egress != 'off'
+  when:
+    - aegis_agent_enabled | bool and aegis_agent_egress != 'off'
+    - not (aegis_drift_check_run | default(false) | bool)
+
+# D-33: the proxies are the agent user's rootless containers. As root, the
+# drift check would read root's (empty) container store and report no traffic.
+- name: Record that the drift check does not read agent egress
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'agent.egress', 'status': 'INFO',
+            'detail': 'not checked by the drift check: it cannot act as '
+                      ~ aegis_agent_user ~ ' (D-33)'}] }}
+  when:
+    - aegis_agent_enabled | bool and aegis_agent_egress != 'off'
+    - aegis_drift_check_run | default(false) | bool

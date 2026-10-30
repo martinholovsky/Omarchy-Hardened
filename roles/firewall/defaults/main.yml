@@ -27,3 +27,10 @@ aegis_firewall_docker_dns_sources:
 # null leaves ufw's file alone.
 aegis_firewall_ufw_rp_filter: 2
 aegis_firewall_ufw_sysctl_conf: /etc/ufw/sysctl.conf
+
+# D-33: the drift check reads ufw's own files instead of running ufw, which
+# needs write access to /run/ufw.lock and /etc/ufw even for `ufw status` and
+# a --dry-run (VM, 2026-10-29), and the drift unit may write neither.
+aegis_firewall_ufw_defaults_file: /etc/default/ufw
+aegis_firewall_ufw_conf: /etc/ufw/ufw.conf
+aegis_firewall_ufw_rules_files: [/etc/ufw/user.rules, /etc/ufw/user6.rules]

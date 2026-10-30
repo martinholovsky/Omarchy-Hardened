@@ -68,6 +68,11 @@ aegis_integrity_drift_expected:
   - path: /usr/bin/powerprofilesctl
     reasons: [Modification time mismatch, Size mismatch, SHA256 checksum mismatch]
     why: Omarchy rewrites the shebang (install/config/fix-powerprofilesctl-shebang.sh)
+  # D-34: VLC's own pacman hook (vlc-cache-gen) rewrites its plugin index after
+  # every plugin install, upgrade or removal (VM, 2026-10-30, libvlc 3.0.24-1).
+  - path: /usr/lib/vlc/plugins/plugins.dat
+    reasons: [Modification time mismatch, Size mismatch, SHA256 checksum mismatch]
+    why: VLC's pacman hook regenerates the plugin cache (vlc-cache-gen)
 
 # D-22: also accept permission-only drift that removes mode bits and keeps
 # owner and group, judged against the package's mtree (e.g. cupsd's 0600

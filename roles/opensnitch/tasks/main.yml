@@ -88,6 +88,8 @@
         enabled: true
         state: started
 
+    # In the drift check these user-file tasks run as root (D-33). They stay:
+    # the paths name the user's home, and in check mode they only read it.
     - name: Autostart the prompt UI in the desktop session
       ansible.builtin.lineinfile:
         path: "~{{ aegis_opensnitch_user }}/.config/hypr/autostart.lua"

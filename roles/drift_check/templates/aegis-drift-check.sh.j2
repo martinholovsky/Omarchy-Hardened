@@ -2,7 +2,9 @@
 # {{ ansible_managed }}
 # D-11: run the root-owned copy of the hardening playbook in --check mode and
 # warn (journal + desktop notification) if anything would change or the audit
-# fails. Exit 0: no drift. Exit 1: drift or audit failure. Never re-applies.
+# fails. Never re-applies. Exit 0: no drift. Exit 1: drift or audit failure.
+# Exit 2: the check itself broke (a task failed, or no recap), so the machine
+# was not checked at all (D-33).
 set -uo pipefail
 
 dir={{ aegis_drift_check_dir | quote }}
@@ -16,7 +18,7 @@ export ANSIBLE_CONFIG="$dir/ansible.cfg" ANSIBLE_LOCAL_TEMP="$tmp" ANSIBLE_REMOT
 export ANSIBLE_HOME="$tmp/home" ANSIBLE_NOCOLOR=1 ANSIBLE_COLLECTIONS_PATH="$dir/collections"
 
 args=(/usr/bin/ansible-playbook "$dir/omarchy-harden.yml" --check --diff
-  -e "@$dir/applied-vars.yml" -e ansible_become=false)
+  -e "@$dir/applied-vars.yml" -e ansible_become=false -e aegis_drift_check_run=true)
 {% if aegis_drift_check_tags %}
 args+=(--tags {{ aegis_drift_check_tags | join(',') | quote }})
 {% endif %}
@@ -31,16 +33,31 @@ if [[ $rc -eq 0 ]] && grep -q ' changed=0 ' <<<"$recap"; then
   exit 0
 fi
 
-msg="Hardening drift after a package update: re-run omarchy-harden.yml (exit $rc; ${recap:-no recap}). Details: $log"
-echo "$msg" | systemd-cat -t aegis-drift-check -p warning || echo "$msg" >&2
+# A failed task ends the run, so the roles after it were never checked. Only
+# the audit's own verdict is drift; any other failed task, an unreachable
+# host or no recap at all means the check is broken (D-33). ansible-core
+# prints "fatal: [host]" for a task and "failed: [host] (item=...)" per item.
+failed=$(awk '/^TASK \[/ { t = $0; sub(/^TASK \[/, "", t); sub(/\] \**$/, "", t) }
+  /^(fatal|failed): \[/ { print t }' "$log" | sort -u |
+  grep -vx 'audit_report : Fail on findings that are not accepted' | paste -sd ';' -)
+if [[ -z $recap || -n $failed ]] || grep -Eq ' unreachable=[1-9]' <<<"$recap"; then
+  msg="Aegis drift check broken: it stopped before checking everything, re-run omarchy-harden.yml --check to see why (exit $rc; ${recap:-no recap}; failed: ${failed:-none}). Details: $log"
+  prio=err status=2
+else
+  msg="Hardening drift after a package update: re-run omarchy-harden.yml (exit $rc; ${recap}). Details: $log"
+  prio=warning status=1
+fi
+echo "$msg" | systemd-cat -t aegis-drift-check -p "$prio" || echo "$msg" >&2
 {% if aegis_drift_check_notify %}
+title="Aegis: hardening drift"
+[[ $status -ne 2 ]] || title="Aegis: drift check broken"
 for bus in /run/user/*/bus; do
   [[ -S $bus ]] || continue
   uid=$(basename "$(dirname "$bus")")
   [[ $uid -ge 1000 ]] || continue
   user=$(id -nu "$uid" 2>/dev/null) || continue
   runuser -u "$user" -- env DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
-    notify-send -u critical -a Aegis "Aegis: hardening drift" "$msg" >/dev/null 2>&1 || true
+    notify-send -u critical -a Aegis "$title" "$msg" >/dev/null 2>&1 || true
 done
 {% endif %}
-exit 1
+exit "$status"

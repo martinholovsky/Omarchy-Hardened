@@ -89,7 +89,9 @@ allowlist through wrapper or `LD_PRELOAD` drop-ins, not a global preload.
 **Deferred (owner, 2026-10-21).** It is only available from the AUR, where it
 was flagged out of date on 2026-02-23. Building it from a root playbook is a
 supply-chain risk that outweighs the gain. Revisit if it reaches the official
-repos. The role stays a stub.
+repos. The role stays a stub. Checked 2026-10-29: still AUR only (`14-1`);
+the AUR entry was last modified 2026-10-26 and is no longer flagged out of
+date, which does not change the reason above.
 
 ## D-04 — FIDO2 for LUKS and sudo: recovery path (Decided 2026-10-21: audit + second factor for sudo)
 
@@ -147,7 +149,7 @@ container. Only the project directory is bind-mounted. There is no `$HOME`,
 all capabilities are dropped, and new privileges are disabled. Egress control
 comes from D-09. It is opt-in per invocation and changes nothing else.
 
-## D-08 — Commit signing key type (Decided 2026-10-21: SSH, ed25519-sk)
+## D-08 — Commit signing key type (Decided 2026-10-21: SSH, ed25519-sk; 2026-10-30: tags only)
 
 SSH signing key on a FIDO2 token (`ed25519-sk`) or GPG. **Recommendation:**
 `ed25519-sk`, which works with the same keys as D-04.
@@ -155,6 +157,29 @@ SSH signing key on a FIDO2 token (`ed25519-sk`) or GPG. **Recommendation:**
 **Decided (owner, 2026-10-21).** git `gpg.format=ssh`, for a key the owner
 names (recommended: `ed25519-sk` on the D-04 tokens), plus an
 `allowed_signers` file. The role never generates keys.
+
+**Verified with hardware (VM, 2026-10-30, `pre-aegis-hw`, a YubiKey via
+`usbattach`).** An `ed25519-sk` key made with `ssh-keygen` (it asked for the
+key's PIN), the role applied with it (`git.commit_signing` PASS, `failed=0`),
+then a commit and a tag, each with one touch: `git log --show-signature` and
+`git tag -v` both report `Good "git" signature … with ED25519-SK key`. Before
+that, in a container with OpenSSH's test provider, a commit with no key
+available was refused. What a user runs into (`libfido2`, the PIN prompt, a
+missed touch) is in open-items.md §3.
+
+**Changed (owner, 2026-10-30): sign releases only, not commits.** The role now
+sets `tag.gpgsign=true` and `commit.gpgsign=false`;
+`aegis_commit_signing_commits: true` restores signing every commit. Reasoning
+as given: a touch on the key for every commit is the cost, and the releases
+are what others verify. This departs from PRD 3.3 ("enforce GPG/SSH commit
+signing"). What it gives up: a commit pushed with the user's repository
+credentials is no longer distinguishable from the user's own by its
+signature until it is tagged, so a host that requires signed commits on a
+branch would reject the user's pushes (leave that rule off, or set the
+variable). VM (2026-10-30, YubiKey): after the change a commit needed no
+touch and is unsigned (`%G?` = `N`), and release tag `v2` verifies (`Good
+"git" signature … with ED25519-SK key`). Container: the default leaves
+commits unsigned and the variable turns commit signing on and off again.
 
 ## D-09 — OpenSnitch default action (Decided 2026-10-21: install, allow by default, pre-seeded rules)
 
@@ -748,7 +773,7 @@ found none differing; then a live `rp_filter=1` set with `sysctl -w` was
 reported by the D-11 drift check after a real `pacman -S` ("net.ipv4.conf.all.rp_filter
 is 1, want 2"), and the kernel value was left as it was.
 
-## D-33 — the drift check stops at `commit_signing` (Open, 2026-10-28)
+## D-33 — the drift check stops at `commit_signing` (Decided 2026-10-29: (a))
 
 Found while verifying D-32. The drift check runs the playbook from a systemd
 unit with `NoNewPrivileges=yes` and `ProtectHome=read-only`, so it cannot
@@ -781,3 +806,109 @@ service that runs on every package transaction.
 matter most to it (ufw, OpenSnitch's daemon, the overlay network, package
 integrity) without widening the unit, makes a broken check loud instead of
 reading as drift, and adds the test that would have caught this.
+
+**Decided (owner, 2026-10-29):** (a), the recommendation. The drift script
+passes `aegis_drift_check_run=true`. `commit_signing` then records INFO
+`git.commit_signing` "not checked by the drift check" and ends the role;
+the agent egress audit records INFO `agent.egress` the same way instead of
+reading root's empty container store (as root, `podman logs` with
+`failed_when: false` would have reported "no agent traffic", a wrong answer
+rather than a failure). The OpenSnitch user-file tasks stay: their paths
+name the user's home and in check mode they only read it, which root can. The
+script exits 2 with "Aegis drift check broken" (journal priority `err`, its
+own desktop title) when a task other than the audit's verdict failed, the host
+was unreachable, or the log has no recap; drift and an audit FAIL still exit 1
+with "Hardening drift". `run.sh` requires `failed=0` in the drift log.
+Container: the drift check now runs in a service's environment (`env -i`, no
+`$HOME`) and with the `signing` tag; before the fix that run failed exactly as
+in the VM (`fatal: $HOME not set`, `failed=1`), after it the run is clean and
+lists the INFO. Planted: a broken Python interpreter (a failed task) and an
+unparsable settings file (no recap) both exit 2; a FAIL finding planted in the
+settings still exits 1.
+
+**A second blocker, found in the VM (2026-10-29).** With `commit_signing`
+skipped, the check reached `firewall` and stopped there, now correctly as
+"drift check broken … failed: firewall : Set the default incoming policy":
+ufw opens `/run/ufw.lock` for writing even for `ufw status`
+(`OSError: [Errno 30] Read-only file system`), and its `--dry-run` refuses
+unless `/etc/ufw/user.rules` is writable. The unit's `ProtectSystem=strict`
+allows neither. Two probes in transient units with the same sandbox showed
+that with both writable the check runs to the end (`failed=0`, the two INFO
+findings, OpenSnitch's tasks fine as root, the only change the planted PAM
+revert, ufw's rule files byte-identical before and after). Options: (a) in
+the drift check, `firewall` and `overlay_network` read ufw's own files
+(`/etc/default/ufw`, `/etc/ufw/ufw.conf`, `user.rules`, `user6.rules`) and
+report what a run would change, as D-32 does for sysctl; (b) widen the unit
+with `ReadWritePaths=-/run/ufw.lock /etc/ufw`; (c) skip `firewall` with an
+INFO. **Decided (owner, 2026-10-29): (a)**, as recommended: (b) would let a
+root service started on every package transaction write the firewall config,
+against the unit's rule that nothing outside `/var/lib/aegis` is written,
+the same widening D-33 (c) was turned down for; (c) drops the ufw reverts
+D-11 exists to catch. Each pattern matches exactly what the role's ufw task
+would delete, so a rule a run would leave alone is not reported. The live
+netfilter rules are not read: ufw loads these files when it starts.
+Container: with `/run/ufw.lock` replaced by a directory (so ufw fails as in
+the unit, which a control run confirms), a hardened ufw reads clean, and a
+disabled ufw, an `allow` incoming default, LocalSend 53317/tcp, `limit
+22/tcp` and a missing opted-in `tailscale0` rule are each named, as an
+ordinary `--check` also sees them (76/76). VM (2026-10-30,
+`pre-aegis-updated` after `pacman -Syu`): `run.sh` passed in full; the drift
+check after a real `pacman -S` ran every role to the end (`ok=131 changed=1
+failed=0`, against `ok=87 … failed=1` before), read ufw's files, listed the
+two INFO findings, and its one change was the planted PAM revert.
+
+## D-34 — installing VLC fails every later run (Decided 2026-10-30: (a))
+
+Found by the long-lived-install test (VM, 2026-10-30: 13 common packages and
+a Flathub app on top of a hardened 4.0.6 install). `libvlc` ships
+`/usr/lib/vlc/plugins/plugins.dat`, and VLC's own pacman hook rewrites it
+after every install, upgrade or removal of a plugin (`[Action] Exec =
+/usr/lib/vlc/vlc-cache-gen /usr/lib/vlc/plugins`). `pacman -Qkk` then reports
+`Modification time mismatch`, `Size mismatch` and `SHA256 checksum mismatch`
+for it (raw output, libvlc 3.0.24-1; a first reading, filtered on size and
+checksum, missed the first), so
+`integrity.package_drift_content` FAILs and the playbook ends `failed=1` on
+every run from then on, and the drift check reports drift after every package
+transaction. It was the only content drift on the machine (control: the two
+known `/etc/cups` permission entries were listed beside it).
+
+Options: (a) add it to `aegis_integrity_drift_expected` with exactly those three
+reasons and the hook as the `why`, as D-22 does for `powerprofilesctl`; it is
+then listed under the INFO `integrity.package_drift_accepted`. **Residual
+risk:** a later change to that cache by someone with root is hidden among the
+INFO findings; it is a plugin index, not code, and VLC loads plugins only from
+its plugin directory, whose files stay checked. (b) accept any file a
+package's own pacman hook rewrites, read from `/usr/share/libalpm/hooks`: no
+list to maintain, but much more code, and a hook that runs a shell can rewrite
+anything. (c) leave it: a VLC user lists the finding in `aegis_audit_skip`,
+which accepts **all** content drift. **Recommendation:** (a). It is the
+mechanism D-22 already chose, it names one file and three reasons, and (c)
+hides far more than it accepts.
+
+**Decided (owner, 2026-10-30):** (a), the recommendation. The entry is in
+`aegis_integrity_drift_expected` with the three reasons.
+
+## D-35 — Omarchy's own `codex` is an "unknown program" (Decided 2026-10-30: (b))
+
+Same test. Omarchy 4.0.6 installs `codex` with mise for the user
+(`install/user/mise.sh:5` at `v4.0.6`: `omarchy-mise-install codex`; in the
+VM `~/.local/share/mise/installs/codex/0.163.0/bin/codex`). In the VM
+`codex` reached `chatgpt.com` in the same second as the desktop shell's
+weather fetch (collector state, 2026-10-30), with nothing of the test running
+it, so `egress.unknown_programs` WARNs on a default install once the shell
+has run. That is the D-25 check working as designed: no package owns the
+file, and the user can replace it.
+
+Options: (a) ship a default `aegis_egress_known` for Omarchy's mise-installed
+agents (`/home/*/.local/share/mise/installs/codex/*/bin/codex` and the
+like): no WARN on a default install, but it trusts by default exactly the
+path anyone with the user's rights can replace; (b) keep the WARN and list it
+as an expected one in open-items §3 and operating-notes, with the line to
+add if you trust it; (c) report user-writable programs that Omarchy itself
+installed as INFO instead of WARN: needs a way to tell "Omarchy installed it"
+that the user cannot fake, which mise does not give. **Recommendation:** (b).
+The WARN is true, a default allowlist would turn the check off for the one
+binary most worth watching, and the fix for a user who trusts it is one line.
+
+**Decided (owner, 2026-10-30):** (b), the recommendation. No code change: the
+WARN is listed as an expected one in open-items.md §3 and operating-notes.md.

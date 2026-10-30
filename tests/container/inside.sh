@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=72
+checks_total=77
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -20,6 +20,13 @@ else:
 expect_finding() { # id status
   local got; got=$(finding "$1")
   [[ $got == "$2" ]] || { cat /var/lib/aegis/audit.jsonl; fail "finding $1 is $got, expected $2"; }
+}
+
+audit_must_fail() { # id description
+  if ansible-playbook tests/container/playbook.yml >/tmp/neg.log 2>&1; then
+    cat /tmp/neg.log; fail "$2 did not fail the run"
+  fi
+  expect_finding "$1" FAIL
 }
 
 pass() { checks_passed=$((checks_passed + 1)); echo "PASS: $*"; }
@@ -113,10 +120,14 @@ grep -q '"id": "integrity.scan_coverage"' /var/lib/aegis/audit.jsonl || fail "au
 [[ $(stat -c %a /var/lib/aegis/audit.jsonl) == 600 ]] || fail "audit file is not 0600"
 pass "audit file written (0600) with clean-system findings"
 
-echo "--- su: real logins against the hardened stack"
+# Root's password and the test users, used from here to the end. CI runs the
+# sections below in shards, each after everything above (run.sh), so whatever
+# a later section needs is set up here, not inside an earlier section.
 echo 'root:Aegis-root-pw1' | chpasswd
 useradd -m -G wheel alice
 useradd -m bob
+
+echo "--- su: real logins against the hardened stack"
 su_as() { runuser -u "$1" -- env SU_PASSWORD="$2" expect /src/tests/container/su-login.exp >/dev/null 2>&1; }
 
 su_as alice 'wrong-password' && fail "su accepted a wrong password"
@@ -171,6 +182,33 @@ out=$(ansible-playbook tests/container/playbook.yml -e aegis_drift_check_enabled
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "drift-check install not idempotent"; }
 pass "drift-check install idempotent; become_check results not saved"
 /usr/local/libexec/aegis-drift-check >/dev/null 2>&1 || { cat /var/lib/aegis/drift-check.log; fail "clean state reported as drift"; }
+# D-33: the pacman hook starts the check as a system service, which has no
+# $HOME and cannot become the desktop user. Run it with that environment: the
+# commit_signing role (tag signing) once failed there and ended the run.
+unit_env=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/bin)
+drift_log=/var/lib/aegis/drift-check.log
+"${unit_env[@]}" /usr/local/libexec/aegis-drift-check >/dev/null 2>&1 || { cat "$drift_log"; fail "clean state not clean in the service's environment (D-33)"; }
+if ! { grep -Eq ' failed=0 ' "$drift_log" && grep -q 'INFO | git.commit_signing | not checked by the drift check' "$drift_log"; }; then
+  cat "$drift_log"; fail "drift check did not finish, or did not say what it skipped (D-33)"
+fi
+pass "D-33: drift check clean in the service's environment; the desktop-user checks are reported as skipped"
+# A check that cannot run is "broken" (exit 2), never drift; an audit FAIL is
+# still drift (exit 1). Plant each in the copy's settings, then restore them.
+cp "$copy/applied-vars.yml" /tmp/applied-vars.yml
+drift_case() { # extra settings, expected exit, expected message
+  cp /tmp/applied-vars.yml "$copy/applied-vars.yml"
+  printf '%s\n' "$1" >>"$copy/applied-vars.yml"
+  local out rc=0
+  out=$("${unit_env[@]}" /usr/local/libexec/aegis-drift-check 2>&1) || rc=$?
+  if ! { [[ $rc -eq $2 ]] && grep -q "$3" <<<"$out"; }; then
+    echo "$out"; cat "$drift_log"; fail "drift check: exit $rc, expected $2 with '$3'"
+  fi
+}
+drift_case 'ansible_python_interpreter: /nonexistent/python3' 2 'drift check broken.*become_check'
+drift_case 'aegis_faillock_deny: [' 2 'drift check broken.*no recap'
+drift_case "aegis_findings: [{id: test.planted, status: FAIL, detail: planted}]" 1 'Hardening drift'
+cp /tmp/applied-vars.yml "$copy/applied-vars.yml"
+pass "D-33: a broken drift check is reported as broken (exit 2), an audit FAIL as drift (exit 1)"
 # What an omarchy-update that rewrites system-auth would do.
 sed -i 's/deny=10 unlock_time=900/deny=10 unlock_time=120/' /etc/pam.d/system-auth
 if /usr/local/libexec/aegis-drift-check >/dev/null 2>&1; then fail "reverted PAM not reported as drift"; fi
@@ -208,13 +246,6 @@ ansible-playbook tests/container/playbook.yml -e '{"aegis_pacman_siglevel_except
   || fail "exception for [evil] was not honoured"
 pass "pacman_integrity honours aegis_pacman_siglevel_exceptions"
 cp /etc/pacman.conf.aegis-orig /etc/pacman.conf
-
-audit_must_fail() { # id description
-  if ansible-playbook tests/container/playbook.yml >/tmp/neg.log 2>&1; then
-    cat /tmp/neg.log; fail "$2 did not fail the run"
-  fi
-  expect_finding "$1" FAIL
-}
 
 echo "--- negative: a weak SigLevel inside an Include= file"
 printf '\n[inc]\nInclude = /etc/pacman.d/aegis-test-inc\n' >> /etc/pacman.conf
@@ -498,13 +529,20 @@ signing='{"aegis_commit_signing_user": "alice", "aegis_commit_signing_pubkey": "
 ansible-playbook tests/container/playbook.yml -e "$signing" >/dev/null || fail "commit-signing run failed"
 expect_finding git.commit_signing PASS
 gitcfg() { runuser -u alice -- git config --global --get "$1"; }
-if ! { [[ $(gitcfg gpg.format) == ssh && $(gitcfg commit.gpgsign) == true && $(gitcfg tag.gpgsign) == true ]] \
+# Owner, 2026-10-30: releases (tags) are signed, commits are not.
+if ! { [[ $(gitcfg gpg.format) == ssh && $(gitcfg commit.gpgsign) == false && $(gitcfg tag.gpgsign) == true ]] \
   && grep -q '^alice@example.invalid namespaces="git" sk-ssh-ed25519@openssh.com ' /home/alice/.config/git/allowed_signers; }; then
-  fail "git signing not configured for alice"
+  fail "git signing not configured for alice (tags signed, commits not)"
 fi
+grep -q '"tags (releases) of alice signed with' /var/lib/aegis/audit.jsonl || { grep '"id": "git.commit_signing"' /var/lib/aegis/audit.jsonl; fail "finding does not say only tags are signed"; }
 out=$(ansible-playbook tests/container/playbook.yml -e "$signing")
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || fail "commit signing not idempotent"
-pass "ssh signing configured for an sk key, idempotently"
+pass "ssh signing configured for an sk key: tags signed, commits not, idempotently"
+ansible-playbook tests/container/playbook.yml -e "$signing" -e aegis_commit_signing_commits=true >/dev/null || fail "commit-signing run with commits failed"
+[[ $(gitcfg commit.gpgsign) == true && $(gitcfg tag.gpgsign) == true ]] || fail "aegis_commit_signing_commits=true did not sign commits"
+ansible-playbook tests/container/playbook.yml -e "$signing" >/dev/null || fail "commit-signing run back to the default failed"
+[[ $(gitcfg commit.gpgsign) == false ]] || fail "the default did not turn commit signing off again"
+pass "aegis_commit_signing_commits=true signs commits too; the default turns it off again"
 
 echo "--- D-08 commit signing: a software key is refused by default"
 echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAegisTestSoftwareKey alice@test' > /home/alice/.ssh/id_ed25519.pub
@@ -556,6 +594,41 @@ ufw status | grep -Eq '^22/tcp on tailscale0 +ALLOW' || { ufw status; fail "SSH 
 ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run failed"
 ! ufw status | grep -q 'tailscale0' || { ufw status; fail "overlay rule not removed when opted out"; }
 pass "opt-in opens SSH on tailscale0 only; opting out removes it"
+
+echo "--- D-33: the drift check reads ufw's files, as ufw cannot run in its unit"
+# The drift unit cannot write /run/ufw.lock (nor /etc/ufw), and ufw opens the
+# lock for writing even for `status`. A directory in its place fails ufw the
+# same way while every file stays readable.
+drift_fw=(ansible-playbook tests/container/firewall.yml --check -e aegis_drift_check_run=true)
+block_ufw() { rm -f /run/ufw.lock && mkdir /run/ufw.lock; }
+unblock_ufw() { rmdir /run/ufw.lock; }
+block_ufw
+if ansible-playbook tests/container/firewall.yml --check >/dev/null 2>&1; then
+  fail "control: ufw ran although its lock could not be opened"
+fi
+out=$("${drift_fw[@]}") || { echo "$out"; fail "drift-check read of the hardened ufw failed"; }
+grep -Eq 'changed=0 .*failed=0' <<<"$out" || { echo "$out"; fail "the hardened ufw reported as drift"; }
+unblock_ufw
+pass "D-33: with ufw unable to run, the drift check reads a hardened ufw as clean"
+# What an Omarchy script could put back, plus a policy and a disabled ufw.
+ufw allow 53317/tcp >/dev/null
+ufw limit 22/tcp >/dev/null
+ufw default allow incoming >/dev/null
+ufw disable >/dev/null
+ansible-playbook tests/container/firewall.yml --check >/tmp/ufw-check.log 2>&1 \
+  || { cat /tmp/ufw-check.log; fail "--check of the reverted ufw failed"; }
+grep -Eq 'changed=[1-9]' /tmp/ufw-check.log || fail "control: --check with ufw did not see the reverts"
+block_ufw
+out=$("${drift_fw[@]}" -e aegis_overlay_ssh_on_tailscale=true) || { echo "$out"; fail "drift-check read of the reverted ufw failed"; }
+for want in 'ufw is not enabled at boot' 'default incoming policy is ACCEPT, want DROP' \
+  'LocalSend rule 53317/tcp is back' 'SSH rule limit 22/tcp on all interfaces is back' \
+  'SSH on tailscale0 should be open'; do
+  grep -qF "$want" <<<"$out" || { echo "$out"; fail "drift check missed: $want"; }
+done
+! grep -qF '53317/udp is back' <<<"$out" || { echo "$out"; fail "drift check reported a rule that is not there"; }
+unblock_ufw
+ansible-playbook tests/container/firewall.yml >/dev/null || fail "re-apply after the ufw reverts failed"
+pass "D-33: the drift check names each ufw revert that --check with ufw also sees"
 
 echo "--- D-24: sshd password logins and key types"
 ansible-playbook tests/container/firewall.yml >/dev/null || fail "overlay run without sshd failed"

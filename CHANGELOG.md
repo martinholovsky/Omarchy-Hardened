@@ -28,6 +28,11 @@ SemVer once 1.0 ships.
 
 ### Changed
 
+- D-08 (owner, 2026-10-30): only release tags are signed; commits no longer
+  are (`commit.gpgsign=false`), so a commit needs no touch on the key. Set
+  `aegis_commit_signing_commits: true` to sign every commit again. A run
+  changes `commit.gpgsign` from `true` to `false` for a user it configured
+  before.
 - D-12 closed: the GPL-3.0 toolchain does not affect the Apache-2.0 licence,
   because the custom modules import only `ansible.module_utils.basic`
   (Simplified BSD) and no GPL code is shipped.
@@ -36,9 +41,35 @@ SemVer once 1.0 ships.
 - The repository is public. `SECURITY.md` links GitHub's private
   vulnerability reporting, now enabled; `main` is protected (PRs only, the
   three CI checks required, no force push or deletion, no bypass).
+- CI: the container test runs as three parallel shards. A run on `main`
+  took 28m19s on 2026-10-28, past the 28-minute revisit line of its
+  35-minute timeout. `tests/container/run.sh SHARD` runs the common setup and
+  then one shard's sections, cut at the titles in `SHARD_STARTS`, and refuses
+  to run unless the shards hold every check exactly once. The job named
+  `container-test`, which `main` requires, now only passes when all three
+  shards did. Plain `run.sh` still runs everything. The test users and a
+  helper moved ahead of the first shard, so no shard needs another's state.
+- `docs/upstream-baseline.md`: re-checked against Omarchy `v4.5.0-rc2`; no
+  row changed. Two 4.5 changes are recorded for when it ships (the
+  `powerprofilesctl` shebang rewrite is gone; AUR builds run under the
+  update's sudo authorization). The re-check trigger is now each release or
+  release candidate.
+- `tests/vm/README.md` §6: what to do when the VM snapshot's package
+  databases are behind the mirror (a 404 in run 1).
 
 ### Fixed
 
+- D-08 verified with a YubiKey (VM, 2026-10-30): an `ed25519-sk` key, the
+  role applied, a signed commit and tag that `git` verifies. open-items.md
+  §3 now says what to expect: `libfido2` is needed, key generation asks for
+  the PIN (a touch at that prompt types an OTP as a wrong PIN), and a missed
+  touch when signing reads "invalid format".
+- D-34: with VLC installed, every run ended `failed=1`: VLC's own pacman hook
+  rewrites its packaged plugin cache (`/usr/lib/vlc/plugins/plugins.dat`), and
+  package-file drift FAILs. The file is now expected drift with its three
+  `pacman -Qkk` reasons (found by a long-lived-install test in the VM,
+  2026-10-30). D-35: Omarchy's own mise-installed `codex` WARNs as an unknown
+  program; that is correct and now documented as an expected WARN.
 - D-11: the drift check's `applied-vars.yml` no longer saves become_check's
   per-run results. `aegis_become_uid` carries timestamps, so every apply
   rewrote the file (the VM's second run reported `changed=1`), and a saved
@@ -63,12 +94,18 @@ SemVer once 1.0 ships.
   such keys as changed in check mode (container: 72 checks; VM: the drift
   check reported a live `rp_filter` change after a real `pacman -S`).
 
-### Known issues
-
-- D-33 (open): the drift check stops at `commit_signing`, where tasks that act
-  as the desktop user fail without `sudo`, so `firewall`, `opensnitch`,
-  `overlay_network` and `pacman_integrity` are not checked after a package
-  update; and a failed check reads as drift (VM, 2026-10-28).
+- D-33: the drift check stopped at `commit_signing`, whose `git config
+  --global` fails in a system service with no `$HOME`, so `firewall`,
+  `opensnitch`, `overlay_network` and `pacman_integrity` were never checked
+  after a package update, and the failed run was reported as drift. The
+  drift check now skips commit signing and the agent egress audit with an
+  INFO finding each, and a check that breaks part-way says "Aegis drift check
+  broken" and exits 2 instead of 1. In the drift check, `firewall` and
+  `overlay_network` read ufw's own files instead of running ufw, which needs
+  write access to `/run/ufw.lock` and `/etc/ufw` that the unit does not give
+  it (found in the VM once the check got past `commit_signing`). The
+  container test runs the check in a service's environment and with ufw
+  unable to run (76 checks); `run.sh` requires `failed=0`.
 
 ## [0.1.0] - 2026-10-26
 

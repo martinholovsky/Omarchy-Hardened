@@ -9,3 +9,6 @@ aegis_overlay_ssh_port: 22
 # D-24: the SSH checks read this binary's effective settings (sshd -T). No
 # finding is recorded when it is absent, as on a default Omarchy install.
 aegis_overlay_sshd_path: /usr/bin/sshd
+# D-33: the drift check reads ufw's rule files instead of running ufw (see the
+# firewall role's aegis_firewall_ufw_rules_files).
+aegis_overlay_ufw_rules_files: [/etc/ufw/user.rules, /etc/ufw/user6.rules]

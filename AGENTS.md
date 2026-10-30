@@ -42,6 +42,13 @@ uv run ansible-playbook omarchy-harden.yml --syntax-check
 tests/container/run.sh        # must end with "N/N checks passed"
 ```
 
+CI runs the container test as three shards (`run.sh 1` to `3`), cut at the
+section titles in `SHARD_STARTS` in `tests/container/run.sh`. Everything
+before the first shard runs in each, so state that later sections need
+(users, helper functions) belongs there, not inside a section. Renaming a
+listed section title means updating `SHARD_STARTS`; `run.sh` fails if one
+is missing.
+
 Roles that change the boot, install packages or need systemd (kernel,
 apparmor, opensnitch, agent_containment, drift_check) are tested only in the
 VM. Run `tests/vm/run.sh` from the `pre-aegis-updated` snapshot (see

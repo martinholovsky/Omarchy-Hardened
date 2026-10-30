@@ -1,0 +1,71 @@
+---
+# D-33: in the drift check, what a run of this role would change, read from
+# ufw's own files (ufw itself needs write access the drift unit does not
+# have). Each pattern matches what the ufw task in main.yml would delete, so
+# a rule a run would leave alone is not reported. ufw loads these files when
+# it starts; the live netfilter rules are not read here.
+- name: Read ufw's settings and rules (drift check)
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop: "{{ [aegis_firewall_ufw_defaults_file, aegis_firewall_ufw_conf] + aegis_firewall_ufw_rules_files }}"
+  register: aegis_firewall_files
+
+- name: Compare ufw's files with this role's settings (drift check)
+  vars:
+    aegis_text: "{{ aegis_firewall_files.results | map(attribute='content') | map('b64decode') | list }}"
+    aegis_rules: "{{ aegis_text[2:] | join('\n') }}"
+    aegis_policy: {allow: ACCEPT, deny: DROP, reject: REJECT}
+    aegis_any: '(0\.0\.0\.0/0|::/0)'
+    aegis_tail: '( comment=\S*)?$'
+    aegis_in: >-
+      {{ aegis_text[0] | regex_search('(?m)^DEFAULT_INPUT_POLICY="?([A-Z]+)"?', '\1')
+         | default(['unset'], true) | first }}
+    aegis_out: >-
+      {{ aegis_text[0] | regex_search('(?m)^DEFAULT_OUTPUT_POLICY="?([A-Z]+)"?', '\1')
+         | default(['unset'], true) | first }}
+  ansible.builtin.set_fact:
+    aegis_firewall_drifted: >-
+      {%- set out = [] -%}
+      {%- if aegis_text[1] is not search('(?m)^ENABLED=yes[ \t]*$') -%}
+        {%- set _ = out.append('ufw is not enabled at boot (' ~ aegis_firewall_ufw_conf ~ ')') -%}
+      {%- endif -%}
+      {%- if aegis_in != aegis_policy[aegis_firewall_default_incoming] -%}
+        {%- set _ = out.append('default incoming policy is ' ~ aegis_in ~ ', want '
+                               ~ aegis_policy[aegis_firewall_default_incoming]) -%}
+      {%- endif -%}
+      {%- if aegis_out != aegis_policy[aegis_firewall_default_outgoing] -%}
+        {%- set _ = out.append('default outgoing policy is ' ~ aegis_out ~ ', want '
+                               ~ aegis_policy[aegis_firewall_default_outgoing]) -%}
+      {%- endif -%}
+      {%- if aegis_firewall_remove_localsend | bool -%}
+        {%- for p in ['tcp', 'udp'] -%}
+          {%- if aegis_rules is search('(?m)^### tuple ### allow ' ~ p ~ ' 53317 ' ~ aegis_any ~ ' any '
+                                       ~ aegis_any ~ ' in' ~ aegis_tail) -%}
+            {%- set _ = out.append('LocalSend rule 53317/' ~ p ~ ' is back') -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {%- if aegis_firewall_remove_ssh | bool -%}
+        {%- for a in ['limit', 'allow'] -%}
+          {%- if aegis_rules is search('(?m)^### tuple ### ' ~ a ~ ' tcp 22 ' ~ aegis_any ~ ' any '
+                                       ~ aegis_any ~ ' in' ~ aegis_tail) -%}
+            {%- set _ = out.append('SSH rule ' ~ a ~ ' 22/tcp on all interfaces is back') -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {%- if aegis_firewall_remove_docker_dns | bool -%}
+        {%- for s in aegis_firewall_docker_dns_sources -%}
+          {%- if aegis_rules is search('(?m)^### tuple ### allow udp 53 172\.17\.0\.1 any '
+                                       ~ (s | regex_escape) ~ ' in' ~ aegis_tail) -%}
+            {%- set _ = out.append('Docker DNS rule from ' ~ s ~ ' is back') -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {{ out }}
+
+# Reported as changed, which the drift check treats as drift (as D-32 does).
+- name: Report what a run would change in ufw (drift check, D-33)
+  ansible.builtin.debug:
+    msg: "ufw differs from this role's settings; a run would fix it: {{ aegis_firewall_drifted | join('; ') }}"
+  changed_when: true
+  when: aegis_firewall_drifted | length > 0

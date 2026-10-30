@@ -14,6 +14,8 @@ aegis_drift_check_unit: aegis-drift-check.service
 aegis_drift_check_log: /var/lib/aegis/drift-check.log
 
 # Limit the check to some tags (e.g. [auth]); empty runs everything.
+# The script passes aegis_drift_check_run=true: roles skip what needs the
+# desktop user, which a system service cannot become, and say so (D-33).
 aegis_drift_check_tags: []
 
 # Desktop notification for each logged-in user (notify-send over their session
@@ -37,6 +39,8 @@ aegis_drift_check_exclude_vars:
   - aegis_become_fido2_keys
   - aegis_run_as_root
   - aegis_sudo_u2f
+  # Set by the drift script itself (D-33), never by an apply.
+  - aegis_drift_check_run
 
 # The only collection content the playbook needs: community.general.ufw and
 # ini_file (opensnitch, D-09), which import nothing from the collection, only
