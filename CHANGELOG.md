@@ -91,6 +91,16 @@ SemVer once 1.0 ships.
   container test runs the check in a service's environment and with ufw
   unable to run (76 checks); `run.sh` requires `failed=0`.
 
+### Known issues
+
+- D-34 (open): with VLC installed, every run ends `failed=1`, because VLC's
+  own pacman hook rewrites its packaged plugin cache
+  (`/usr/lib/vlc/plugins/plugins.dat`) and package-file drift FAILs. Until
+  it is decided, set `aegis_integrity_drift_expected` for that file yourself
+  (VM, 2026-10-30).
+- D-35 (open): on a default Omarchy install `egress.unknown_programs` WARNs
+  about Omarchy's own mise-installed `codex` once the desktop has run it.
+
 ## [0.1.0] - 2026-10-26
 
 First release. Tested in an Arch container (CI, 65 checks) and in a VirtualBox

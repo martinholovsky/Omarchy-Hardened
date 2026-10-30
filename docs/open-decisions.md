@@ -833,3 +833,51 @@ ordinary `--check` also sees them (76/76). VM (2026-10-30,
 check after a real `pacman -S` ran every role to the end (`ok=131 changed=1
 failed=0`, against `ok=87 … failed=1` before), read ufw's files, listed the
 two INFO findings, and its one change was the planted PAM revert.
+
+## D-34 — installing VLC fails every later run (Open, 2026-10-30)
+
+Found by the long-lived-install test (VM, 2026-10-30: 13 common packages and
+a Flathub app on top of a hardened 4.0.6 install). `libvlc` ships
+`/usr/lib/vlc/plugins/plugins.dat`, and VLC's own pacman hook rewrites it
+after every install, upgrade or removal of a plugin (`[Action] Exec =
+/usr/lib/vlc/vlc-cache-gen /usr/lib/vlc/plugins`). `pacman -Qkk` then reports
+`Size mismatch` and `SHA256 checksum mismatch` for it, so
+`integrity.package_drift_content` FAILs and the playbook ends `failed=1` on
+every run from then on, and the drift check reports drift after every package
+transaction. It was the only content drift on the machine (control: the two
+known `/etc/cups` permission entries were listed beside it).
+
+Options: (a) add it to `aegis_integrity_drift_expected` with exactly those two
+reasons and the hook as the `why`, as D-22 does for `powerprofilesctl`; it is
+then listed under the INFO `integrity.package_drift_accepted`. **Residual
+risk:** a later change to that cache by someone with root is hidden among the
+INFO findings; it is a plugin index, not code, and VLC loads plugins only from
+its plugin directory, whose files stay checked. (b) accept any file a
+package's own pacman hook rewrites, read from `/usr/share/libalpm/hooks`: no
+list to maintain, but much more code, and a hook that runs a shell can rewrite
+anything. (c) leave it: a VLC user lists the finding in `aegis_audit_skip`,
+which accepts **all** content drift. **Recommendation:** (a). It is the
+mechanism D-22 already chose, it names one file and two reasons, and (c)
+hides far more than it accepts.
+
+## D-35 — Omarchy's own `codex` is an "unknown program" (Open, 2026-10-30)
+
+Same test. Omarchy 4.0.6 installs `codex` with mise for the user
+(`install/user/mise.sh:5` at `v4.0.6`: `omarchy-mise-install codex`; in the
+VM `~/.local/share/mise/installs/codex/0.163.0/bin/codex`). In the VM
+`codex` reached `chatgpt.com` in the same second as the desktop shell's
+weather fetch (collector state, 2026-10-30), with nothing of the test running
+it, so `egress.unknown_programs` WARNs on a default install once the shell
+has run. That is the D-25 check working as designed: no package owns the
+file, and the user can replace it.
+
+Options: (a) ship a default `aegis_egress_known` for Omarchy's mise-installed
+agents (`/home/*/.local/share/mise/installs/codex/*/bin/codex` and the
+like): no WARN on a default install, but it trusts by default exactly the
+path anyone with the user's rights can replace; (b) keep the WARN and list it
+as an expected one in open-items §3 and operating-notes, with the line to
+add if you trust it; (c) report user-writable programs that Omarchy itself
+installed as INFO instead of WARN: needs a way to tell "Omarchy installed it"
+that the user cannot fake, which mise does not give. **Recommendation:** (b).
+The WARN is true, a default allowlist would turn the check off for the one
+binary most worth watching, and the fix for a user who trusts it is one line.
