@@ -824,3 +824,12 @@ the same widening D-33 (c) was turned down for; (c) drops the ufw reverts
 D-11 exists to catch. Each pattern matches exactly what the role's ufw task
 would delete, so a rule a run would leave alone is not reported. The live
 netfilter rules are not read: ufw loads these files when it starts.
+Container: with `/run/ufw.lock` replaced by a directory (so ufw fails as in
+the unit, which a control run confirms), a hardened ufw reads clean, and a
+disabled ufw, an `allow` incoming default, LocalSend 53317/tcp, `limit
+22/tcp` and a missing opted-in `tailscale0` rule are each named, as an
+ordinary `--check` also sees them (76/76). VM (2026-10-30,
+`pre-aegis-updated` after `pacman -Syu`): `run.sh` passed in full; the drift
+check after a real `pacman -S` ran every role to the end (`ok=131 changed=1
+failed=0`, against `ok=87 … failed=1` before), read ufw's files, listed the
+two INFO findings, and its one change was the planted PAM revert.

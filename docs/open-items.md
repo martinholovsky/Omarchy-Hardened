@@ -7,7 +7,8 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-28, on `main` after PRs #22 to #25 (D-27 to D-32). The
+Last reviewed: 2026-10-30, on branch `chore/resume-2026-10-29` (D-33 closed;
+not yet through CI). Before that: 2026-10-28, on `main` after PRs #22 to #25 (D-27 to D-32). The
 repo is public with `main` protected (ruleset `protect-main`); CI on PR #25
 `72/72 checks passed`. VM on 2026-10-28 (`pre-aegis-updated` after an in-place
 `pacman -Syu`): `tests/vm/run.sh` passed in full; its post-reboot `--check`,
@@ -35,7 +36,6 @@ key, and the playbook run as root with one touch (`failed=0`).
 |---|---|
 | AppArmor enforce mode (D-05) | Profiles load in complain mode. After about a week of denials (`journalctl -k \| grep apparmor`), choose profiles for `aegis_apparmor_enforce`, which is empty |
 | `linux-hardened` as the default boot entry (D-02) | The role never changes the default entry. Switching is a manual step after one clean boot (see §1) |
-| The drift check stops at `commit_signing` (D-33) | Found 2026-10-28: the drift unit cannot `sudo`, so the tasks that act as the desktop user fail, and `firewall`, `opensnitch`, `overlay_network` and `pacman_integrity` are never checked after a package update. Recommendation in [open-decisions.md](open-decisions.md) |
 | Omarchy 4.5.0 changes two things this repo depends on | Found 2026-10-29 in `v4.5.0-rc2` ([upstream-baseline.md](upstream-baseline.md)): the shebang rewrite of `/usr/bin/powerprofilesctl` is gone, so D-22's expected-drift entry for it would accept a change with no benign cause; and AUR builds run under `omarchy-update`'s sudo authorization. When 4.5.0 ships: re-run the baseline diff, check in the VM whether `powerprofilesctl` still drifts, and decide whether to drop the D-22 entry (a security setting, so the owner's call) and whether the AUR change needs an audit finding or a line in the threat model |
 | `hardened_malloc` (D-03) | Deferred until it reaches the official repos. Checked 2026-10-29: not there (archlinux.org package search, 0 results); AUR only, `14-1`, no longer flagged out of date |
 | Roadmap Tier 2 and Tier 3 | Each item needs a go-ahead ([roadmap.md](roadmap.md)). **Owner, 2026-10-23: none yet.** First the run on real hardware (§1) must pass (the full VM run passed on 2026-10-23), because every role added before the first hardware run widens what that run has to vouch for. Revisit when the real-hardware row in §1 is closed; the items with no desktop effect (18a, #14, #16) come first |
