@@ -896,7 +896,11 @@ VM `~/.local/share/mise/installs/codex/0.163.0/bin/codex`). In the VM
 `codex` reached `chatgpt.com` in the same second as the desktop shell's
 weather fetch (collector state, 2026-10-30), with nothing of the test running
 it, so `egress.unknown_programs` WARNs on a default install once the shell
-has run. That is the D-25 check working as designed: no package owns the
+has run. (Corrected 2026-10-30, at closure: that the desktop shell started
+`codex`, and that the `curl` to `api.open-meteo.com` was its weather fetch,
+are inferences from the matching timestamp; what started either process was
+not traced. Observed: `codex` connected out with no command of the test
+running it.) That is the D-25 check working as designed: no package owns the
 file, and the user can replace it.
 
 Options: (a) ship a default `aegis_egress_known` for Omarchy's mise-installed

@@ -7,8 +7,9 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-30, on PR #27 (branch `chore/resume-2026-10-29`; D-33,
-D-34 and D-35 closed; CI green, run 41100690159). Before that: 2026-10-28, on `main` after PRs #22 to #25 (D-27 to D-32). The
+Last reviewed: 2026-10-30, on `main` after PR #27 (merge `af44d01`; D-33,
+D-34 and D-35 closed; CI green on the PR head and on `main`, runs 41118567126
+and 41120240079). Before that: 2026-10-28, on `main` after PRs #22 to #25 (D-27 to D-32). The
 repo is public with `main` protected (ruleset `protect-main`); CI on PR #25
 `72/72 checks passed`. VM on 2026-10-28 (`pre-aegis-updated` after an in-place
 `pacman -Syu`): `tests/vm/run.sh` passed in full; its post-reboot `--check`,
@@ -71,7 +72,8 @@ run. All are correct.
     commits are not signed (owner, 2026-10-30; `aegis_commit_signing_commits:
     true` signs them too). A missed touch fails with the misleading
     "Couldn't sign message: invalid format".
-- **`egress.unknown_programs`** (once the desktop has run it): Omarchy's own
+- **`egress.unknown_programs`** (once something in your session has run it;
+  what starts it was not traced): Omarchy's own
   `codex`, installed with mise under your home, connects out, and no package
   owns it (D-35). If you trust it, add
   `/home/*/.local/share/mise/installs/codex/*/bin/codex` to
