@@ -54,6 +54,12 @@ SemVer once 1.0 ships.
 
 ### Fixed
 
+- D-34: with VLC installed, every run ended `failed=1`: VLC's own pacman hook
+  rewrites its packaged plugin cache (`/usr/lib/vlc/plugins/plugins.dat`), and
+  package-file drift FAILs. The file is now expected drift with its three
+  `pacman -Qkk` reasons (found by a long-lived-install test in the VM,
+  2026-10-30). D-35: Omarchy's own mise-installed `codex` WARNs as an unknown
+  program; that is correct and now documented as an expected WARN.
 - D-11: the drift check's `applied-vars.yml` no longer saves become_check's
   per-run results. `aegis_become_uid` carries timestamps, so every apply
   rewrote the file (the VM's second run reported `changed=1`), and a saved
@@ -90,16 +96,6 @@ SemVer once 1.0 ships.
   it (found in the VM once the check got past `commit_signing`). The
   container test runs the check in a service's environment and with ufw
   unable to run (76 checks); `run.sh` requires `failed=0`.
-
-### Known issues
-
-- D-34 (open): with VLC installed, every run ends `failed=1`, because VLC's
-  own pacman hook rewrites its packaged plugin cache
-  (`/usr/lib/vlc/plugins/plugins.dat`) and package-file drift FAILs. Until
-  it is decided, set `aegis_integrity_drift_expected` for that file yourself
-  (VM, 2026-10-30).
-- D-35 (open): on a default Omarchy install `egress.unknown_programs` WARNs
-  about Omarchy's own mise-installed `codex` once the desktop has run it.
 
 ## [0.1.0] - 2026-10-26
 
