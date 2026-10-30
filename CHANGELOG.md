@@ -54,6 +54,11 @@ SemVer once 1.0 ships.
 
 ### Fixed
 
+- D-08 verified with a YubiKey (VM, 2026-10-30): an `ed25519-sk` key, the
+  role applied, a signed commit and tag that `git` verifies. open-items.md
+  §3 now says what to expect: `libfido2` is needed, key generation asks for
+  the PIN (a touch at that prompt types an OTP as a wrong PIN), and a missed
+  touch when signing reads "invalid format".
 - D-34: with VLC installed, every run ended `failed=1`: VLC's own pacman hook
   rewrites its packaged plugin cache (`/usr/lib/vlc/plugins/plugins.dat`), and
   package-file drift FAILs. The file is now expected drift with its three

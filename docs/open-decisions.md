@@ -158,6 +158,15 @@ SSH signing key on a FIDO2 token (`ed25519-sk`) or GPG. **Recommendation:**
 names (recommended: `ed25519-sk` on the D-04 tokens), plus an
 `allowed_signers` file. The role never generates keys.
 
+**Verified with hardware (VM, 2026-10-30, `pre-aegis-hw`, a YubiKey via
+`usbattach`).** An `ed25519-sk` key made with `ssh-keygen` (it asked for the
+key's PIN), the role applied with it (`git.commit_signing` PASS, `failed=0`),
+then a commit and a tag, each with one touch: `git log --show-signature` and
+`git tag -v` both report `Good "git" signature … with ED25519-SK key`. Before
+that, in a container with OpenSSH's test provider, a commit with no key
+available was refused. What a user runs into (`libfido2`, the PIN prompt, a
+missed touch) is in open-items.md §3.
+
 ## D-09 — OpenSnitch default action (Decided 2026-10-21: install, allow by default, pre-seeded rules)
 
 Default-deny makes every new connection prompt, which gets noisy. Decide
