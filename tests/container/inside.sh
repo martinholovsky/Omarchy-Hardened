@@ -22,6 +22,13 @@ expect_finding() { # id status
   [[ $got == "$2" ]] || { cat /var/lib/aegis/audit.jsonl; fail "finding $1 is $got, expected $2"; }
 }
 
+audit_must_fail() { # id description
+  if ansible-playbook tests/container/playbook.yml >/tmp/neg.log 2>&1; then
+    cat /tmp/neg.log; fail "$2 did not fail the run"
+  fi
+  expect_finding "$1" FAIL
+}
+
 pass() { checks_passed=$((checks_passed + 1)); echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -113,10 +120,14 @@ grep -q '"id": "integrity.scan_coverage"' /var/lib/aegis/audit.jsonl || fail "au
 [[ $(stat -c %a /var/lib/aegis/audit.jsonl) == 600 ]] || fail "audit file is not 0600"
 pass "audit file written (0600) with clean-system findings"
 
-echo "--- su: real logins against the hardened stack"
+# Root's password and the test users, used from here to the end. CI runs the
+# sections below in shards, each after everything above (run.sh), so whatever
+# a later section needs is set up here, not inside an earlier section.
 echo 'root:Aegis-root-pw1' | chpasswd
 useradd -m -G wheel alice
 useradd -m bob
+
+echo "--- su: real logins against the hardened stack"
 su_as() { runuser -u "$1" -- env SU_PASSWORD="$2" expect /src/tests/container/su-login.exp >/dev/null 2>&1; }
 
 su_as alice 'wrong-password' && fail "su accepted a wrong password"
@@ -235,13 +246,6 @@ ansible-playbook tests/container/playbook.yml -e '{"aegis_pacman_siglevel_except
   || fail "exception for [evil] was not honoured"
 pass "pacman_integrity honours aegis_pacman_siglevel_exceptions"
 cp /etc/pacman.conf.aegis-orig /etc/pacman.conf
-
-audit_must_fail() { # id description
-  if ansible-playbook tests/container/playbook.yml >/tmp/neg.log 2>&1; then
-    cat /tmp/neg.log; fail "$2 did not fail the run"
-  fi
-  expect_finding "$1" FAIL
-}
 
 echo "--- negative: a weak SigLevel inside an Include= file"
 printf '\n[inc]\nInclude = /etc/pacman.d/aegis-test-inc\n' >> /etc/pacman.conf

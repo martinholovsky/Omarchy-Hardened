@@ -121,6 +121,7 @@ uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
 uv run ansible-lint && uv run yamllint --strict .
 tests/container/run.sh                     # planted-problem checks in a pinned Arch image; ends "N/N checks passed"
+tests/container/run.sh 2                   # one of the 3 shards CI runs in parallel (setup, then its sections)
 ```
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,

@@ -46,17 +46,41 @@ jobs:
       - name: Playbook syntax check
         run: uv run --frozen ansible-playbook omarchy-harden.yml --syntax-check
 
-  container-test:
+  container-test-shard:
+    # tests/container/run.sh cuts the suite into shards (SHARD_STARTS) and
+    # refuses to run unless they hold every check exactly once.
+    name: container-test shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 45 # 76 checks; open-items.md §4 has the revisit trigger
+    timeout-minutes: 25 # open-items.md §4 has the revisit trigger
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Check podman is available
         run: podman --version
-      - name: Run roles against Omarchy's baseline in Arch Linux
-        run: tests/container/run.sh
+      - name: Run one shard of the roles against Omarchy's baseline in Arch Linux
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: tests/container/run.sh "$SHARD"
+
+  container-test:
+    # The check protect-main requires. always(): without it a failed shard
+    # skips this job, and a skipped job satisfies a required check.
+    needs: container-test-shard
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every shard to pass
+        env:
+          RESULT: ${{ needs.container-test-shard.result }}
+        run: |
+          echo "container-test shards: $RESULT"
+          [ "$RESULT" = success ]
 
   sysctl-apply:
     # Changes the runner's kernel settings (some until reboot); fine on a

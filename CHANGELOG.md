@@ -36,9 +36,14 @@ SemVer once 1.0 ships.
 - The repository is public. `SECURITY.md` links GitHub's private
   vulnerability reporting, now enabled; `main` is protected (PRs only, the
   three CI checks required, no force push or deletion, no bypass).
-- CI: `container-test` may run 45 minutes instead of 35. A run on `main`
-  took 28m19s on 2026-10-28, past the 28-minute revisit line; splitting the
-  suite into parallel jobs is the follow-up (open-items.md §4).
+- CI: the container test runs as three parallel shards. A run on `main`
+  took 28m19s on 2026-10-28, past the 28-minute revisit line of its
+  35-minute timeout. `tests/container/run.sh SHARD` runs the common setup and
+  then one shard's sections, cut at the titles in `SHARD_STARTS`, and refuses
+  to run unless the shards hold every check exactly once. The job named
+  `container-test`, which `main` requires, now only passes when all three
+  shards did. Plain `run.sh` still runs everything. The test users and a
+  helper moved ahead of the first shard, so no shard needs another's state.
 - `docs/upstream-baseline.md`: re-checked against Omarchy `v4.5.0-rc2`; no
   row changed. Two 4.5 changes are recorded for when it ships (the
   `powerprofilesctl` shebang rewrite is gone; AUR builds run under the
