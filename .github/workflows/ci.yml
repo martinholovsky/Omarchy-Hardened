@@ -48,7 +48,7 @@ jobs:
 
   container-test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45 # 74 checks; open-items.md §4 has the revisit trigger
+    timeout-minutes: 45 # 76 checks; open-items.md §4 has the revisit trigger
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
