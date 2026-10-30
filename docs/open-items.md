@@ -7,8 +7,8 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-30, on branch `chore/resume-2026-10-29` (D-33 closed;
-not yet through CI). Before that: 2026-10-28, on `main` after PRs #22 to #25 (D-27 to D-32). The
+Last reviewed: 2026-10-30, on PR #27 (branch `chore/resume-2026-10-29`; D-33,
+D-34 and D-35 closed; CI green, run 41100690159). Before that: 2026-10-28, on `main` after PRs #22 to #25 (D-27 to D-32). The
 repo is public with `main` protected (ruleset `protect-main`); CI on PR #25
 `72/72 checks passed`. VM on 2026-10-28 (`pre-aegis-updated` after an in-place
 `pacman -Syu`): `tests/vm/run.sh` passed in full; its post-reboot `--check`,
@@ -69,5 +69,5 @@ run. All are correct.
 
 | Item | Detail |
 |---|---|
-| Container test time | The single `container-test` job reached 28m19s on `main` (2026-10-28T07:45), past the 28-minute revisit line of its 35-minute timeout. Owner, 2026-10-29: raise the timeout, then shard. Done 2026-10-30: three shards (`tests/container/run.sh 1` to `3`, cut at `SHARD_STARTS`) run in parallel; each runs the common setup (46 s in CI) and then about 480 to 630 s of sections, by the 2026-10-28 CI section times; `container-test` now only aggregates them. Locally, on a loaded host, the shards took 1038, 1188 and 1083 s (24/24, 21/21, 47/47) against 4068 s for one full run the day before. **Not yet measured in CI**: the branch is not pushed. Revisit when a shard takes more than 20 minutes (80% of its 25-minute timeout), or rebalance `SHARD_STARTS` from that run's `[t+Ns]` marks |
+| Container test time | The single `container-test` job reached 28m19s on `main` (2026-10-28T07:45), past the 28-minute revisit line of its 35-minute timeout. Owner, 2026-10-29: raise the timeout, then shard. Done 2026-10-30: three shards (`tests/container/run.sh 1` to `3`, cut at `SHARD_STARTS`) run in parallel; each runs the common setup (46 s in CI) and then about 480 to 630 s of sections, by the 2026-10-28 CI section times; `container-test` now only aggregates them. Locally, on a loaded host, the shards took 1038, 1188 and 1083 s (24/24, 21/21, 47/47) against 4068 s for one full run the day before. First CI run (PR #27, run 41100690159, 2026-10-30): shards 657, 695 and 625 s as jobs (529, 678 and 586 s in the container; 24/24, 21/21, 47/47 in their logs), the aggregate `container-test` 5 s, the whole run about 12 minutes against up to 28m19s for the single job before. Revisit when a shard takes more than 20 minutes (80% of its 25-minute timeout), or rebalance `SHARD_STARTS` from that run's `[t+Ns]` marks |
 | VM snapshot `pre-aegis-updated` is behind the package mirror | 2026-10-28: run 1 of `tests/vm/run.sh` failed installing OpenSnitch, because `stable-mirror.omarchy.org` returned 404 for `python-platformdirs-4.13.0-1`, a version the snapshot's pacman databases still name. Worked around by running `pacman -Syu` in the restored VM before `run.sh`. `tests/vm/update-snapshot.sh` refreshes it, but it deletes and retakes `pre-aegis-updated`, which `pre-aegis-hw` (the enrolled YubiKey) hangs off. Owner, 2026-10-29: keep the workaround, so `pre-aegis-hw` is not put at risk; revisit at the next full VM run, when a stale snapshot costs a long `pacman -Syu` |
