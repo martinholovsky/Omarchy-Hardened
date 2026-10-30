@@ -28,6 +28,11 @@ SemVer once 1.0 ships.
 
 ### Changed
 
+- D-08 (owner, 2026-10-30): only release tags are signed; commits no longer
+  are (`commit.gpgsign=false`), so a commit needs no touch on the key. Set
+  `aegis_commit_signing_commits: true` to sign every commit again. A run
+  changes `commit.gpgsign` from `true` to `false` for a user it configured
+  before.
 - D-12 closed: the GPL-3.0 toolchain does not affect the Apache-2.0 licence,
   because the custom modules import only `ansible.module_utils.basic`
   (Simplified BSD) and no GPL code is shipped.

@@ -149,7 +149,7 @@ container. Only the project directory is bind-mounted. There is no `$HOME`,
 all capabilities are dropped, and new privileges are disabled. Egress control
 comes from D-09. It is opt-in per invocation and changes nothing else.
 
-## D-08 — Commit signing key type (Decided 2026-10-21: SSH, ed25519-sk)
+## D-08 — Commit signing key type (Decided 2026-10-21: SSH, ed25519-sk; 2026-10-30: tags only)
 
 SSH signing key on a FIDO2 token (`ed25519-sk`) or GPG. **Recommendation:**
 `ed25519-sk`, which works with the same keys as D-04.
@@ -166,6 +166,20 @@ then a commit and a tag, each with one touch: `git log --show-signature` and
 that, in a container with OpenSSH's test provider, a commit with no key
 available was refused. What a user runs into (`libfido2`, the PIN prompt, a
 missed touch) is in open-items.md §3.
+
+**Changed (owner, 2026-10-30): sign releases only, not commits.** The role now
+sets `tag.gpgsign=true` and `commit.gpgsign=false`;
+`aegis_commit_signing_commits: true` restores signing every commit. Reasoning
+as given: a touch on the key for every commit is the cost, and the releases
+are what others verify. This departs from PRD 3.3 ("enforce GPG/SSH commit
+signing"). What it gives up: a commit pushed with the user's repository
+credentials is no longer distinguishable from the user's own by its
+signature until it is tagged, so a host that requires signed commits on a
+branch would reject the user's pushes (leave that rule off, or set the
+variable). VM (2026-10-30, YubiKey): after the change a commit needed no
+touch and is unsigned (`%G?` = `N`), and release tag `v2` verifies (`Good
+"git" signature … with ED25519-SK key`). Container: the default leaves
+commits unsigned and the variable turns commit signing on and off again.
 
 ## D-09 — OpenSnitch default action (Decided 2026-10-21: install, allow by default, pre-seeded rules)
 

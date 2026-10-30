@@ -152,7 +152,7 @@ drift), **agent container → host and network** (Podman, proxy), and
 
 | Control | Threat it addresses | Status | Does not stop | Evidence |
 |---|---|---|---|---|
-| `commit_signing` (D-08): SSH signing of commits and tags with a hardware `sk-` key you name | A2 or anyone with the user's repository credentials pushes commits that look like the user's | opt-in (reports until a key is set); refuses software keys by default | Hosts that do not require verified signatures; a malicious commit the user signs themselves | Container: an `sk-` key configures signing idempotently, `ssh-ed25519` is refused. Real key: untested |
+| `commit_signing` (D-08): SSH signing of release tags with a hardware `sk-` key you name; commits only if `aegis_commit_signing_commits` | A2 or anyone with the user's repository credentials publishes a release that looks like the user's | opt-in (reports until a key is set); refuses software keys by default | Commits, which are unsigned by default (owner, 2026-10-30), so a pushed commit is not attributable until it is tagged; hosts that do not require verified signatures; a malicious change the user tags themselves | Container: an `sk-` key configures tag signing idempotently, the variable turns commit signing on and off, `ssh-ed25519` is refused. VM (2026-10-30, YubiKey): a signed release tag verifies, a commit is unsigned |
 
 ### 3.8 Physical access (A6)
 
@@ -193,6 +193,7 @@ Stated plainly, so nobody reads more into the green audit than is there:
 | A reboot clears the faillock tally while autologin is on | D-23 (a) | owner, 2026-10-22 |
 | Tailscale bypasses ufw; reported, not changed | D-24 (a′) | owner, 2026-10-24 |
 | Egress report is best effort | D-25 | owner, 2026-10-24 |
+| Commits are unsigned; only release tags are signed | D-08 | owner, 2026-10-30 |
 
 Open, not yet decided or tested: after Omarchy's FIDO2 setup, polkit password
 guesses bypass faillock (measured; reported by D-28, not repaired);

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=76
+checks_total=77
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -529,13 +529,20 @@ signing='{"aegis_commit_signing_user": "alice", "aegis_commit_signing_pubkey": "
 ansible-playbook tests/container/playbook.yml -e "$signing" >/dev/null || fail "commit-signing run failed"
 expect_finding git.commit_signing PASS
 gitcfg() { runuser -u alice -- git config --global --get "$1"; }
-if ! { [[ $(gitcfg gpg.format) == ssh && $(gitcfg commit.gpgsign) == true && $(gitcfg tag.gpgsign) == true ]] \
+# Owner, 2026-10-30: releases (tags) are signed, commits are not.
+if ! { [[ $(gitcfg gpg.format) == ssh && $(gitcfg commit.gpgsign) == false && $(gitcfg tag.gpgsign) == true ]] \
   && grep -q '^alice@example.invalid namespaces="git" sk-ssh-ed25519@openssh.com ' /home/alice/.config/git/allowed_signers; }; then
-  fail "git signing not configured for alice"
+  fail "git signing not configured for alice (tags signed, commits not)"
 fi
+grep -q '"tags (releases) of alice signed with' /var/lib/aegis/audit.jsonl || { grep '"id": "git.commit_signing"' /var/lib/aegis/audit.jsonl; fail "finding does not say only tags are signed"; }
 out=$(ansible-playbook tests/container/playbook.yml -e "$signing")
 grep -Eq 'changed=0 .*failed=0' <<<"$out" || fail "commit signing not idempotent"
-pass "ssh signing configured for an sk key, idempotently"
+pass "ssh signing configured for an sk key: tags signed, commits not, idempotently"
+ansible-playbook tests/container/playbook.yml -e "$signing" -e aegis_commit_signing_commits=true >/dev/null || fail "commit-signing run with commits failed"
+[[ $(gitcfg commit.gpgsign) == true && $(gitcfg tag.gpgsign) == true ]] || fail "aegis_commit_signing_commits=true did not sign commits"
+ansible-playbook tests/container/playbook.yml -e "$signing" >/dev/null || fail "commit-signing run back to the default failed"
+[[ $(gitcfg commit.gpgsign) == false ]] || fail "the default did not turn commit signing off again"
+pass "aegis_commit_signing_commits=true signs commits too; the default turns it off again"
 
 echo "--- D-08 commit signing: a software key is refused by default"
 echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAegisTestSoftwareKey alice@test' > /home/alice/.ssh/id_ed25519.pub

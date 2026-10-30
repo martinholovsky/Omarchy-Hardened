@@ -52,7 +52,7 @@
     aegis_wanted:
       gpg.format: ssh
       user.signingkey: "{{ aegis_commit_signing_pubkey }}"
-      commit.gpgsign: "true"
+      commit.gpgsign: "{{ 'true' if aegis_commit_signing_commits | bool else 'false' }}"
       tag.gpgsign: "true"
       gpg.ssh.allowedSignersFile: "{{ aegis_signers }}"
   block:
@@ -116,13 +116,15 @@
       {{ (aegis_findings | default([])) + [
            {'id': 'git.commit_signing',
             'status': 'PASS' if aegis_commit_signing_pubkey
-                      else ('INFO' if aegis_sign_cur['commit.gpgsign'] == 'true' else 'WARN'),
-            'detail': ('commits and tags of ' ~ aegis_commit_signing_user ~ ' signed with '
-                       ~ aegis_commit_signing_pubkey)
+                      else ('INFO' if 'true' in [aegis_sign_cur['commit.gpgsign'], aegis_sign_cur['tag.gpgsign']]
+                            else 'WARN'),
+            'detail': (('commits and tags' if aegis_commit_signing_commits | bool else 'tags (releases)')
+                       ~ ' of ' ~ aegis_commit_signing_user ~ ' signed with ' ~ aegis_commit_signing_pubkey)
                       if aegis_commit_signing_pubkey
                       else ('git for ' ~ aegis_commit_signing_user ~ ': gpg.format='
                             ~ (aegis_sign_cur['gpg.format'] or 'unset') ~ ', commit.gpgsign='
-                            ~ (aegis_sign_cur['commit.gpgsign'] or 'unset')
+                            ~ (aegis_sign_cur['commit.gpgsign'] or 'unset') ~ ', tag.gpgsign='
+                            ~ (aegis_sign_cur['tag.gpgsign'] or 'unset')
                             ~ '. Set aegis_commit_signing_pubkey to an sk-ssh-ed25519 public key'
                             ~ ' to enable D-08 signing')}
          ] }}

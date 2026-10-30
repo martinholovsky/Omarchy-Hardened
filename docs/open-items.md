@@ -67,8 +67,10 @@ run. All are correct.
     prompt**: a YubiKey touch types an OTP, which counts as a wrong PIN
     (8 wrong in a row block the PIN, and only a reset that erases the key's
     FIDO2 credentials unblocks it). Touch only when it blinks after the PIN;
-  - every commit and tag then needs a touch within about 30 s. A missed one
-    fails with the misleading "Couldn't sign message: invalid format".
+  - every release tag (`git tag -a`) then needs a touch within about 30 s;
+    commits are not signed (owner, 2026-10-30; `aegis_commit_signing_commits:
+    true` signs them too). A missed touch fails with the misleading
+    "Couldn't sign message: invalid format".
 - **`egress.unknown_programs`** (once the desktop has run it): Omarchy's own
   `codex`, installed with mise under your home, connects out, and no package
   owns it (D-35). If you trust it, add
