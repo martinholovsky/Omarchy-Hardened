@@ -18,7 +18,7 @@ dev = [
   # The egress collector (roles/opensnitch/files) is checked like application
   # code: every ruff rule and strict mypy. Each pinned to a release at least
   # two weeks old when added (2026-10-24).
-  "mypy==2.4.0",
+  "mypy==2.4.1",
   "ruff==0.17.3",
 ]
 
