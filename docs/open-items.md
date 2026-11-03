@@ -7,7 +7,13 @@ known harness problems. This is the one list. New hardening ideas are in
 [open-decisions.md](open-decisions.md). Close an item by deleting its row in
 the change that closes it.
 
-Last reviewed: 2026-10-31, on `main` after PRs #28 and #29 (merges `6c9dbf6`
+Last reviewed: 2026-11-03, on `main` after the Dependabot bumps #31 to #33
+(setup-uv 10.3.3, ruff 0.17.3, mypy 2.4.1). Triggers re-checked, none met:
+Arch still ships `opensnitch` 1.7.2-4 and has no `hardened_malloc`
+(archlinux.org package search); Omarchy 4.5.0 has not shipped (`v4.5.0-rc3`,
+2026-11-02, is a pre-release); the slowest container-test shard took 675 s
+(PR #33's rebased head, run 41607137901), under the 20-minute line; the real-hardware date is
+2026-11-30. Before that: 2026-10-31, on `main` after PRs #28 and #29 (merges `6c9dbf6`
 and `906cbba`, docs only; the date, package, release and shard-time triggers below
 re-checked, none met; CI green
 on `main`, runs 41142579036 and 41181862161). Before that: 2026-10-30, on
