@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=77
+checks_total=79
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -327,6 +327,28 @@ ansible-playbook tests/container/playbook.yml -e "$expected" >/dev/null || fail 
 expect_finding integrity.package_drift_content WARN
 cp -a /tmp/false.orig /usr/bin/false
 pass "an extra change on a listed file is still drift"
+
+# D-22 follow-up (Omarchy 4.5.0): an entry with `package` accepts the drift only
+# while that package owns the file, as /usr/bin/powerprofilesctl is benign only
+# under the stock power-profiles-daemon.
+echo "--- D-22: an expected-drift entry with a package matches that owner only"
+owner=$(pacman -Qqo /usr/bin/false)
+[[ -n $owner ]] || fail "no package owns /usr/bin/false"
+scoped() { printf '{"aegis_integrity_drift_expected": [{"path": "/usr/bin/false", "package": "%s", "why": "test",
+  "reasons": ["Modification time mismatch", "Size mismatch", "SHA256 checksum mismatch"]}]}' "$1"; }
+printf 'aegis' >> /usr/bin/false
+ansible-playbook tests/container/playbook.yml -e "$(scoped "$owner")" >/dev/null || fail "owner-scoped run failed"
+expect_finding integrity.package_drift_content PASS
+grep -q '/usr/bin/false - test' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "drift under the named owner not accepted"; }
+pass "an entry naming the file's owner ($owner) accepts its drift"
+
+ansible-playbook tests/container/playbook.yml -e "$(scoped omarchy-power-profiles-daemon)" >/dev/null || fail "other-owner run failed"
+expect_finding integrity.package_drift_content WARN
+if finding_line integrity.package_drift_accepted | grep -q '/usr/bin/false'; then
+  cat /var/lib/aegis/audit.jsonl; fail "drift accepted under a package that does not own the file"
+fi
+cp -a /tmp/false.orig /usr/bin/false
+pass "an entry naming another package leaves the drift reported"
 
 echo "--- upgrade age: before the first -Syu it counts from the install"
 cp /var/log/pacman.log /tmp/pacman.log.orig

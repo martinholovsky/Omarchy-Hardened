@@ -146,7 +146,11 @@ from a root shell.
   D-22). This covers changes listed in `aegis_integrity_drift_expected`, and
   permission changes that only remove bits. Anything else in
   `integrity.package_drift_*` deserves a look. If you accept it, add it to the
-  list with its exact `-Qkk` reasons and a `why`.
+  list with its exact `-Qkk` reasons and a `why`, and with `package` when the
+  change is benign only under one owner. `/usr/bin/powerprofilesctl` is
+  accepted only while Arch's `power-profiles-daemon` owns it (D-36): on
+  Omarchy 4.5.0, where `omarchy-power-profiles-daemon` owns it, a change to it
+  fails the run.
 - **`pacman.upgrade_age` warns** when the last `pacman -Syu` is more than 7 days
   old (`aegis_pacman_max_upgrade_age_days`). Before the first `-Syu`, the age
   counts from the install, which is the first `pacman.log` entry.

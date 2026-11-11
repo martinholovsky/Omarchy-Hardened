@@ -37,6 +37,9 @@ options:
       - Known, benign drift. Each item has C(path), C(reasons) (the exact set of
         C(pacman -Qkk) reasons allowed) and C(why). A file whose reasons match
         exactly is reported in drift_accepted instead of counting as drift.
+      - An optional C(package) limits the entry to the package C(pacman -Qkk)
+        names as the file's owner, for drift whose benign cause exists only
+        with that package installed.
     type: list
     elements: dict
     default: []
@@ -238,7 +241,11 @@ def _package_drift(cap, ignore, expected, tightened_ok):
     for (pkg, path), found in reasons.items():
         entry = {"package": pkg, "path": path, "reasons": found}
         item = known.get(path)
-        if item is not None and set(item.get("reasons", [])) == set(found):
+        if (
+            item is not None
+            and set(item.get("reasons", [])) == set(found)
+            and item.get("package", pkg) == pkg
+        ):
             accepted.append({**entry, "why": item.get("why", "")})
             continue
         if tightened_ok and _only_tightened(pkg, path, found, mtrees):

@@ -916,3 +916,42 @@ binary most worth watching, and the fix for a user who trusts it is one line.
 
 **Decided (owner, 2026-10-30):** (b), the recommendation. No code change: the
 WARN is listed as an expected one in open-items.md §3 and operating-notes.md.
+
+## D-36 — Omarchy 4.5.0: the `powerprofilesctl` drift entry and AUR builds under sudo (Decided 2026-11-11: (b) and (a))
+
+Omarchy 4.5.0 shipped on 2026-11-05 with the two changes found in
+`v4.5.0-rc2` (upstream-baseline.md, re-checked 2026-11-11 against `v4.5.0`).
+
+**1. The D-22 entry for `/usr/bin/powerprofilesctl`.** On 4.5.0
+`install/omarchy-base.packages:106` installs `omarchy-power-profiles-daemon`
+and the shebang rewrite is gone. In the VM (2026-10-30) that package showed 0
+altered files, so on 4.5 the entry accepts a content change that has no benign
+cause. Installs still on 4.0.6, and the channel that `omarchy-upgrade-to-quattro`
+leaves on the stock package, still have the rewrite. Options: (a) delete the
+entry: every 4.0.6 install would then FAIL each run on a benign change;
+(b) let an entry name the package that must own the file, and scope this one
+to Arch's `power-profiles-daemon`: right on both versions, small code change
+and a container test; (c) keep it until a VM run on 4.5: the gap stays open
+on 4.5 meanwhile. **Recommendation:** (b), because the benign cause exists
+exactly when the stock package is installed.
+
+**2. AUR builds share `omarchy-update`'s sudo authorization.** At `v4.5.0`
+`bin/omarchy-update` runs `omarchy-update-aur-pkgs` before
+`end_update_authorization`, so code in the PKGBUILD of any AUR package the user
+has can run `sudo` without a prompt during an update. Options: (a) record it
+as an accepted risk in threat-model.md; (b) also add an audit finding listing
+AUR packages (`pacman -Qm`); (c) nothing. **Recommendation:** (a). The
+playbook cannot change `omarchy-update`, and a recurring finding the user
+cannot fix is noise. An AUR package already runs its own code as the user and
+usually through `sudo pacman -U`, so this widens the window rather than
+creating a new path.
+
+**Decided (owner, 2026-11-11):** (b) for the first, (a) for the second, both
+the recommendation. Implemented: `aegis_integrity_drift_expected` entries take
+an optional `package`, the `powerprofilesctl` entry names
+`power-profiles-daemon`, and the container test checks that a matching owner
+is accepted and another owner is not. The AUR risk is a row in
+threat-model.md §5. VM, 2026-11-11, after an in-place `omarchy-update` to
+4.5.0: `powerprofilesctl` is owned by `omarchy-power-profiles-daemon` with 0
+altered files, the entry no longer applies, and `tests/vm/run.sh` passed
+(open-items.md).
