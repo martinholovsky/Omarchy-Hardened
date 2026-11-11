@@ -255,6 +255,13 @@ unused routed address answered "open"), so the script probes on-link only.
 
 ## Traps
 
+- **`omarchy-update` over SSH needs the desktop session's environment.**
+  An SSH shell has no `OMARCHY_PATH` (`omarchy-update-dev` stops on it unset)
+  and no Wayland variables (a migration that calls `omarchy-bar` stops at
+  "not ready"). Import them from the user manager before running it, on a pty
+  so `sudo` can prompt once:
+  `set -a; eval "$(systemctl --user show-environment | grep -E '^(OMARCHY_PATH|PATH|WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE|XDG_RUNTIME_DIR|DISPLAY|LANG|XDG_CURRENT_DESKTOP|XDG_SESSION_TYPE|DBUS_SESSION_BUS_ADDRESS)=')"; set +a; omarchy-update -y`
+  (measured 2026-11-11, 4.0.6 to 4.5.0; the third attempt exited 0).
 - **`ufw limit 22/tcp` drops the 6th connection within 30 s.** A tight
   `ssh` polling loop gets you "Connection reset by peer". Poll at most every
   7 s. Ansible reuses one connection.

@@ -7,6 +7,51 @@ description of it. Everything below was read from
 Re-check it on each Omarchy release or release candidate. Each row names the
 upstream file, so a re-check is a `git diff` of those paths.
 
+**Re-checked 2026-11-11 against `v4.5.0` (`ac2690c`, released 2026-11-05).**
+Method: the full upstream trees at `cbd44ba`, `v4.5.0-rc2` and `v4.5.0` from
+the GitHub trees API (none truncated), compared by blob id. GitHub's compare
+API stops at 300 files, and rc2 to `v4.5.0` is 130 commits and 779 changed or
+added files, so it cannot be used here. The paths this repo cites are every
+backticked path in a tracked file that exists upstream at `cbd44ba`: 62
+files and 6 directories (the 57 of the last re-check, plus citations added
+since). Fourteen changed since `cbd44ba`, and eleven of them since rc2. The
+sources of the vendored fixtures (`install/config/firewall.sh`,
+`install/config/increase-lockout-limit.sh`, `bin/omarchy-apply-lock`,
+`etc/security/faillock.conf`, `LICENSE`) are unchanged. No row in the table
+changed. Both rc2 findings below shipped in `v4.5.0` unchanged:
+`fix-powerprofilesctl-shebang.sh` is gone and `install/omarchy-base.packages:106`
+installs `omarchy-power-profiles-daemon` (D-22 now names the owning package,
+2026-11-11), and `omarchy-update-aur-pkgs` still runs before
+`end_update_authorization` in `bin/omarchy-update` (an accepted risk in
+threat-model.md §5, 2026-11-11). Other changes since rc2 that touch what this
+repo relies on:
+
+- `bin/omarchy-update` lost the `#!/bin/bash -p` startup check, the sanitized
+  `PATH` and the sudo-timestamp revocation that rc2 had. `v4.0.6` had none of
+  them either, so no control here depended on them; recorded so nobody cites
+  them later.
+- `bin/omarchy-setup-security-sshd` no longer starts sshd or adds the ufw
+  rule (still `ufw limit 22/tcp comment "omarchy-sshd"`, now line 84) until a
+  key is authorized and password logins are off. A cancelled run leaves
+  `openssh` installed but not enabled; `ssh.password_auth` then WARNs about
+  Arch's stock config, which is what the server would use if started.
+- `install/omarchy-other.packages` adds `v4l2loopback-dkms` (Elgato Cam Link),
+  one more unsigned out-of-tree module on hardware that needs it (see
+  `module.sig_enforce` in research/secureblue-review.md).
+- `install/user/mise.sh` reshims offline; `default/hypr/envs.lua` adds
+  `no_donation_nag`; `bin/omarchy-provision-owner` was refactored. It still
+  sets root's password to the user's (`printf '%s:%s\n' root "$password" |
+  chpasswd`, line 736; D-19), and encrypted installs still keep autologin.
+
+D-23's revisit condition is still unmet: of the 779 files changed or added
+since rc2, 757 were read (the other 22 are `applications/Google …` launchers
+and icons), and `systemd-cryptenroll`, `tpm2-*` and `clevis` appear only in
+`test/shell.d/`. Not traced: `luks_auto_unlock_drop`, which D-23 cites as
+removing the staged install key, has no caller inside
+`bin/omarchy-provision-owner` at `dde0d12`, rc2 or `v4.5.0` (only its
+definition), and GitHub code search returned nothing even for a name known to
+be there, so its caller was not found.
+
 **Re-checked 2026-10-29 against `v4.5.0-rc2` (`5978d93`, 2026-10-27).** The
 paths this repo cites (57 backticked paths that exist upstream, plus the 5
 files in `tests/fixtures/omarchy/`) were diffed from `cbd44ba` to the tag.

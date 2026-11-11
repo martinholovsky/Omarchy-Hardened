@@ -65,9 +65,15 @@ aegis_integrity_drift_expected:
   - path: /var/log/journal
     reasons: [GID mismatch]
     why: systemd tmpfiles sets group systemd-journal and setgid
+  # Only while Arch's stock package owns the file: Omarchy 4.5.0 replaces it
+  # with omarchy-power-profiles-daemon and drops the rewrite, so there any
+  # change to this file is drift (D-22 follow-up, 2026-11-11).
   - path: /usr/bin/powerprofilesctl
+    package: power-profiles-daemon
     reasons: [Modification time mismatch, Size mismatch, SHA256 checksum mismatch]
-    why: Omarchy rewrites the shebang (install/config/fix-powerprofilesctl-shebang.sh)
+    why: >-
+      Omarchy rewrites the shebang (install/config/fix-powerprofilesctl-shebang.sh
+      up to 4.0.6, bin/omarchy-upgrade-to-quattro)
   # D-34: VLC's own pacman hook (vlc-cache-gen) rewrites its plugin index after
   # every plugin install, upgrade or removal (VM, 2026-10-30, libvlc 3.0.24-1).
   - path: /usr/lib/vlc/plugins/plugins.dat

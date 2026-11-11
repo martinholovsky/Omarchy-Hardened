@@ -25,6 +25,15 @@ SemVer once 1.0 ships.
 - D-30: audit finding `agent.kernel_overlay` WARNs when the running kernel has
   no unprivileged overlayfs, where `aegis-agent` cannot run (`linux-hardened`).
 - Container test: 70 checks (D-27, D-28 and D-30 against planted files).
+- D-36: an `aegis_integrity_drift_expected` entry can name the `package`
+  that must own the file. The `/usr/bin/powerprofilesctl` entry names
+  `power-profiles-daemon`, so on Omarchy 4.5.0 (`omarchy-power-profiles-daemon`)
+  a change to it is drift again. Container test: 79 checks.
+- `docs/upstream-baseline.md`: re-checked against Omarchy `v4.5.0`;
+  threat-model.md §5 accepts AUR builds running under `omarchy-update`'s
+  sudo authorization (D-36). VM: after an in-place `omarchy-update` to 4.5.0,
+  `tests/vm/run.sh` passed (2026-11-11); `tests/vm/README.md` names the
+  session variables `omarchy-update` needs when run over SSH.
 
 ### Changed
 

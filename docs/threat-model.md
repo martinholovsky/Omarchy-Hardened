@@ -194,6 +194,7 @@ Stated plainly, so nobody reads more into the green audit than is there:
 | Tailscale bypasses ufw; reported, not changed | D-24 (a′) | owner, 2026-10-24 |
 | Egress report is best effort | D-25 | owner, 2026-10-24 |
 | Commits are unsigned; only release tags are signed | D-08 | owner, 2026-10-30 |
+| From Omarchy 4.5.0, AUR builds run while `omarchy-update`'s sudo authorization is live, so a PKGBUILD can use `sudo` without a prompt | D-36 (a) | owner, 2026-11-11 |
 
 Open, not yet decided or tested: after Omarchy's FIDO2 setup, polkit password
 guesses bypass faillock (measured; reported by D-28, not repaired);
