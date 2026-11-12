@@ -429,7 +429,9 @@ The causes above are benign, but some way of accepting them is needed.
 The recommendation was (a). **The owner chose (b).** It is implemented as:
 
 - `aegis_integrity_drift_expected`: utempter, `/var/log/journal` and
-  `powerprofilesctl`, with their exact reason sets.
+  `powerprofilesctl`, with their exact reason sets. Since D-36 (2026-11-11) an
+  entry can name the `package` that must own the file, and the
+  `powerprofilesctl` entry names `power-profiles-daemon`.
 - `aegis_integrity_drift_tightened_is_accepted: true`: this covers cups and
   `/boot`. Owner and group must match the package's `mtree`, and no mode bit
   may be added.
