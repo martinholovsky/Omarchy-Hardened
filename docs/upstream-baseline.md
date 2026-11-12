@@ -13,8 +13,8 @@ the GitHub trees API (none truncated), compared by blob id. GitHub's compare
 API stops at 300 files, and rc2 to `v4.5.0` is 130 commits and 779 changed or
 added files, so it cannot be used here. The paths this repo cites are every
 backticked path in a tracked file that exists upstream at `cbd44ba`: 62
-files and 6 directories (the 57 of the last re-check, plus citations added
-since). Fourteen changed since `cbd44ba`, and eleven of them since rc2. The
+files and 6 directories (the last re-check counted 57 by a method it did not
+record, so the two sets were not compared). Fourteen changed since `cbd44ba`, and eleven of them since rc2. The
 sources of the vendored fixtures (`install/config/firewall.sh`,
 `install/config/increase-lockout-limit.sh`, `bin/omarchy-apply-lock`,
 `etc/security/faillock.conf`, `LICENSE`) are unchanged. No row in the table
@@ -34,10 +34,13 @@ repo relies on:
   rule (still `ufw limit 22/tcp comment "omarchy-sshd"`, now line 84) until a
   key is authorized and password logins are off. A cancelled run leaves
   `openssh` installed but not enabled; `ssh.password_auth` then WARNs about
-  Arch's stock config, which is what the server would use if started.
-- `install/omarchy-other.packages` adds `v4l2loopback-dkms` (Elgato Cam Link),
-  one more unsigned out-of-tree module on hardware that needs it (see
-  `module.sig_enforce` in research/secureblue-review.md).
+  Arch's stock config, which is what the server would use if started (read
+  from `roles/overlay_network`, which keys on sshd being installed; not run).
+- `install/omarchy-other.packages` now lists `v4l2loopback-dkms` (Elgato Cam
+  Link). That file lists packages "installed outside of install/packages.sh or
+  optional packages" so the ISO carries them; what installs this one, and on
+  which machines, was not traced. If installed, it is another out-of-tree
+  module (see `module.sig_enforce` in research/secureblue-review.md).
 - `install/user/mise.sh` reshims offline; `default/hypr/envs.lua` adds
   `no_donation_nag`; `bin/omarchy-provision-owner` was refactored. It still
   sets root's password to the user's (`printf '%s:%s\n' root "$password" |
@@ -49,8 +52,11 @@ and icons), and `systemd-cryptenroll`, `tpm2-*` and `clevis` appear only in
 `test/shell.d/`. Not traced: `luks_auto_unlock_drop`, which D-23 cites as
 removing the staged install key, has no caller inside
 `bin/omarchy-provision-owner` at `dde0d12`, rc2 or `v4.5.0` (only its
-definition), and GitHub code search returned nothing even for a name known to
-be there, so its caller was not found.
+definition). GitHub code search returned nothing for it and for
+`limine_auto_unlock_drop` alike, although both are defined on the default
+branch `quattro` that code search reads (`bin/omarchy-provision-owner:913` and
+`:967`, checked 2026-11-12), so code search does not answer for this repository
+and the caller was not found.
 
 **Re-checked 2026-10-29 against `v4.5.0-rc2` (`5978d93`, 2026-10-27).** The
 paths this repo cites (57 backticked paths that exist upstream, plus the 5
