@@ -72,7 +72,7 @@ ran or what read the keys** on the host. Upstream's quickstart policy
 with `matchArgs` on a path prefix and the access mask; its enforcing variant
 adds `matchActions: [{action: Sigkill}]`.
 
-### 1.2 Enforcement on our kernels (inferred from source, not run)
+### 1.2 Enforcement on our kernels (inferred from source, not run; confirmed 2026-11-21 by `tetra probe` in the VM on both kernels, open-decisions D-37)
 
 From `pkg/sensors/tracing/generickprobe.go:335-358` (`validateOverride`) and
 the kernel's fmod_ret allow-list (`kernel/bpf/verifier.c`):
@@ -262,7 +262,8 @@ every interface change.
   memory, not attack surface.
 - The useful control is visibility. **#29** is an audit-only check, a
   listening-socket inventory (`ss -Htulpn`): WARN on any non-loopback
-  listener not in an allowlist, INFO on loopback listeners (OpenClaw,
+  listener not in an allowlist, INFO on loopback listeners (OpenClaw, *(As built, 2026-11-21: loopback
+  listeners are counted in the PASS detail, not reported as INFO.)*
   Ollama). Like every audit check, it needs a planted-problem test.
 - Unit sandboxing for the opt-in AI daemons (Ollama, OpenClaw's user
   service) belongs with roadmap's systemd-sandbox item, not here. Ollama's

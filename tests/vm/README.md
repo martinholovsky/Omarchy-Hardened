@@ -110,7 +110,8 @@ This restores `pre-aegis`, runs a full `pacman -Syu`, reboots and saves
 databases, and a fresh install has none, just as a user's machine would need
 `omarchy-update` first. Omarchy's update guard hook blocks a direct `-Syu`,
 so the script sets `OMARCHY_ALLOW_DIRECT_PACMAN=1`, the bypass the guard
-itself names. Run the tests from `pre-aegis-updated`.
+itself names. Run the tests from `pre-aegis-450` (§6c: `pre-aegis-updated`
+updated to Omarchy 4.5.0-3, 2026-11-21).
 
 ## 5c. USB 3 and a FIDO2 key (optional)
 
@@ -172,7 +173,7 @@ After the reboot it also checks:
   with root's right password (step 4). `tests/vm/pty-auth.py` drives `su` on
   a pty in the guest; it reads the password from stdin, never argv
 
-To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-updated`.
+To start again: `VBoxManage snapshot aegis-omarchy restore pre-aegis-450`.
 
 If run 1 fails installing a package with a 404 from the mirror, the
 snapshot's pacman databases name versions the mirror no longer has
@@ -216,8 +217,11 @@ tests/vm/panel.sh   # after tests/vm/run.sh (and tetragon.sh), VM still running
 The plugin system exists from Omarchy 4.5, so this needs the `pre-aegis-450`
 snapshot: `pre-aegis-updated` plus `pacman -Syu` and `omarchy-update -y`
 over SSH (see Traps; `AEGIS_PTY_DEADLINE` lets `pty-auth.py` wait for the
-update). `panel.sh` answers polkit through `pkexec`'s own text agent on a
-pty. It checks:
+update). Over SSH, polkit refuses without a prompt (the session is not
+active), so each polkit case runs inside the Hyprland session
+(`hyprctl dispatch 'hl.dsp.exec_cmd(...)'`). It answers polkit with
+`pkttyagent` registered for the case's own shell, on a pty that
+`pty-auth.py` answers once. It checks:
 
 - the status file and the user's `aegis status`;
 - a wrong password changes nothing;
@@ -302,6 +306,17 @@ unused routed address answered "open"), so the script probes on-link only.
 
 ## Traps
 
+- **`VBoxManage controlvm … screenshotpng` comes out as diagonal stripes**
+  with the guest at 2536x1744 (2026-11-21), and `setvideomodehint` did not
+  help. Take the screenshot inside the session instead: `grim`, with the
+  desktop session's environment (see the `omarchy-update` trap below), then
+  copy the PNG out over SSH.
+- **Keys typed through VirtualBox can land on the idle lock screen.** On
+  2026-11-21 a password meant for a polkit dialog went to Omarchy's lock
+  screen, and polkit logged "FAILED to authenticate". Check with a `grim`
+  screenshot before typing, or avoid typing (`panel.sh` uses `pkttyagent`).
+- **Hyprland 0.56 takes Lua in `hyprctl dispatch`:** `exec bash x` fails to
+  parse; use `hyprctl dispatch 'hl.dsp.exec_cmd("bash x")'`.
 - **`omarchy-update` over SSH needs the desktop session's environment.**
   An SSH shell has no `OMARCHY_PATH` (`omarchy-update-dev` stops on it unset)
   and no Wayland variables (a migration that calls `omarchy-bar` stops at
