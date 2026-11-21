@@ -1,0 +1,41 @@
+# {{ ansible_managed }}
+# D-37: Tetragon, detection only. Based on upstream's
+# install/linux-tarball/systemd/tetragon.service (v1.8.0, Apache-2.0), which
+# runs as root with no sandbox. Tetragon loads BPF programs and reads every
+# process, so it keeps root and its capabilities; what is taken away is what
+# it does not need: writing the OS, the home directories, a network listener
+# (all of them are also off in its settings). Check with:
+#   systemd-analyze security tetragon.service
+[Unit]
+Description=Tetragon runtime monitoring (Aegis D-37, detection only)
+Documentation=https://tetragon.io/
+After=local-fs.target network.target
+StartLimitBurst=10
+StartLimitIntervalSec=2min
+
+[Service]
+Type=exec
+ExecStart={{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/usr/bin/tetragon
+Restart=on-failure
+RestartSec=5
+
+RuntimeDirectory=tetragon
+RuntimeDirectoryMode=0700
+LogsDirectory=tetragon
+LogsDirectoryMode=0700
+UMask=0077
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target

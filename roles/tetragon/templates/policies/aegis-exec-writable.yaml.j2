@@ -1,0 +1,65 @@
+# {{ ansible_managed }}
+# D-37 Aegis policy: programs run from world-writable or memory-only places.
+# ATT&CK: T1204.002 (malicious file), T1059 (interpreter), T1620 (reflective
+# code loading: memfd).
+# Derived from cilium/tetragon v1.8.0 (a5a6678), examples/tracingpolicy/security_bprm_check.yaml,
+# Apache-2.0, Copyright Authors of Tetragon. Modified by Omarchy-Hardened:
+# Prefix match on writable directories instead of one Equal path, a second
+# hook for fexecve (memfd), no return probe, no enforcement. Build tools that
+# run binaries from /tmp (go test) show up here; list them in
+# aegis_tetragon_known. The event's process is the program that started the
+# exec; the path is the program it ran.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: aegis-exec-writable
+spec:
+  kprobes:
+  - call: security_bprm_check
+    syscall: false
+    message: "program run from a writable location"
+    tags: ["T1204.002", "T1059"]
+    args:
+    - index: 0
+      type: linux_binprm
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: Prefix
+        values:
+        - /tmp/
+        - /var/tmp/
+        - /dev/shm/
+        - /run/user/
+      matchActions:
+      - action: Post
+        rateLimit: 1m
+  # fexecve(): execveat(fd, "", ..., AT_EMPTY_PATH), how a memfd is run.
+  # Tetragon reports no path for a memfd binary (VM, 2026-11-21), so the
+  # path prefix above cannot see it.
+  - call: sys_execveat
+    syscall: true
+    message: "program run from a file descriptor (fexecve, memfd)"
+    tags: ["T1620", "T1059"]
+    args:
+    - index: 0
+      type: int  # dirfd
+    - index: 4
+      type: int  # flags
+    selectors:
+    - matchArgs:
+      - index: 4
+        operator: Mask
+        values: ["4096"]  # AT_EMPTY_PATH
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/lib/systemd/systemd
+        - /usr/lib/systemd/systemd-executor
+        - /usr/bin/crun
+        - /usr/bin/runc
+        - /usr/bin/conmon
+        - /usr/bin/podman
+      matchActions:
+      - action: Post
+        rateLimit: 1m

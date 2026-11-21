@@ -1,0 +1,7 @@
+---
+- name: Restart tetragon
+  ansible.builtin.systemd_service:
+    name: tetragon.service
+    state: restarted
+    daemon_reload: true
+  when: aegis_tetragon_enabled | bool and aegis_tetragon_manage_service | default(true) | bool

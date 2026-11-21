@@ -1,0 +1,94 @@
+---
+# D-37 (decided 2026-11-20): Tetragon runtime monitoring, opt-in, detection
+# only. Installs Tetragon from the signed release image's layers, writes its
+# settings and the aegis-* policies, starts it, reads back which policies
+# loaded, and reports policy events as audit findings.
+- name: Report that Tetragon monitoring is off
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [{'id': 'tetragon.service', 'status': 'INFO',
+         'detail': 'runtime monitoring is off (aegis_tetragon_enabled: false, D-37)'}] }}
+  when: not aegis_tetragon_enabled | bool
+
+- name: Install and run Tetragon
+  when: aegis_tetragon_enabled | bool
+  block:
+    - name: Note when this run started (its own changes are not warned about)
+      ansible.builtin.set_fact:
+        aegis_tetragon_run_started: "{{ ansible_facts['date_time']['epoch'] | default(0) }}"
+
+    - name: Create the audit directory (holds the run windows, see events_audit.yml)
+      ansible.builtin.file:
+        path: "{{ aegis_tetragon_runs_file | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Read the kernel lockdown mode
+      ansible.builtin.slurp:
+        src: /sys/kernel/security/lockdown
+      register: aegis_tetragon_lockdown
+      failed_when: false
+
+    - name: Refuse to run under lockdown=confidentiality
+      ansible.builtin.assert:
+        that: >-
+          '[confidentiality]' not in ((aegis_tetragon_lockdown.content | default('')) | b64decode)
+        fail_msg: >-
+          kernel lockdown is in confidentiality mode, which blocks kprobes and BPF reads;
+          Tetragon cannot run (D-37). Use lockdown=integrity or set aegis_tetragon_enabled: false
+        quiet: true
+
+    - name: Install Tetragon, its settings and the policies
+      ansible.builtin.import_tasks: install.yml
+
+    - name: Install the unit
+      ansible.builtin.template:
+        src: tetragon.service.j2
+        dest: /etc/systemd/system/tetragon.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart tetragon
+
+    - name: Enable and start Tetragon
+      ansible.builtin.systemd_service:
+        name: tetragon.service
+        enabled: true
+        state: started
+        daemon_reload: true
+      # A first --check run has no unit yet; the real run creates it.
+      ignore_errors: "{{ ansible_check_mode }}"
+
+    - name: Apply a pending restart before reading the state back
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for the policies to load (up to 60 s)
+      ansible.builtin.command:
+        argv: [/usr/local/bin/tetra, --server-address, "unix://{{ aegis_tetragon_socket }}",
+               tracingpolicy, list, --output, json]
+      register: aegis_tetragon_wait
+      changed_when: false
+      check_mode: false
+      retries: 12
+      delay: 5
+      until: >-
+        aegis_tetragon_wait.rc == 0
+        and (aegis_tetragon_wait.stdout | from_json).policies | default([])
+            | rejectattr('state', 'in', ['TP_STATE_LOADING']) | map(attribute='name') | list
+            | intersect(aegis_tetragon_policies) | length == aegis_tetragon_policies | length
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: Verify that Tetragon runs
+      ansible.builtin.command:
+        argv: [systemctl, is-active, tetragon.service]
+      register: aegis_tetragon_is_active
+      changed_when: false
+      failed_when: aegis_tetragon_is_active.stdout != 'active'
+      check_mode: false
+      when: not ansible_check_mode
+
+    - name: Report the events
+      ansible.builtin.import_tasks: events_audit.yml

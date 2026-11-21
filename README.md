@@ -34,13 +34,15 @@ recover.
 | `agent_containment` | 3.3 | ✅ implemented | D-07: rootless Podman and `aegis-agent`, which runs an agent with only the current project mounted, no `$HOME`, no capabilities and no user namespaces inside (D-01). D-26: its HTTP(S) goes through a Smokescreen proxy, `report` by default (allows all, logs hosts outside the allowlist), `enforce` on request. WARNs when the running kernel has no unprivileged overlayfs, where it cannot run (`linux-hardened`, D-30) |
 | `commit_signing` | 3.3 | ✅ implemented | D-08: SSH signing of release tags for a public key you name (hardware `sk-` key required by default); commits are signed only with `aegis_commit_signing_commits: true`. Reports only until a key is set |
 | `opensnitch` | 3.4 | ✅ implemented | D-09: OpenSnitch running with default action `allow` (an unanswered prompt allows too), seeded rules for pacman/Tailscale/time/DNS, prompt UI autostarted. D-25: `aegis-egress-collector` records which program connected where (no command lines) and the audit WARNs on programs no package owns |
+| `tetragon` | — | ✅ implemented, opt-in | D-37: `aegis_tetragon_enabled: true` installs Tetragon v1.8.0 from the cosign-verified release image (layers pinned by digest) and six monitor-only policies adapted from upstream examples: credential-store reads, persistence writes, kernel modules from outside `/usr/lib/modules`, BPF loads, ptrace/process injection, programs run from `/tmp` or memory. No enforcement action and no network listener; the export keeps only policy events, with command-line secrets redacted. The audit WARNs per policy (`tetragon.*`) with the program and object, never the command line |
 | `overlay_network` | 3.4 | ✅ implemented | D-10: reports Tailscale; opt-in `aegis_overlay_ssh_on_tailscale` adds a ufw rule on `tailscale0`, which Tailscale's default netfilter mode bypasses, so the audit WARNs (D-24). Audits sshd password logins and non-hardware keys |
 
 Immutability (PRD 3.6) is aspirational and has no role yet.
 
 Next candidates, ranked by risk to Omarchy, are in [docs/roadmap.md](docs/roadmap.md).
 That list merges a 2026 re-check of Securix-Linux and reviews of secureblue,
-Kicksecure security-misc and SnowflakeOS.
+Kicksecure security-misc and SnowflakeOS, plus an evaluation of eBPF
+(Tetragon), sandboxing and network-isolation proposals.
 
 The PRD's picture of Omarchy differs from the real thing in two places: SSH is
 **not** opened by default (it is opt-in), and the kernel is `linux-omarchy`,
@@ -73,7 +75,7 @@ for the whole run. Run as your user, sudo would wait for a touch on every task,
 so the playbook stops before its first sudo and says this.
 
 Tags: `p0` `p1` `p2`, area tags (`kernel`, `auth`, `isolation`, `network`,
-`supply-chain`), and one tag per role. All the tunables are in each role's
+`monitoring`, `supply-chain`), and one tag per role. All the tunables are in each role's
 `defaults/main.yml` and are named `aegis_<area>_*`.
 
 **Before applying `auth`:** the lockout policy is:

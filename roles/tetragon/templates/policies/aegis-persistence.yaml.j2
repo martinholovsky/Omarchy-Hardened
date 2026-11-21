@@ -1,0 +1,73 @@
+# {{ ansible_managed }}
+# D-37 Aegis policy: writes to places that start code later (persistence).
+# ATT&CK: T1543.002 (systemd units), T1546.004 (shell startup files),
+#         T1547.013 (XDG autostart), T1098.004 (authorized_keys),
+#         T1574.006 (ld.so.preload), T1548.003 (sudoers), T1556.003 (PAM).
+# Derived from cilium/tetragon v1.8.0 (a5a6678), examples/quickstart/file_monitoring.yaml,
+# Apache-2.0, Copyright Authors of Tetragon. Modified by Omarchy-Hardened:
+# write mask tested with Mask (catches MAY_WRITE|MAY_APPEND), Omarchy paths
+# (Hyprland config, user units), pacman excluded for system paths, no
+# enforcement action. Monitor only: Post with a rate limit.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: aegis-persistence
+spec:
+  kprobes:
+  - call: security_file_permission
+    syscall: false
+    message: "write to a file that starts code later"
+    tags: ["T1543.002", "T1546.004", "T1547.013", "T1098.004", "T1574.006", "T1548.003", "T1556.003"]
+    args:
+    - index: 0
+      type: file
+    - index: 1
+      type: int  # MAY_WRITE 0x2, MAY_APPEND 0x8
+    selectors:
+    # The desktop user's startup files.
+    - matchArgs:
+      - index: 0
+        operator: Prefix
+        values:
+        - {{ aegis_tetragon_home }}/.config/systemd/user/
+        - {{ aegis_tetragon_home }}/.config/autostart/
+        - {{ aegis_tetragon_home }}/.config/hypr/
+        - {{ aegis_tetragon_home }}/.ssh/authorized_keys
+        - {{ aegis_tetragon_home }}/.bashrc
+        - {{ aegis_tetragon_home }}/.bash_profile
+        - {{ aegis_tetragon_home }}/.profile
+        - {{ aegis_tetragon_home }}/.zshrc
+      - index: 1
+        operator: Mask
+        values: ["2"]
+      matchActions:
+      - action: Post
+        rateLimit: 1m
+    # System-wide startup, login and privilege files, outside pacman. Host mount
+    # namespace only: a container writing its own /etc has the same paths.
+    - matchNamespaces:
+      - namespace: Mnt
+        operator: In
+        values: ["host_ns"]
+      matchArgs:
+      - index: 0
+        operator: Prefix
+        values:
+        - /etc/systemd/system/
+        - /etc/systemd/user/
+        - /etc/ld.so.preload
+        - /etc/sudoers
+        - /etc/pam.d/
+        - /etc/profile.d/
+        - /etc/xdg/autostart/
+        - /root/.ssh/authorized_keys
+      - index: 1
+        operator: Mask
+        values: ["2"]
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/bin/pacman
+      matchActions:
+      - action: Post
+        rateLimit: 1m

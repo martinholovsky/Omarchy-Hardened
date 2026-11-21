@@ -3,3 +3,5 @@
 # firewall role must keep Omarchy's `ufw limit 22/tcp` rule. The container
 # test covers removing it.
 aegis_firewall_remove_ssh: false
+# D-37 is opt-in; the VM test covers it (run.sh, then tetragon.sh).
+aegis_tetragon_enabled: true

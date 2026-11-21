@@ -1,0 +1,151 @@
+# {{ ansible_managed }}
+# D-37 Aegis policy: credential stores opened by a program that does not own them.
+# ATT&CK: T1552.004 (private keys), T1552.001 (credentials in files),
+#         T1555.003 (browser credential stores), T1539 (session cookies),
+#         T1003.008 (/etc/shadow).
+# Derived from cilium/tetragon v1.8.0 (a5a6678), examples/tracingpolicy/lsm_file_open.yaml
+# and examples/quickstart/file_monitoring.yaml, Apache-2.0, Copyright Authors of
+# Tetragon. Modified by Omarchy-Hardened: kprobe on security_file_open instead of
+# an lsmhook or security_file_permission (one event per open, not per read),
+# Omarchy/Arch paths, per-selector program allowlists, no enforcement action.
+# Monitor only: every selector ends in Post with a rate limit.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: aegis-cred-access
+spec:
+  kprobes:
+  - call: security_file_open
+    syscall: false
+    message: "credential store opened by a program that does not own it"
+    tags: ["T1552.004", "T1552.001", "T1555.003", "T1539", "T1003.008"]
+    args:
+    - index: 0
+      type: file
+    selectors:
+    # SSH and age keys, any user's home (Postfix), outside ssh/age tooling.
+    - matchArgs:
+      - index: 0
+        operator: Postfix
+        values:
+        - /.ssh/id_ed25519
+        - /.ssh/id_ed25519_sk
+        - /.ssh/id_ecdsa
+        - /.ssh/id_ecdsa_sk
+        - /.ssh/id_rsa
+        - /.ssh/id_dsa
+        - /.config/sops/age/keys.txt
+        - /.aws/credentials
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/bin/ssh
+        - /usr/bin/ssh-add
+        - /usr/bin/ssh-agent
+        - /usr/bin/ssh-keygen
+        - /usr/bin/scp
+        - /usr/bin/sftp
+        - /usr/lib/ssh/ssh-sk-helper
+        - /usr/lib/gcr-ssh-agent
+        - /usr/bin/sops
+        - /usr/bin/age
+        - /usr/bin/aws
+      matchActions:
+      - action: Post
+        rateLimit: 1m
+    # The password hashes, outside the programs that authenticate or manage users.
+    # Host mount namespace only: a container's own /etc/shadow has the same path
+    # (VM, 2026-11-21: crun in an aegis-agent container was reported).
+    - matchArgs:
+      - index: 0
+        operator: Prefix
+        values:
+        - /etc/shadow
+        - /etc/gshadow
+      matchNamespaces:
+      - namespace: Mnt
+        operator: In
+        values: ["host_ns"]
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/bin/unix_chkpwd
+        - /usr/bin/sudo
+        - /usr/bin/su
+        - /usr/bin/login
+        - /usr/bin/passwd
+        - /usr/bin/chpasswd
+        - /usr/bin/chage
+        - /usr/bin/useradd
+        - /usr/bin/usermod
+        - /usr/bin/userdel
+        - /usr/bin/groupadd
+        - /usr/bin/groupmod
+        - /usr/bin/gpasswd
+        - /usr/bin/pwck
+        - /usr/bin/grpck
+        - /usr/lib/sddm/sddm-helper
+        - /usr/lib/polkit-1/polkit-agent-helper-1
+        # systemd-userdbd's worker answers user lookups (VM: 170 reads per boot).
+        - /usr/lib/systemd/systemd-userwork
+        - /usr/bin/pacman
+      matchActions:
+      - action: Post
+        rateLimit: 1m
+    # Tokens in the desktop user's home, outside the program each belongs to.
+    - matchArgs:
+      - index: 0
+        operator: Prefix
+        values:
+        - {{ aegis_tetragon_home }}/.gnupg/private-keys-v1.d/
+        - {{ aegis_tetragon_home }}/.password-store/
+        - {{ aegis_tetragon_home }}/.config/gh/hosts.yml
+        - {{ aegis_tetragon_home }}/.docker/config.json
+        - {{ aegis_tetragon_home }}/.kube/config
+        - {{ aegis_tetragon_home }}/.netrc
+        - {{ aegis_tetragon_home }}/.git-credentials
+        - {{ aegis_tetragon_home }}/.local/share/keyrings/
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/bin/gpg
+        - /usr/bin/gpg-agent
+        - /usr/bin/pass
+        - /usr/bin/gh
+        - /usr/bin/docker
+        - /usr/bin/kubectl
+        - /usr/bin/git
+        - /usr/lib/git-core/git
+        - /usr/lib/git-core/git-remote-https
+        - /usr/lib/git-core/git-credential-store
+        - /usr/bin/curl
+        - /usr/bin/gnome-keyring-daemon
+        # plocate's nightly index opens these directories (VM, 2026-11-21).
+        - /usr/bin/updatedb
+      matchActions:
+      - action: Post
+        rateLimit: 1m
+    # Browser profiles (saved passwords, cookies), outside the browsers.
+    - matchArgs:
+      - index: 0
+        operator: Prefix
+        values:
+        - {{ aegis_tetragon_home }}/.config/chromium/
+        - {{ aegis_tetragon_home }}/.config/google-chrome/
+        - {{ aegis_tetragon_home }}/.config/BraveSoftware/
+        - {{ aegis_tetragon_home }}/.mozilla/firefox/
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/lib/chromium/chromium
+        - /usr/bin/chromium
+        - /opt/google/chrome/chrome
+        - /opt/brave-bin/brave
+        - /usr/lib/firefox/firefox
+        # plocate's nightly index opens these directories (VM, 2026-11-21).
+        - /usr/bin/updatedb
+        - /usr/lib/chromium/chrome_crashpad_handler
+        - /opt/google/chrome/chrome_crashpad_handler
+      matchActions:
+      - action: Post
+        rateLimit: 1m
