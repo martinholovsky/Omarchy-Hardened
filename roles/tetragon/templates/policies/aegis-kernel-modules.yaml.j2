@@ -1,0 +1,42 @@
+# {{ ansible_managed }}
+# D-37 Aegis policy: kernel modules loaded from a file or from memory.
+# ATT&CK: T1547.006 (kernel modules), T1014 (rootkit).
+# Derived from cilium/tetragon v1.8.0 (a5a6678), examples/policylibrary/modules.yaml,
+# Apache-2.0, Copyright Authors of Tetragon. Modified by Omarchy-Hardened:
+# auto-load requests dropped (noise), init_module from memory added
+# (security_kernel_load_data, LOADING_MODULE), no return probe. The audit
+# reports modules outside /usr/lib/modules/ as WARN; both kernels decompress
+# modules in the kernel (CONFIG_MODULE_DECOMPRESS=y), so modprobe uses
+# finit_module and the path is known.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: aegis-kernel-modules
+spec:
+  kprobes:
+  - call: security_kernel_read_file
+    syscall: false
+    message: "kernel module loaded from a file"
+    tags: ["T1547.006", "T1014"]
+    args:
+    - index: 0
+      type: file
+    - index: 1
+      type: int
+    selectors:
+    - matchArgs:
+      - index: 1
+        operator: Equal
+        values: ["2"]  # READING_MODULE (include/linux/kernel_read_file.h)
+  - call: security_kernel_load_data
+    syscall: false
+    message: "kernel module loaded from memory (init_module)"
+    tags: ["T1547.006", "T1014", "T1620"]
+    args:
+    - index: 0
+      type: int
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: Equal
+        values: ["2"]  # LOADING_MODULE

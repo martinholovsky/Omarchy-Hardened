@@ -75,6 +75,12 @@
     - role: pacman_integrity
       tags: [supply-chain, pacman, audit, p2]
 
+    # Runtime monitoring (D-37): opt-in, detection only. Last role on purpose:
+    # its audit counts events from this run apart (run window), and the roles
+    # above read and write watched files (pacman_integrity reads /etc/shadow).
+    - role: tetragon
+      tags: [monitoring, tetragon, p1]
+
   post_tasks:
     - name: Report audit findings
       ansible.builtin.import_role:

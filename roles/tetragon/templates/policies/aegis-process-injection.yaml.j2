@@ -1,0 +1,58 @@
+# {{ ansible_managed }}
+# D-37 Aegis policy: one process attaching to or writing into another.
+# ATT&CK: T1055.008 (ptrace), T1055 (process injection).
+# Derived from cilium/tetragon v1.8.0 (a5a6678), examples/tracingpolicy/sys_ptrace.yaml,
+# Apache-2.0, Copyright Authors of Tetragon. Modified by Omarchy-Hardened:
+# only the requests that attach or write (PTRACE_ATTACH, PTRACE_SEIZE,
+# PTRACE_POKETEXT, PTRACE_POKEDATA), process_vm_writev added, debuggers
+# allowlisted, no enforcement. Syscall kprobes are fine here: Override is not
+# used (neither kernel has CONFIG_BPF_KPROBE_OVERRIDE). yama.ptrace_scope
+# (sysctl role) still refuses most attaches; this records the attempt.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: aegis-process-injection
+spec:
+  kprobes:
+  - call: sys_ptrace
+    syscall: true
+    message: "ptrace attach or memory write"
+    tags: ["T1055.008"]
+    args:
+    - index: 0
+      type: int  # request
+    - index: 1
+      type: int  # pid
+    selectors:
+    - matchArgs:
+      - index: 0
+        operator: Equal
+        values: ["16", "16902", "4", "5"]  # ATTACH, SEIZE (0x4206), POKETEXT, POKEDATA
+      matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/bin/gdb
+        - /usr/bin/strace
+        - /usr/bin/ltrace
+        - /usr/bin/lldb
+      matchActions:
+      - action: Post
+        rateLimit: 1m
+  - call: sys_process_vm_writev
+    syscall: true
+    message: "write into another process's memory"
+    tags: ["T1055"]
+    args:
+    - index: 0
+      type: int  # pid
+    selectors:
+    - matchBinaries:
+      - operator: NotIn
+        values:
+        - /usr/bin/gdb
+        - /usr/bin/strace
+        - /usr/bin/ltrace
+        - /usr/bin/lldb
+      matchActions:
+      - action: Post
+        rateLimit: 1m

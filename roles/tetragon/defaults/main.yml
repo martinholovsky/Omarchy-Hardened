@@ -1,0 +1,77 @@
+---
+# D-37 (decided 2026-11-20): Tetragon runtime monitoring, opt-in, detection
+# only. No policy here carries an enforcement action (Sigkill, Override,
+# Signal); roles/tetragon/files/policies/README.md says where each one comes
+# from and what it watches.
+aegis_tetragon_enabled: false
+
+# Tetragon v1.8.0 (released 2026-10-30; upstream publishes minor releases
+# about every six months and no end-of-life dates, see
+# tetragon.io/docs/contribution-guide/release-cadence/). Installed from the
+# layers of the release image, not from the release tarball: the image index
+# quay.io/cilium/tetragon@sha256:5ed9088a… was verified with cosign on
+# 2026-11-20 (keyless, issuer token.actions.githubusercontent.com, workflow
+# cilium/tetragon/.github/workflows/build-images-releases.yml at refs/tags/v1.8.0,
+# commit a5a667837d4b). The tarball only has a same-origin SHA-256, and one of
+# its 95 BPF objects (bpf_generic_kprobe_v61.o) differs from the signed
+# image's in 46 bytes, so it is not used. Layers are content-addressed: the
+# digest below is the SHA-256 that get_url checks.
+aegis_tetragon_version: v1.8.0
+aegis_tetragon_registry: https://quay.io/v2/cilium/tetragon/blobs
+aegis_tetragon_layers:
+  amd64:
+    tetragon: cafcacc7b7c8b27114f79b3ac4b7db5209fbf53adc1bdd8a1896bc3f8e0270ac
+    tetra: 6fe3de8c0e516396f6b483b8919157a6f7887e840ddac35323ed8c28cdef28bf
+    bpf: 3762069e39866054873f43bc5a277deca637e3cad26997c8ffac7ec6f8c7a721
+  arm64:
+    tetragon: 98a992a96ddeabf25b428eafdd239e97e13152d07beee822ff7eaefa93428247
+    tetra: a4dd59ab4695065f4ea31a46c96a20ce24a4d221451647353dc1a83e70c3eb91
+    bpf: 8e272ab9be880ea4cf0aa58fc7ea6a2b24099e18afa5204fbfdf791a063a99af
+# Each layer holds exactly these members (listed 2026-11-20).
+aegis_tetragon_layer_members:
+  tetragon: [usr/bin/tetragon]
+  tetra: [usr/bin/tetra]
+  bpf: [var/lib/tetragon/]
+
+aegis_tetragon_bpf_objects: 95  # in the v1.8.0 bpf layer, both architectures
+
+# Policies (templates/policies/*.yaml.j2): adapted from upstream examples,
+# monitor only. See templates/policies/README.md for sources and ATT&CK ids.
+aegis_tetragon_policies:
+  - aegis-cred-access
+  - aegis-persistence
+  - aegis-kernel-modules
+  - aegis-bpf-load
+  - aegis-process-injection
+  - aegis-exec-writable
+# The user whose home the credential and persistence policies watch.
+aegis_tetragon_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"
+
+aegis_tetragon_root: /usr/local/lib/aegis/tetragon
+aegis_tetragon_config_dir: /etc/tetragon/tetragon.conf.d
+aegis_tetragon_policy_dir: /etc/tetragon/tetragon.tp.d
+aegis_tetragon_socket: /run/tetragon/tetragon.sock
+
+# JSON export. Only policy events are written: process_exec/exit events for
+# every program on the desktop would hold every command line typed and fill
+# the log; set aegis_tetragon_export_exec: true to add them.
+aegis_tetragon_export_file: /var/log/tetragon/tetragon.log
+aegis_tetragon_export_max_mb: 10
+aegis_tetragon_export_backups: 5
+aegis_tetragon_export_exec: false
+# Redacted from the command lines in exported events (RE2; capture groups are
+# replaced with *****). Command lines still reach the root-only gRPC socket.
+aegis_tetragon_redaction:
+  - '(?i)--?(?:password|passwd|pass|pwd|token|secret|api[-_]?key|access[-_]?key|auth|credentials?)(?:\s+|=)(\S+)'
+  - '(?i)authorization:\s*(?:bearer|basic|token)\s+(\S+)'
+  - '://[^/\s:@]+:([^@\s]+)@'
+  - '(?i)\b(?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY))=(\S+)'
+
+# Audit: events in the last N days are summarised per policy. A policy hit by
+# a binary matching one of its globs here is counted but not warned about.
+aegis_tetragon_window_days: 7
+aegis_tetragon_known: {}
+# Start and end of each playbook run (last 200), so the audit can tell this
+# playbook's own reads and writes from anyone else's.
+aegis_tetragon_runs_file: /var/lib/aegis/tetragon-runs.json
+#   aegis-cred-files: ['/usr/bin/ssh', '/usr/bin/ssh-add']
