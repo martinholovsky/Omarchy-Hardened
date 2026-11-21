@@ -1,0 +1,35 @@
+# {{ ansible_managed }}
+# D-37 Aegis policy: BPF programs loaded by a program that normally does not.
+# ATT&CK: T1014 (eBPF rootkits), T1562.001 (impair defenses).
+# Derived from cilium/tetragon v1.8.0 (a5a6678), examples/policylibrary/bpf.yaml,
+# Apache-2.0, Copyright Authors of Tetragon. Modified by Omarchy-Hardened:
+# only the bpf_check hook, with an allowlist of the programs that load BPF on
+# Omarchy (systemd, Tetragon, OpenSnitch, container runtimes); no enforcement.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: aegis-bpf-load
+spec:
+  kprobes:
+  - call: bpf_check
+    syscall: false
+    message: "BPF program loaded"
+    tags: ["T1014", "T1562.001"]
+    args:
+    - index: 1
+      type: bpf_attr
+    selectors:
+    - matchBinaries:
+      - operator: NotIn
+        values:
+        - {{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/usr/bin/tetragon
+        - /usr/lib/systemd/systemd
+        - /usr/lib/systemd/systemd-executor
+        - /usr/bin/opensnitchd
+        - /usr/bin/dockerd
+        - /usr/bin/runc
+        - /usr/bin/crun
+        - /usr/bin/conmon
+      matchActions:
+      - action: Post
+        rateLimit: 1m

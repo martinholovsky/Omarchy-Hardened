@@ -50,8 +50,9 @@ listed section title means updating `SHARD_STARTS`; `run.sh` fails if one
 is missing.
 
 Roles that change the boot, install packages or need systemd (kernel,
-apparmor, opensnitch, agent_containment, drift_check) are tested only in the
-VM. Run `tests/vm/run.sh` from the `pre-aegis-updated` snapshot (see
+apparmor, opensnitch, agent_containment, drift_check, tetragon) are tested
+only in the VM; `tests/vm/tetragon.sh` checks each Tetragon policy against
+its technique. Run `tests/vm/run.sh` from the `pre-aegis-updated` snapshot (see
 `tests/vm/README.md`), and do not edit `roles/` while it runs: the D-11 copy
 would change between runs and fail the idempotence check.
 

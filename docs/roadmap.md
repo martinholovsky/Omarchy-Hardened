@@ -12,6 +12,9 @@ This backlog merges four research reviews:
 - [research/snowflakeos-review.md](research/snowflakeos-review.md):
   SnowflakeOS (NixOS-based) at `snowflakeos-modules@0a5e0a3`. It has almost no
   hardening of its own; it contributes five audit checks (18k–18o).
+- [research/ebpf-netns-review.md](research/ebpf-netns-review.md): eight
+  eBPF, sandboxing and network-isolation proposals, checked against Omarchy
+  `v4.5.0` (2026-11-20). It contributes #27–#30.
 
 All were checked against Omarchy at `dde0d12`. Tier 0, Tier 1 and the
 SnowflakeOS checks (18k–18o) are implemented, and so are #12 and #18 (through
@@ -123,6 +126,19 @@ not `none`.
 | 25 | `ptrace_scope=2`, `io_uring_disabled`, `mitigations=auto,nosmt` as opt-ins | owner |
 | 26 | Login policy: pam_umask, `HOME_MODE 0700`, lock root, mask ctrl-alt-del, `TMOUT` on TTY/SSH only | owner |
 
+### Added from the eBPF/sandboxing review (2026-11-20)
+
+See [research/ebpf-netns-review.md](research/ebpf-netns-review.md). If #27 is
+adopted, #19 must stay `integrity`: `lockdown=confidentiality` blocks kprobes,
+BPF kernel reads and tracefs, which Tetragon and bpftrace need.
+
+| # | Item | Waits on |
+|---|---|---|
+| 27 | **Implemented (D-37, 2026-11-20).** Tetragon, opt-in, detection first: exec and secret-file-read policies on `security_*`/LSM hooks (syscall Override does not load on either kernel), argv redaction, findings into the audit; upstream tarball or cosign-signed image, **never** AUR `tetragon-bin` | new decision (D-37), VM test |
+| 28 | Audit: `bpf` is in `/sys/kernel/security/lsm` (an `lsm=` edit can drop it silently) | owner (audit only) |
+| 29 | Audit: listening-socket inventory, WARN on non-loopback listeners outside an allowlist, INFO on loopback (OpenClaw, Ollama) | owner (audit only) |
+| 30 | Document `aegis-agent --egress enforce -- COMMAND` for untrusted repositories and toolchains | none (docs) |
+
 ## Do not adopt (breaks Omarchy)
 
 These were confirmed against Omarchy's source:
@@ -154,6 +170,14 @@ These were confirmed against Omarchy's source:
   - `git core.symlinks=false`
   - a passwordless rescue shell before the Limine editor is locked
   - `accept_ra=0` (probably a no-op under NetworkManager)
+- From the eBPF/sandboxing review (2026-11-20):
+  - custom BPF-LSM programs (use Tetragon `lsmHooks` or systemd instead)
+  - a hand-written nftables ruleset replacing ufw (ufw already runs on nftables)
+  - XDP early drop (no exposed inbound service)
+  - `ip netns` per-application wrappers (`aegis-agent` is the boundary)
+  - socket activation as an attack-surface control (#29 instead)
+  - bpftrace as a default package
+  - the AUR `tetragon-bin` package (a 2022 CLI, not the daemon)
 - Kicksecure no-ops on Arch. They would read as controls and change nothing:
   - `cfi=kcfi` (GCC-built kernel)
   - `kfence.sample_interval=100` and `efi_pstore.pstore_disable=1` (already the default)

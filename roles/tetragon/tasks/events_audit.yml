@@ -1,0 +1,139 @@
+---
+# D-37: turn Tetragon's policy events into audit findings. Split out so
+# tests/container can run it against a planted export log (no systemd there:
+# aegis_tetragon_check_service: false).
+- name: Read whether Tetragon is running
+  ansible.builtin.command:
+    argv: [systemctl, is-active, tetragon.service]
+  register: aegis_tetragon_active
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: aegis_tetragon_check_service | default(true) | bool
+
+- name: Ask Tetragon which policies it loaded
+  ansible.builtin.command:
+    argv: [/usr/local/bin/tetra, --server-address, "unix://{{ aegis_tetragon_socket }}",
+           tracingpolicy, list, --output, json]
+  register: aegis_tetragon_tplist
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when:
+    - aegis_tetragon_check_service | default(true) | bool
+    - (aegis_tetragon_active.stdout | default('')) == 'active'
+
+- name: Read when earlier playbook runs happened
+  ansible.builtin.slurp:
+    src: "{{ aegis_tetragon_runs_file }}"
+  register: aegis_tetragon_runs_raw
+  failed_when: false
+
+- name: Summarise the policy events
+  aegis_tetragon_audit:
+    export_file: "{{ aegis_tetragon_export_file }}"
+    window_days: "{{ aegis_tetragon_window_days }}"
+    known: "{{ aegis_tetragon_known }}"
+    # Not warned about, but counted: anything during this run, and this
+    # playbook's own Ansible modules (AnsiballZ_*.py) during an earlier run.
+    # The VM's first audit listed python3 reading /etc/shadow (the 18o check).
+    run_started: "{{ aegis_tetragon_run_started | default(0) | float }}"
+    past_runs: "{{ aegis_tetragon_past_runs }}"
+  vars:
+    aegis_tetragon_past_runs: >-
+      {{ ((aegis_tetragon_runs_raw.content | default('W10=') | b64decode | from_json)
+          if aegis_tetragon_runs_raw.content is defined else []) }}
+  register: aegis_tetragon_events
+
+- name: Find the audit directory
+  ansible.builtin.stat:
+    path: "{{ aegis_tetragon_runs_file | dirname }}"
+  register: aegis_tetragon_runs_dir
+
+- name: Read the host's clock for the end of this run's window
+  # The host's, as the events' timestamps are. Not now(utc=true).timestamp():
+  # that is a naive UTC datetime read as local time, an hour early in CET
+  # (VM, 2026-11-21: every recorded window ended before it started).
+  ansible.builtin.command:
+    argv: [date, +%s]
+  register: aegis_tetragon_now
+  changed_when: false
+  check_mode: false
+  when: (aegis_tetragon_run_started | default(0) | float) > 0
+
+- name: Record this run's time window (bookkeeping, not a change to the system)
+  ansible.builtin.copy:
+    dest: "{{ aegis_tetragon_runs_file }}"
+    content: >-
+      {{ (((aegis_tetragon_runs_raw.content | default('W10=') | b64decode | from_json)
+           if aegis_tetragon_runs_raw.content is defined else [])
+          + [[aegis_tetragon_run_started | float, aegis_tetragon_now.stdout | float]])[-200:] | to_json }}
+    owner: root
+    group: root
+    mode: "0600"
+  # Written in --check too, so the drift check's own reads are recognised.
+  check_mode: false
+  changed_when: false
+  when:
+    - (aegis_tetragon_run_started | default(0) | float) > 0
+    - aegis_tetragon_runs_dir.stat.isdir | default(false)
+
+- name: Record the Tetragon findings
+  vars:
+    aegis_running: >-
+      {{ not (aegis_tetragon_check_service | default(true) | bool)
+         or (aegis_tetragon_active.stdout | default('')) == 'active' }}
+    aegis_tp: "{{ (aegis_tetragon_tplist.stdout | default('{}') | from_json).policies | default([])
+                  if (aegis_tetragon_tplist.rc | default(1)) == 0 else [] }}"
+    aegis_tp_ok: "{{ aegis_tp | selectattr('state', 'equalto', 'TP_STATE_ENABLED') | map(attribute='name') | list }}"
+    aegis_tp_bad: "{{ aegis_tetragon_policies | difference(aegis_tp_ok) }}"
+    aegis_policies: "{{ aegis_tetragon_events.policies | default({}) }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {%- set out = [] -%}
+      {%- if not aegis_running | bool -%}
+        {%- set _ = out.append({'id': 'tetragon.service', 'status': 'WARN',
+              'detail': 'tetragon.service is ' ~ (aegis_tetragon_active.stdout | default('unknown'))
+                        ~ ', so nothing is being monitored (D-37); see journalctl -u tetragon'}) -%}
+      {%- elif aegis_tetragon_check_service | default(true) | bool -%}
+        {%- set _ = out.append({'id': 'tetragon.service', 'status': 'PASS',
+              'detail': 'tetragon.service is active'}) -%}
+        {%- set _ = out.append({'id': 'tetragon.policies',
+              'status': 'WARN' if aegis_tp_bad else 'PASS',
+              'detail': ('not loaded: ' ~ (aegis_tp | selectattr('name', 'in', aegis_tp_bad)
+                          | map(attribute='name') | zip(aegis_tp | selectattr('name', 'in', aegis_tp_bad)
+                          | map(attribute='state')) | map('join', ' ') | join('; ') or (aegis_tp_bad | join(', ')))
+                          ~ ' (tetra tracingpolicy list; journalctl -u tetragon for the reason)'
+                         if aegis_tp_bad else (aegis_tp_ok | length | string) ~ ' policies loaded and enabled')}) -%}
+      {%- endif -%}
+      {%- if aegis_tetragon_events.error | default('') -%}
+        {%- set _ = out.append({'id': 'tetragon.events', 'status': 'WARN', 'detail': aegis_tetragon_events.error}) -%}
+      {%- elif not aegis_tetragon_events.present | default(false) -%}
+        {%- set _ = out.append({'id': 'tetragon.events', 'status': 'INFO',
+              'detail': 'no export log yet at ' ~ aegis_tetragon_export_file}) -%}
+      {%- else -%}
+        {%- for name in aegis_tetragon_policies -%}
+          {%- set p = aegis_policies[name] | default({'events': 0, 'warn': 0, 'known': 0, 'during_run': 0,
+                                                     'expected': 0, 'distinct': 0, 'rows': []}) -%}
+          {%- set rows = p.rows | map(attribute='binary')
+                         | zip(p.rows | map(attribute='target'), p.rows | map(attribute='count'))
+                         | map('join', ' | ') | join('; ') -%}
+          {%- set _ = out.append({'id': 'tetragon.' ~ (name | regex_replace('^aegis-', '') | replace('-', '_')),
+                'status': 'WARN' if p.warn > 0 else 'PASS',
+                'detail': ((p.warn | string) ~ ' event(s) in ' ~ (p.distinct | string)
+                           ~ ' program/object pair(s) in the last ' ~ (aegis_tetragon_window_days | string)
+                           ~ ' days (program | object | count): ' ~ rows
+                           ~ '. If one is expected, add the program to aegis_tetragon_known["' ~ name ~ '"]'
+                           if p.warn > 0
+                           else 'no unexpected events in the last ' ~ (aegis_tetragon_window_days | string) ~ ' days')
+                          ~ ' (' ~ (p.known | string) ~ ' from known programs, ' ~ (p.expected | string)
+                          ~ ' expected, ' ~ (p.during_run | string) ~ ' during this run)'}) -%}
+        {%- endfor -%}
+        {%- if aegis_tetragon_events.truncated or aegis_tetragon_events.parse_errors -%}
+          {%- set _ = out.append({'id': 'tetragon.events', 'status': 'WARN',
+                'detail': 'export log only partly read: ' ~ (aegis_tetragon_events.parse_errors | string)
+                          ~ ' unreadable line(s)'
+                          ~ (', stopped at the size cap' if aegis_tetragon_events.truncated else '')}) -%}
+        {%- endif -%}
+      {%- endif -%}
+      {{ (aegis_findings | default([])) + out }}

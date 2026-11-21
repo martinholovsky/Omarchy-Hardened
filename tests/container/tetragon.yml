@@ -1,0 +1,31 @@
+---
+# Container test for D-37: the Tetragon install (signed image layers,
+# digests, extraction, settings, policies) and the event audit on a planted
+# export log. No systemd here, so Tetragon is not started; the VM test runs
+# it. Driven by inside.sh.
+- name: Install Tetragon's files, or audit a planted export log
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  vars:
+    aegis_tetragon_enabled: true
+    aegis_tetragon_check_service: false
+    aegis_tetragon_manage_service: false
+  tasks:
+    - name: Run the Tetragon install
+      ansible.builtin.include_role:
+        name: tetragon
+        tasks_from: install.yml
+      when: not (audit_only | default(false) | bool)
+
+    - name: Run the event audit
+      ansible.builtin.include_role:
+        name: tetragon
+        tasks_from: events_audit.yml
+      when: audit_only | default(false) | bool
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report
+      when: audit_only | default(false) | bool

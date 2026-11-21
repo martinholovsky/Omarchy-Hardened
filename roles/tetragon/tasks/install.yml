@@ -1,0 +1,174 @@
+---
+# D-37: install Tetragon from the signed release image's layers (see
+# defaults). Split out so tests/container can run it without systemd.
+- name: Map the CPU architecture to the image platform
+  ansible.builtin.set_fact:
+    aegis_tetragon_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_facts['architecture'], '') }}"
+
+- name: Refuse an architecture the release image does not cover
+  ansible.builtin.assert:
+    that: aegis_tetragon_arch in aegis_tetragon_layers
+    fail_msg: >-
+      Tetragon {{ aegis_tetragon_version }} is pinned for amd64 and arm64 only, not
+      {{ ansible_facts['architecture'] }}; set aegis_tetragon_enabled: false
+    quiet: true
+
+- name: Create the Tetragon directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /var/cache/aegis/tetragon, mode: "0755"}
+    - {path: "{{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}", mode: "0755"}
+    - {path: /etc/tetragon, mode: "0755"}
+    - {path: "{{ aegis_tetragon_config_dir }}", mode: "0755"}
+    - {path: "{{ aegis_tetragon_policy_dir }}", mode: "0755"}
+
+- name: Download the image layers (checked against their pinned digests)
+  ansible.builtin.get_url:
+    url: "{{ aegis_tetragon_registry }}/sha256:{{ aegis_tetragon_layers[aegis_tetragon_arch][item] }}"
+    dest: "/var/cache/aegis/tetragon/{{ aegis_tetragon_layers[aegis_tetragon_arch][item] }}.tar.gz"
+    checksum: "sha256:{{ aegis_tetragon_layers[aegis_tetragon_arch][item] }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [tetragon, tetra, bpf]
+
+- name: Extract only Tetragon's files from each layer
+  ansible.builtin.unarchive:
+    src: "/var/cache/aegis/tetragon/{{ aegis_tetragon_layers[aegis_tetragon_arch][item] }}.tar.gz"
+    dest: "{{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}"
+    remote_src: true
+    include: "{{ aegis_tetragon_layer_members[item] }}"
+    # As for the agent proxy (agent_containment/tasks/proxy.yml): root's files,
+    # and owner/group so unarchive's changed-check expects root.
+    owner: root
+    group: root
+    extra_opts: [--no-same-owner]
+  loop: [tetragon, tetra, bpf]
+  when: not ansible_check_mode
+
+- name: Link the tetra CLI into PATH
+  ansible.builtin.file:
+    src: "{{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/usr/bin/tetra"
+    dest: /usr/local/bin/tetra
+    state: link
+    force: true
+    owner: root
+    group: root
+  when: not ansible_check_mode
+
+- name: Write the daemon settings (one drop-in per flag)
+  ansible.builtin.copy:
+    dest: "{{ aegis_tetragon_config_dir }}/{{ item.key }}"
+    content: "{{ item.value }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ aegis_tetragon_settings | dict2items }}"
+  vars:
+    aegis_tetragon_settings:
+      bpf-lib: "{{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/var/lib/tetragon/"
+      tracing-policy-dir: "{{ aegis_tetragon_policy_dir }}"
+      # gRPC only on a root-only unix socket (Tetragon creates it 0660 root);
+      # the default is localhost:54321.
+      server-address: "unix://{{ aegis_tetragon_socket }}"
+      # The default health server listens on :6789, every interface.
+      health-server-address: ""
+      metrics-server: ""
+      gops-address: ""
+      log-format: text
+      log-level: info
+      export-filename: "{{ aegis_tetragon_export_file }}"
+      export-file-max-size-mb: "{{ aegis_tetragon_export_max_mb }}"
+      export-file-max-backups: "{{ aegis_tetragon_export_backups }}"
+      export-file-compress: "false"
+      export-file-perm: "600"
+      export-allowlist: >-
+        {{ {'event_set': ['PROCESS_KPROBE', 'PROCESS_TRACEPOINT', 'PROCESS_LSM', 'PROCESS_UPROBE']
+            + (['PROCESS_EXEC', 'PROCESS_EXIT'] if aegis_tetragon_export_exec | bool else [])} | to_json }}
+      redaction-filters: "{{ {'redact': aegis_tetragon_redaction} | to_json }}"
+      enable-process-environment-variables: "false"
+  notify: Restart tetragon
+
+- name: Find the desktop user's home
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ aegis_tetragon_user }}"
+
+- name: Remember the home the policies watch
+  ansible.builtin.set_fact:
+    aegis_tetragon_home: "{{ ansible_facts['getent_passwd'][aegis_tetragon_user][4] }}"
+
+- name: Install the policies
+  ansible.builtin.template:
+    src: "policies/{{ item }}.yaml.j2"
+    dest: "{{ aegis_tetragon_policy_dir }}/{{ item }}.yaml"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ aegis_tetragon_policies }}"
+  notify: Restart tetragon
+
+- name: Find policy files this role did not install
+  ansible.builtin.find:
+    paths: "{{ aegis_tetragon_policy_dir }}"
+    patterns: ["aegis-*.yaml"]
+  register: aegis_tetragon_policy_files
+
+- name: Remove aegis policies that are no longer in the list
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ aegis_tetragon_policy_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: (item.path | basename | regex_replace('[.]yaml$', '')) not in aegis_tetragon_policies
+  notify: Restart tetragon
+
+- name: Read the installed binaries back
+  ansible.builtin.stat:
+    path: "{{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/{{ item }}"
+    checksum_algorithm: sha256
+  register: aegis_tetragon_bins
+  loop: [usr/bin/tetragon, usr/bin/tetra]
+  when: not ansible_check_mode
+
+- name: Count the BPF objects
+  ansible.builtin.find:
+    paths: "{{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/var/lib/tetragon"
+    patterns: ["*.o"]
+  register: aegis_tetragon_objs
+  when: not ansible_check_mode
+
+- name: Read the installed policies back
+  ansible.builtin.slurp:
+    src: "{{ aegis_tetragon_policy_dir }}/{{ item }}.yaml"
+  register: aegis_tetragon_policy_read
+  loop: "{{ aegis_tetragon_policies }}"
+  when: not ansible_check_mode
+
+- name: Verify the binaries, the BPF objects and that every policy only observes
+  vars:
+    aegis_policy_text: >-
+      {{ aegis_tetragon_policy_read.results | map(attribute='content') | map('b64decode') | join('\n') }}
+    aegis_policy_names: "{{ aegis_policy_text | regex_findall('(?m)^  name: (aegis-[a-z-]+)$') | sort }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_tetragon_bins.results | map(attribute='stat.exists') | min
+      - aegis_tetragon_bins.results | map(attribute='stat.executable') | min
+      - aegis_tetragon_bins.results | map(attribute='stat.pw_name') | unique == ['root']
+      - aegis_tetragon_objs.matched == aegis_tetragon_bpf_objects
+      # D-37 is detection only: no action other than Post.
+      # No backslashes: Jinja unescapes string literals ('\b' became a backspace).
+      - "(aegis_policy_text | regex_findall('action: *([A-Za-z]+)') | unique) == ['Post']"
+      - aegis_policy_names == (aegis_tetragon_policies | sort)
+    fail_msg: >-
+      Tetragon's files under {{ aegis_tetragon_root }} are not as installed
+      ({{ aegis_tetragon_objs.matched | default('?') }} BPF objects, want {{ aegis_tetragon_bpf_objects }}),
+      or a policy has an action other than Post, or a policy's name does not match its file
+    quiet: true
+  when: not ansible_check_mode

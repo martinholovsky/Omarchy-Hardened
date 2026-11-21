@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=79
+checks_total=82
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -805,6 +805,98 @@ expect_finding agent.egress INFO
 grep -q 'outside the allowlist: example.org' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "unlisted host not reported"; }
 grep -q 'refused in enforce mode: example.org' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "enforce refusal not reported"; }
 pass "the audit lists example.org as outside the allowlist and refused in enforce mode"
+
+echo "--- D-37: Tetragon installs from the signed image layers and its audit reports planted events"
+ansible-playbook tests/container/tetragon.yml >/tmp/tetragon-install.log 2>&1 \
+  || { cat /tmp/tetragon-install.log; fail "Tetragon install failed"; }
+tg_root=/usr/local/lib/aegis/tetragon/v1.8.0
+[[ -x $tg_root/usr/bin/tetragon && -x $tg_root/usr/bin/tetra && $(stat -c %U "$tg_root/usr/bin/tetragon") == root ]] \
+  || fail "tetragon binaries not installed root-owned and executable"
+[[ $(find "$tg_root/var/lib/tetragon" -name '*.o' | wc -l) -eq 95 ]] || fail "not all 95 BPF objects extracted"
+[[ $(cat /etc/tetragon/tetragon.conf.d/health-server-address) == '' && \
+   $(cat /etc/tetragon/tetragon.conf.d/server-address) == unix:///run/tetragon/tetragon.sock ]] \
+  || fail "a Tetragon listener is configured"
+if ! grep -q PROCESS_KPROBE /etc/tetragon/tetragon.conf.d/export-allowlist \
+  || grep -q PROCESS_EXEC /etc/tetragon/tetragon.conf.d/export-allowlist; then
+  fail "export allowlist does not limit the log to policy events"
+fi
+[[ $(find /etc/tetragon/tetragon.tp.d -name 'aegis-*.yaml' | wc -l) -eq 6 ]] || fail "not all six policies installed"
+! grep -hE 'action: *(Sigkill|Override|Signal|NotifyEnforcer)' /etc/tetragon/tetragon.tp.d/*.yaml \
+  || fail "a policy carries an enforcement action"
+grep -q '/root/.config/hypr/' /etc/tetragon/tetragon.tp.d/aegis-persistence.yaml || fail "persistence policy does not watch the user's home"
+# Tetragon exits at start if any policy fails to unmarshal (VM, 2026-11-21:
+# an unquoted "/memfd:" parsed as a mapping stopped all monitoring).
+python3 -I - /etc/tetragon/tetragon.tp.d/aegis-*.yaml <<'PY' || fail "a policy selector value is not a string"
+import sys, yaml
+def walk(n, bad):
+    if isinstance(n, dict):
+        for k, v in n.items():
+            if k == "values" and isinstance(v, list):
+                bad += [x for x in v if not isinstance(x, str)]
+            walk(v, bad)
+    elif isinstance(n, list):
+        for x in n: walk(x, bad)
+bad = []
+for path in sys.argv[1:]:
+    doc = yaml.safe_load(open(path, encoding="utf-8"))
+    assert doc["kind"] == "TracingPolicy", path
+    walk(doc, bad)
+assert not bad, bad
+PY
+pass "installed from the digest-checked layers: 2 binaries, 95 BPF objects, no listener, 6 monitor-only policies"
+ansible-playbook tests/container/tetragon.yml >/tmp/tetragon-install2.log 2>&1 \
+  || { cat /tmp/tetragon-install2.log; fail "second Tetragon install failed"; }
+grep -q 'changed=0' /tmp/tetragon-install2.log || { cat /tmp/tetragon-install2.log; fail "second Tetragon install changed something"; }
+pass "a second install changes nothing"
+# Planted export log in Tetragon v1.8.0's JSON shape: one unknown program
+# reading an SSH key, one known go test binary in /tmp, an in-tree and an
+# out-of-tree module, an event older than the window, and a bad line.
+mkdir -p /tmp/tg && python3 -I - /tmp/tg/tetragon.log <<'PY'
+import json, sys, time
+now = time.time()
+def ev(policy, binary, args, age):
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - age)) + ".5Z"
+    return json.dumps({"process_kprobe": {"policy_name": policy,
+        "process": {"binary": binary, "arguments": "--token SECRET-ARG"},
+        "parent": {"binary": "/usr/bin/bash"}, "args": args}, "node_name": "t", "time": stamp})
+rows = [
+    ev("aegis-cred-access", "/opt/stealer/x", [{"file_arg": {"path": "/root/.ssh/id_ed25519"}}], 600),
+    ev("aegis-exec-writable", "/tmp/go-build1/b.test", [{"linux_binprm_arg": {"path": "/tmp/go-build1/b.test"}}], 600),
+    ev("aegis-kernel-modules", "/usr/bin/kmod", [{"file_arg": {"path": "/usr/lib/modules/7.2.15/kernel/fs/x.ko.zst"}}, {"int_arg": 2}], 600),
+    ev("aegis-kernel-modules", "/usr/bin/kmod", [{"file_arg": {"path": "/tmp/rootkit.ko"}}, {"int_arg": 2}], 600),
+    ev("aegis-bpf-load", "/opt/old/x", [{"bpf_attr_arg": {"ProgType": "BPF_PROG_TYPE_KPROBE", "ProgName": "old"}}], 30 * 86400),
+    "{broken",
+]
+# This playbook's own module inside an earlier run's window is not reported;
+# the same module outside any window, and a non-module inside one, are.
+def mod(path, age, args="/root/.ansible/tmp/ansible-tmp-1/AnsiballZ_copy.py"):
+    row = json.loads(ev("aegis-persistence", "/usr/bin/python3", [{"file_arg": {"path": path}}, {"int_arg": 2}], age))
+    row["process_kprobe"]["process"]["arguments"] = args
+    return json.dumps(row)
+rows[:0] = [mod("/etc/pam.d/su", 3000), mod("/etc/pam.d/sudo", 9000), mod("/etc/pam.d/login", 3000, "-c evil")]
+open(sys.argv[1], "w", encoding="utf-8").write("\n".join(rows) + "\n")
+json.dump([[now - 3600, now - 1800]], open("/tmp/tg/runs.json", "w"))
+PY
+ansible-playbook tests/container/tetragon.yml -e audit_only=true -e aegis_tetragon_export_file=/tmp/tg/tetragon.log \
+  -e aegis_tetragon_runs_file=/tmp/tg/runs.json \
+  -e '{"aegis_tetragon_known": {"aegis-exec-writable": ["/tmp/go-build*"]}}' >/tmp/tetragon-audit.log 2>&1 \
+  || { cat /tmp/tetragon-audit.log; fail "Tetragon audit run failed"; }
+expect_finding tetragon.cred_access WARN
+grep -q '/opt/stealer/x | /root/.ssh/id_ed25519 | 1' /var/lib/aegis/audit.jsonl || { cat /var/lib/aegis/audit.jsonl; fail "key reader not named"; }
+! grep -q 'SECRET-ARG' /var/lib/aegis/audit.jsonl || fail "a command line reached the audit file"
+expect_finding tetragon.exec_writable PASS
+expect_finding tetragon.kernel_modules WARN
+if ! grep -q '/tmp/rootkit.ko' /var/lib/aegis/audit.jsonl || grep -q 'x.ko.zst' /var/lib/aegis/audit.jsonl; then
+  cat /var/lib/aegis/audit.jsonl; fail "module findings wrong: want the out-of-tree module only"
+fi
+expect_finding tetragon.bpf_load PASS
+expect_finding tetragon.events WARN
+expect_finding tetragon.persistence WARN
+if grep -q '/etc/pam.d/su |' /var/lib/aegis/audit.jsonl || ! grep -q '/etc/pam.d/sudo |' /var/lib/aegis/audit.jsonl \
+  || ! grep -q '/etc/pam.d/login |' /var/lib/aegis/audit.jsonl; then
+  cat /var/lib/aegis/audit.jsonl; fail "run-window filter wrong: want sudo and login reported, su not"
+fi
+pass "the audit names the key reader and the out-of-tree module, skips known, in-tree, old and own-run events, and keeps no command line"
 
 echo "--- D-02: the kernel role accepts either default, but needs the linux-hardened entry"
 # Synthetic menus: the role reads only the kernel-id= words, in order.

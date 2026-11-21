@@ -160,6 +160,12 @@ drift), **agent container → host and network** (Podman, proxy), and
 |---|---|---|---|---|
 | `pacman_integrity`: autologin on an unencrypted root, `/tmp` mount options, fwupd | A6 boots the stolen laptop straight into the session; firmware left unpatched | reports | Everything else about physical access: LUKS is Omarchy's, unchanged; no Secure Boot or TPM work in this release | Container: autologin without disk encryption warns; tmpfs with nosuid,nodev passes, a disk directory warns |
 
+### 3.9 On the host: what ran and what it touched (A2, A3)
+
+| Control | Threat it addresses | Status | Does not stop | Evidence |
+|---|---|---|---|---|
+| `tetragon` (D-37, opt-in): six monitor-only Tetragon policies, events summarised by the audit | A2 malware or a misbehaving agent on the host steals credentials (T1552.004, T1552.001, T1555.003, T1539, T1003.008), installs persistence (T1543.002, T1546.004, T1547.013, T1098.004, T1574.006, T1548.003, T1556.003), runs from `/tmp` or memory (T1204.002, T1620), loads kernel modules or BPF (T1547.006, T1014), or injects into another process (T1055.008) | reports (`tetragon.*` WARN); never blocks | A program at an allowlisted path (a replaced `/usr/bin/ssh`; package drift covers that); actions inside a playbook run's window by a fake Ansible module; events while the daemon is down; containers' own files; root that stops or blinds Tetragon; techniques no policy watches (network: see 3.6) | VM (`linux-omarchy` 7.2.15): each policy fires on a harmless version of its technique and stays quiet on a benign look-alike (`tests/vm/tetragon.sh`). Container: install from digest-checked layers, planted-log audit, no command line in findings, a planted `Sigkill` fails the run |
+
 ## 4. What this release does not protect against
 
 Stated plainly, so nobody reads more into the green audit than is there:
@@ -176,6 +182,8 @@ Stated plainly, so nobody reads more into the green audit than is there:
 - **Tailscale traffic bypasses ufw** in Tailscale's default mode (D-24); the
   audit says so.
 - **hardened_malloc is not used** (D-03, deferred).
+- **Runtime monitoring is off by default and only reports** (D-37). With it
+  on, it records and the audit warns; nothing is killed or blocked.
 - **Root is the end of the line.** Every control above assumes the attacker
   is not root yet; the audit and drift checks run as root and can be lied to
   by root.

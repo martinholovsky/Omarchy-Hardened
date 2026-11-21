@@ -183,6 +183,30 @@ snapshot for good, but it deletes and retakes `pre-aegis-updated`, which
 `pre-aegis-hw` hangs off, so for now the workaround stays
 ([open-items.md](../../docs/open-items.md) §4).
 
+## 6b. Tetragon detections (D-37)
+
+```bash
+tests/vm/tetragon.sh   # right after tests/vm/run.sh, with the VM still running
+```
+
+`vm-vars.yml` turns `aegis_tetragon_enabled` on, so `run.sh` already covers
+the install, idempotence and the reboot. `tetragon.sh` then:
+
+- checks that every policy loaded and that nothing listens on the network;
+- saves the noise of a fresh desktop;
+- runs a harmless version of each technique and a benign look-alike;
+- checks that the audit names each technique and no look-alike;
+- measures overhead (Tetragon running and stopped).
+
+Its output goes to `.state/tetragon-*`: `probe.txt`, `security.txt`,
+`noise.txt` and `overhead.txt`. Every planted file (a dummy key, a sudoers
+drop-in, `/tmp` copies) is removed again.
+
+The snapshot's pacman databases go stale, so run a full `pacman -Syu`
+(`OMARCHY_ALLOW_DIRECT_PACMAN=1`) and reboot before `run.sh`. The
+`dummy.ko` step needs the running kernel's module tree, which an update
+without a reboot removes.
+
 ## 7. Tailscale (D-10, D-24)
 
 ```bash

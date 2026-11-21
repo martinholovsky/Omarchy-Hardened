@@ -7,6 +7,31 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- D-37: `tetragon` role (opt-in, `aegis_tetragon_enabled`), runtime
+  monitoring, detection only:
+  - **Install.** Tetragon v1.8.0 from the three layers of the cosign-verified
+    release image, pinned by digest for amd64 and arm64.
+  - **Policies.** Six monitor-only policies adapted from upstream's Apache-2.0
+    examples, each with a modification notice and ATT&CK tags.
+  - **Settings.** Health and metrics servers off; gRPC on a root-only socket;
+    export limited to policy events, with command-line secrets redacted.
+  - **Read-back.** The run checks binaries, the BPF object count, that no
+    policy has an action other than `Post`, that the service runs, and that
+    every policy is loaded.
+  - **Audit module** `aegis_tetragon_audit`: per-policy findings with program
+    and object, never the command line; it skips events from the run itself.
+  - **Tests.** Container test (82 checks): install, idempotence and a
+    planted export log. VM: `tests/vm/tetragon.sh` fires each policy on a
+    harmless version of its technique, checks benign look-alikes stay quiet,
+    and measures overhead.
+- `docs/research/ebpf-netns-review.md` §9: where ready-made Tetragon rules
+  are, whether they are maintained and tested, and their licences.
+- `docs/research/ebpf-netns-review.md`: evaluation of Tetragon, custom
+  BPF-LSM programs, bpftrace, toolchains in Podman, `ip netns`, nftables, XDP
+  and socket activation against Omarchy `v4.5.0` and the `linux-omarchy`,
+  `linux` and `linux-hardened` 7.2.15 configs. Roadmap #27–#30 (Tetragon
+  waits on a decision), seven do-not-adopt entries, and a warning that the AUR
+  `tetragon-bin` package installs a 2022 CLI, not Tetragon 1.8.0.
 - `docs/threat-model.md`: for every control, the attack or weakness it
   addresses (ATT&CK/CWE where one fits), the attacker it assumes, whether it
   enforces or only reports, what it does not stop, and the test that shows it

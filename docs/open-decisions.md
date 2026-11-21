@@ -957,3 +957,115 @@ threat-model.md §5. VM, 2026-11-11, after an in-place `omarchy-update` to
 4.5.0: `powerprofilesctl` is owned by `omarchy-power-profiles-daemon` with 0
 altered files, the entry no longer applies, and `tests/vm/run.sh` passed
 (open-items.md).
+
+## D-37 — Tetragon runtime monitoring (Decided 2026-11-20: (a), detection only)
+
+Nothing records what runs on the host or what reads its keys. D-25 says
+which program connected where, D-26 what the agent proxy saw. Tetragon
+(Cilium, standalone systemd service) records process execs with full argv
+and can watch file access through `security_*` kprobes or BPF-LSM hooks.
+Evaluation and sources: [research/ebpf-netns-review.md](research/ebpf-netns-review.md) §1,
+roadmap #27.
+
+Constraints found (2026-11-20, from configs and source, not run):
+
+- **Enforcement.** Sigkill, and Override on `security_*` hooks (fmod_ret),
+  should work on `linux-omarchy` and `linux-hardened`. Override on syscalls
+  does not load on either: neither has `CONFIG_BPF_KPROBE_OVERRIDE`.
+- **Lockdown.** It is incompatible with `lockdown=confidentiality` (roadmap
+  #19 must stay `integrity`).
+- **Packaging.** Not in the Arch repos. The AUR `tetragon-bin` installs a
+  2022 CLI, not the daemon, and runs it at build time. Upstream's tarball has
+  only a same-origin SHA-256; its container images are cosign-signed.
+- **Privacy.** Events hold full argv, so secrets typed on command lines end up
+  in `/var/log/tetragon` unless `--redaction-filters` is set.
+- **Overhead.** Upstream publishes no figures.
+
+Options:
+
+- **(a)** An opt-in `tetragon` role, detection only: exec and secret-file-read
+  policies, redaction on, findings summarised into the audit, binaries
+  extracted from the cosign-verified image. Enforcement comes later, per
+  policy, like D-05.
+- **(b)** The same with the tarball pinned by SHA-256 (simpler, weaker
+  provenance).
+- **(c)** Do not adopt; rely on D-25/D-26.
+
+**Recommendation:** (a), after a VM run of `tetra probe` and an overhead
+measurement on both kernels.
+
+**Decided (owner, 2026-11-20): (a).** "Omarchy needs endpoint protection;
+monitor/detection mode at the start is OK", with the condition that the
+policies flag plausible malicious behaviour from day one, from rules whose
+source and licence are checked. How it was built:
+
+- **Supply chain.** The image index `quay.io/cilium/tetragon@sha256:5ed9088a…`
+  was cosign-verified (keyless, GitHub Actions, `build-images-releases.yml` at
+  `refs/tags/v1.8.0`, commit `a5a6678`). Its three layers that hold
+  `tetragon`, `tetra` and the 95 BPF objects are pinned by digest for amd64
+  and arm64, and the role downloads exactly those blobs (content-addressed, so
+  `get_url` checks the digest). The tarball was rejected: its `tetragon` and
+  `tetra` match the image byte for byte, but `bpf_generic_kprobe_v61.o`
+  differs in 46 bytes. That may be a non-reproducible build, but nothing
+  signs the tarball's copy.
+- **Rules.** No maintained production rule set exists (research review §9).
+  Six policies were adapted from upstream's Apache-2.0 examples, each
+  marked as modified and mapped to ATT&CK
+  (`roles/tetragon/templates/policies/README.md`). Every one is checked in the
+  VM to fire on its technique and stay quiet on a benign look-alike
+  (`tests/vm/tetragon.sh`).
+- **Detection only.** The role refuses a policy with any action other than
+  `Post`.
+- **Privacy.** The JSON export holds only policy events (no exec/exit), with
+  command-line secrets redacted. The audit never prints command lines.
+- **No network listener.** The health server is off (its default is `:6789`
+  on every interface); gRPC is on a root-only unix socket.
+- **Opt-in.** `aegis_tetragon_enabled` defaults to `false` (AGENTS.md: a
+  trade-off defaults to Omarchy's behaviour).
+
+Enforcement (`Sigkill`, `Override` on `security_*`) is a later decision, one
+policy at a time, after the events have been reviewed.
+
+**Found in the VM test (2026-11-21, `linux-omarchy` 7.2.15-1):**
+
+- **One bad policy stops all monitoring.** A policy that fails to unmarshal
+  (an unquoted `/memfd:`, which YAML reads as a mapping) makes the daemon
+  exit at start, so no policy runs. The role's read-back caught it
+  (`tetragon.service` not active, run failed). The container test now checks
+  that every selector value in the rendered policies is a string.
+- **All six policies load.** They report state `enabled`, mode
+  `monitor_only`, about 10 MB of kernel memory each (`aegis-kernel-modules`
+  544 kB).
+- **`tetra probe` matches the configs.** On `linux-omarchy` 7.2.15:
+  `override_return: false`, `fmodret: true`, `fmodret_syscall: true`,
+  `lsm: true`, `signal: true`.
+- **Every policy fires and the look-alikes stay quiet** (`tests/vm/tetragon.sh`,
+  all checks passed, 2026-11-21):
+
+  | Policy | What fired it | What stayed quiet |
+  |---|---|---|
+  | cred-access | python3 reading a planted `~/.ssh/id_ecdsa` and `/etc/shadow` | `ssh-keygen` on the key; `sudo` |
+  | persistence | an append to `~/.bashrc`; a sudoers drop-in | — |
+  | exec-writable | a program run from `/tmp`; a memfd run with `fexecve` | — |
+  | kernel-modules | `dummy.ko` inserted from `/tmp` | `modprobe dummy` from `/usr/lib/modules` |
+  | bpf-load | a socket filter loaded with `bpf(2)` | — |
+  | process-injection | ptrace attach | — |
+
+  Tetragon reports **no path for a memfd** binary, so that case is caught at
+  `execveat(AT_EMPTY_PATH)`.
+- **Noise on a freshly installed desktop, and what was done about it:**
+  - `systemd-userwork` (systemd's user-database worker) reads `/etc/shadow`
+    about 170 times a boot → allowlisted.
+  - crun inside an `aegis-agent` container writes the container's own `/etc`,
+    with the same paths as the host's → the system-path selectors match the
+    host mount namespace only.
+  - `updatedb` opens browser-profile directories → allowlisted.
+  - The playbook's own Ansible modules were reported (for example
+    `pacman_integrity` reading `/etc/shadow`) → not warned about when they run
+    inside a recorded run window. The role now runs last, so its window covers
+    the whole run.
+  - Still reported, correctly: the VM harness's own `sed -i` on `/etc/pam.d`.
+- **Overhead (VM, 4 vCPU).** 20 000 opens took 0.079 s with Tetragon and
+  0.027 s without (about +2.6 µs each). 500 execs took 0.741 s and 0.539 s
+  (+0.4 ms, +37%). The daemon's resident memory was 208–245 MB over two runs.
+  `systemd-analyze security`: 7.3 MEDIUM; it stays root by design.
