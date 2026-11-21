@@ -122,9 +122,12 @@
 
 - name: Read the active LSMs
   ansible.builtin.slurp:
-    src: /sys/kernel/security/lsm
+    src: "{{ aegis_apparmor_lsm_file }}"
   register: aegis_aa_lsm
   failed_when: false
+
+- name: Report whether BPF LSM is still active (roadmap 28)
+  ansible.builtin.import_tasks: bpf_lsm.yml
 
 - name: Record the AppArmor finding
   vars:

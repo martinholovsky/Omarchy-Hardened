@@ -9,7 +9,7 @@ call is one authentication attempt. Built for su's "Password:" prompt; sudo's
 "password for USER:" does not match, so drive sudo with -S instead. Prints
 what the command wrote (the password is not echoed on a pty, and is redacted
 anyway) and exits with its status, or 98 if it does not finish within 30
-seconds.
+seconds (AEGIS_PTY_DEADLINE to change).
 """
 
 import os
@@ -19,7 +19,8 @@ import signal
 import sys
 import time
 
-DEADLINE = 30
+# AEGIS_PTY_DEADLINE overrides it for long commands (omarchy-update, D-38 VM setup).
+DEADLINE = int(os.environ.get("AEGIS_PTY_DEADLINE", "30"))
 
 
 def main() -> int:

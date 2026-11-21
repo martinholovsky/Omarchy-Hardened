@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+# D-38: write the panel's status file (/run/aegis/status.json, 0640 root:wheel)
+# from the last audit, the units' states and the pause/disable records.
+# Check the sandbox with: systemd-analyze security aegis-status.service
+[Unit]
+Description=Aegis status for the panel (D-38)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I {{ aegis_panel_status_bin }}
+RuntimeDirectory=aegis
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0027
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run/aegis
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_CHOWN CAP_FOWNER
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

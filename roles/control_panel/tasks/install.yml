@@ -1,0 +1,131 @@
+---
+# D-38: CLI, root helper, status writer, component list, polkit actions and
+# the status timer. Split out so tests/container can run it without systemd
+# (aegis_panel_manage_service: false).
+- name: Create the panel directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /etc/aegis, mode: "0755"}
+    - {path: /usr/local/libexec, mode: "0755"}
+    - {path: /var/lib/aegis, mode: "0700"}
+
+- name: Install aegis, aegis-helper and aegis-status (one program, three names)
+  ansible.builtin.copy:
+    src: aegis.py
+    dest: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ aegis_panel_bin }}"
+    - "{{ aegis_panel_helper }}"
+    - "{{ aegis_panel_status_bin }}"
+
+- name: Write the component list the helper accepts
+  ansible.builtin.copy:
+    dest: "{{ aegis_panel_config }}"
+    content: "{{ {'components': aegis_panel_components} | to_nice_json }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the polkit actions
+  ansible.builtin.template:
+    src: org.aegis.panel.policy.j2
+    dest: "{{ aegis_panel_polkit_policy }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the status unit and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [aegis-status.service, aegis-status.timer]
+  register: aegis_panel_units
+
+- name: Enable the status timer
+  ansible.builtin.systemd_service:
+    name: aegis-status.timer
+    enabled: true
+    state: started
+    daemon_reload: "{{ aegis_panel_units is changed }}"
+  # A first --check run has no unit yet.
+  ignore_errors: "{{ ansible_check_mode }}"
+  when: aegis_panel_manage_service | default(true) | bool
+
+- name: Write the status file now
+  ansible.builtin.command:
+    argv: [systemctl, start, aegis-status.service]
+  changed_when: false
+  when:
+    - aegis_panel_manage_service | default(true) | bool
+    - not ansible_check_mode
+
+- name: Read the installed helper and component list back
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  register: aegis_panel_files
+  loop:
+    - "{{ aegis_panel_helper }}"
+    - "{{ aegis_panel_bin }}"
+    - "{{ aegis_panel_config }}"
+    - "{{ aegis_panel_polkit_policy }}"
+  when: not ansible_check_mode
+
+- name: Read the polkit actions back
+  ansible.builtin.slurp:
+    src: "{{ aegis_panel_polkit_policy }}"
+  register: aegis_panel_policy_read
+  when: not ansible_check_mode
+
+- name: Verify the helper is root's, and that no polkit action allows disable
+  vars:
+    aegis_policy_text: "{{ aegis_panel_policy_read.content | b64decode }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_panel_files.results | map(attribute='stat.exists') | min
+      - aegis_panel_files.results | map(attribute='stat.pw_name') | unique == ['root']
+      - aegis_panel_files.results | map(attribute='stat.wgrp') | max is false
+      - aegis_panel_files.results | map(attribute='stat.woth') | max is false
+      - "'argv1\">disable<' not in aegis_policy_text"
+      - "(aegis_policy_text | regex_findall('<allow_any>([a-z_]+)<') | unique) == ['no']"
+    fail_msg: >-
+      the panel's root helper or polkit actions are not as installed: owned by root, not writable
+      by others, no polkit action for disable, allow_any no everywhere
+    quiet: true
+  when: not ansible_check_mode
+
+- name: Read the status file back
+  ansible.builtin.slurp:
+    src: "{{ aegis_panel_status_file }}"
+  register: aegis_panel_status_read
+  when:
+    - aegis_panel_manage_service | default(true) | bool
+    - not ansible_check_mode
+
+- name: Verify the status file lists every component
+  vars:
+    aegis_doc: "{{ aegis_panel_status_read.content | b64decode | from_json }}"
+    aegis_ids: "{{ aegis_panel_components | map(attribute='id') | list }}"
+  ansible.builtin.assert:
+    that:
+      - aegis_doc.version == 1
+      - (aegis_doc.components | map(attribute='id') | list) is superset(aegis_ids)
+    fail_msg: "{{ aegis_panel_status_file }} does not list every configured component"
+    quiet: true
+  when:
+    - aegis_panel_manage_service | default(true) | bool
+    - not ansible_check_mode
+
+- name: Report the panel's findings
+  ansible.builtin.import_tasks: audit.yml

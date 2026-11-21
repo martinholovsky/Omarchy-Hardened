@@ -18,6 +18,7 @@ Everything still open is listed in [open-items.md](open-items.md).
 | Firewall | Container test against Omarchy's seeded ufw rules | Real traffic: LocalSend, SSH, Docker DNS after the change |
 | Audit | Each check fires on a planted problem in the container. **VM:** the first real install gave 4 WARN, all with benign causes (D-21). After D-22 and the SnowflakeOS checks (18k–18o), a default 4.0.6 install gives 0 FAIL and 2 WARN, both correct: `accounts.password_hash` and `git.commit_signing` ([open-items.md](open-items.md) §3) | Long-lived installs with more packages |
 | Tetragon (D-37) | Container: install from the digest-checked image layers, idempotence, planted-log audit; a planted `Sigkill` fails the run. **VM (2026-11-21, `linux-omarchy` 7.2.15):** full `run.sh` with it on (idempotent, survives a reboot, drift check); `tests/vm/tetragon.sh`: each policy fires on its technique and not on the look-alike | `linux-hardened`, arm64, real hardware, a week of desktop noise |
+| Status panel (D-38) | Container: install, polkit actions, status file, helper refusals (also: no pause it cannot undo), pause/disable findings; unit tests with a mutation probe. **VM (2026-11-21, Omarchy 4.5.0-3):** `tests/vm/panel.sh` (admin mode in the desktop session, SSH refused, pause/auto-resume, wrong password, sudo-only disable, re-enable on apply, plugin loaded) | A FIDO2 key at Omarchy's polkit dialog; real hardware |
 | Boot | **VM:** EFI + Limine + LUKS boot; after a reboot, a `--check` run reports no change (sysctl load order, PAM, ufw all intact) | Hardware boots, Secure Boot |
 | Decided roles (D-01 to D-11) | **VM (2026-10-22):** after a reboot, AppArmor is active with 83 profiles, all in complain mode; Limine lists `linux-omarchy` first, then `linux-hardened`; `opensnitchd` runs; `aegis-agent` has no capabilities and cannot create user namespaces; a real `pacman -S` triggers the D-11 check, which reports drift without repairing it. Flatpak, commit signing and Tailscale ran in the VM only in their not-set-up state (INFO, or WARN for signing); their planted-problem paths are tested in the container only. **FIDO2 (2026-10-26):** one YubiKey enrolled with `omarchy-setup-security-fido2`; the playbook keeps `pam_u2f` `sufficient` and WARNs (fewer than 2 keys); with the key plugged in, a run as root took one touch, `failed=0`. **`linux-hardened` (2026-10-27):** booted twice; the playbook applies and checks clean (D-29); AppArmor and user namespaces work; `aegis-agent` does not, and the audit says so (D-30). **polkit (2026-10-27):** `pkexec` failures reach the tally, and `pkexec` in a desktop terminal works; without the D-27 drop-in it refuses the right password | FIDO2 and signing keys, a tailnet login ([open-items.md](open-items.md) §1) |
 
@@ -101,6 +102,9 @@ run on a real machine as a test.
 | With ≥2 FIDO2 keys enrolled per wheel user, sudo asks for the key **and** your password | D-04 | `aegis_fido2_sudo_second_factor: false` |
 | With a FIDO2 key set up for sudo and plugged in, the playbook stops before its first sudo unless it runs as root (`sudo ansible-playbook …`, one touch) | D-04 | Unplug the key and use `--ask-become-pass` |
 | `aegis-agent` is available for running agents in a container | D-07 | `aegis_agent_enabled: false` |
+| The audit WARNs `network.listeners` for any socket listening beyond loopback that is not expected: with Omarchy's opt-in sshd enabled, that is sshd | roadmap #29 | add `process:port` to `aegis_integrity_listeners_known` |
+| The audit WARNs `kernel.bpf_lsm` if an `lsm=` on the kernel command line leaves out `bpf` | roadmap #28 | put `bpf` back in `lsm=` |
+| Only with `aegis_panel_enabled: true`: a shield in the Omarchy bar and the `aegis` command. `aegis status` reads `/run/aegis/status.json` (you must be in wheel). Pause and logs ask for your password (or FIDO2 key, Omarchy's polkit setup) once per few minutes ("Admin mode"); disable asks for sudo in a terminal. While something is paused or disabled the audit WARNs `panel.paused`/`panel.disabled`, and the next apply turns a disabled component back on. The panel shows the last audit: after a run limited with `--tags`, components outside those tags show UNKNOWN until the next full run | D-38 | `aegis_panel_enabled: false`, then `omarchy plugin remove aegis.status`, `systemctl disable --now aegis-status.timer`, and remove `/usr/local/bin/aegis`, `/usr/local/libexec/aegis-{helper,status}`, `/etc/aegis/panel.json`, `/usr/share/polkit-1/actions/org.aegis.panel.policy` |
 | Only with `aegis_tetragon_enabled: true`: `tetragon.service` runs as root and writes policy events to `/var/log/tetragon/tetragon.log` (0600, 10 MB × 6 files). The audit WARNs `tetragon.<policy>` when a program outside a policy's allowlist triggered it in the last 7 days; add expected programs to `aegis_tetragon_known` | D-37 | `aegis_tetragon_enabled: false`, then `systemctl disable --now tetragon` and remove `/etc/systemd/system/tetragon.service`, `/etc/tetragon` and `/usr/local/lib/aegis/tetragon` |
 | With Tetragon on, `lockdown=confidentiality` stops the run: it blocks the kprobes Tetragon needs | D-37 | `lockdown=integrity`, or Tetragon off |
 | With Tetragon on, the daemon uses about 210–245 MB of memory; file opens and program starts get slower (VM: about +2.6 µs per open, +0.4 ms per exec) | D-37 | Tetragon off |
@@ -165,6 +169,24 @@ from a root shell.
   reverted.
 - **Home directories are not scanned** for setuid or world-writable files. Set
   `aegis_integrity_scan_home: true` for a one-off sweep. It can take minutes.
+
+### Running untrusted code or a toolchain (roadmap #30)
+
+`aegis-agent` runs any command, not only an agent, in a rootless Podman
+container. Only the current directory is mounted: no `$HOME`, no
+capabilities, no new user namespaces. Use `enforce` for code you do not trust:
+it can reach only the allowlist (`aegis_agent_egress_allowlist`) through the
+proxy, and never the LAN.
+
+```bash
+cd ~/src/some-untrusted-repo
+aegis-agent --image docker.io/library/node@sha256:<digest> --egress enforce -- npm ci
+aegis-agent --image docker.io/library/python@sha256:<digest> --egress enforce -- python -m pytest
+```
+
+Limits: the image must be pinned by digest. It does not run on
+`linux-hardened` (D-30). In `report` mode, traffic that ignores the proxy
+still gets out (D-26).
 
 ## 6. Testing in a VM (VirtualBox)
 

@@ -1,0 +1,19 @@
+---
+# Roadmap #28 (D-37 review): an lsm= on the kernel command line replaces
+# CONFIG_LSM, so leaving out bpf silently disables BPF LSM, which Tetragon's
+# lsmHooks and systemd's RestrictFileSystems= need. Uses aegis_aa_lsm (read
+# in main.yml); split out so tests/container can plant the file.
+- name: Record the BPF LSM finding
+  vars:
+    aegis_lsms: "{{ ((aegis_aa_lsm.content | default('')) | b64decode).strip().split(',') }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [{'id': 'kernel.bpf_lsm',
+         'status': ('INFO' if aegis_aa_lsm.content is not defined
+                    else 'PASS' if 'bpf' in aegis_lsms else 'WARN'),
+         'detail': ('cannot read ' ~ aegis_apparmor_lsm_file ~ ' (securityfs not mounted?)')
+                   if aegis_aa_lsm.content is not defined
+                   else ('active LSMs: ' ~ (aegis_lsms | join(','))
+                         ~ ('' if 'bpf' in aegis_lsms
+                            else '; bpf is missing, so Tetragon lsmHooks and systemd RestrictFileSystems= do nothing'
+                                 ' (check lsm= in /etc/limine-entry-tool.d/)'))}] }}

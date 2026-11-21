@@ -8,6 +8,8 @@ aegis_apparmor_enabled: true
 # "landlock,lockdown,yama,integrity,bpf" on linux-omarchy 7.2.8).
 aegis_apparmor_lsm: landlock,lockdown,yama,integrity,apparmor,bpf
 aegis_apparmor_cmdline_dropin: /etc/limine-entry-tool.d/aegis-lsm.conf
+# Active LSM list, read back after a reboot (also by the BPF LSM check, roadmap 28).
+aegis_apparmor_lsm_file: /sys/kernel/security/lsm
 # Profiles listed here are left in enforce mode; every other profile in
 # /etc/apparmor.d is forced into complain mode (D-05).
 aegis_apparmor_enforce: []

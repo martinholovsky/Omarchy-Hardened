@@ -29,9 +29,9 @@ as Apache-2.0 §4(b) requires. The licence text is the repository's
 | Policy | Hook | Watches | ATT&CK | Adapted from |
 |---|---|---|---|---|
 | `aegis-cred-access` | kprobe `security_file_open` | SSH/age keys, AWS credentials, `/etc/shadow`, GnuPG/pass/gh/docker/kube tokens, keyrings and browser profiles, opened by a program outside each one's allowlist | T1552.004, T1552.001, T1555.003, T1539, T1003.008 | `lsm_file_open.yaml`, `quickstart/file_monitoring.yaml` |
-| `aegis-persistence` | kprobe `security_file_permission`, write mask | user units, XDG autostart, Hyprland config, shell startup files, `authorized_keys`; `/etc/systemd`, `ld.so.preload`, sudoers, PAM, `profile.d` outside pacman | T1543.002, T1546.004, T1547.013, T1098.004, T1574.006, T1548.003, T1556.003 | `quickstart/file_monitoring.yaml` |
+| `aegis-persistence` | kprobe `security_file_permission`, write mask | user units, XDG autostart, Hyprland config, shell startup files, `authorized_keys`, Omarchy shell plugins and `shell.json` (D-38); `/etc/systemd`, `ld.so.preload`, sudoers, PAM, `profile.d` outside pacman | T1543.002, T1546.004, T1547.013, T1098.004, T1574.006, T1548.003, T1556.003, T1547 | `quickstart/file_monitoring.yaml` |
 | `aegis-kernel-modules` | kprobes `security_kernel_read_file` (READING_MODULE), `security_kernel_load_data` (LOADING_MODULE) | every module load; the audit WARNs only on modules outside `/usr/lib/modules/` or loaded from memory | T1547.006, T1014, T1620 | `policylibrary/modules.yaml` |
-| `aegis-bpf-load` | kprobe `bpf_check` | BPF programs loaded by anything but systemd, Tetragon, OpenSnitch and the container runtimes | T1014, T1562.001 | `policylibrary/bpf.yaml` |
+| `aegis-bpf-load` | kprobe `bpf_check` | BPF programs loaded by anything but systemd, Tetragon (and `tetra probe`), OpenSnitch and the container runtimes | T1014, T1562.001 | `policylibrary/bpf.yaml` |
 | `aegis-process-injection` | syscall kprobes `ptrace` (ATTACH, SEIZE, POKETEXT, POKEDATA), `process_vm_writev` | one process attaching to or writing into another, outside debuggers | T1055.008, T1055 | `tracingpolicy/sys_ptrace.yaml` |
 | `aegis-exec-writable` | kprobe `security_bprm_check` | programs run from `/tmp`, `/var/tmp`, `/dev/shm`, `/run/user` or a memfd | T1204.002, T1059, T1620 | `tracingpolicy/security_bprm_check.yaml` |
 
@@ -58,7 +58,7 @@ as Apache-2.0 §4(b) requires. The licence text is the repository's
   `execveat(AT_EMPTY_PATH)`, so the event names the program that started
   it, and the target is the hook with the file descriptor.
 - **Allowlists come from a fresh VM.** Programs that fired legitimately were
-  `systemd-userwork` (shadow) and `updatedb` (browser profiles). A real
+  `systemd-userwork` (shadow), `updatedb` (browser profiles) and `tetra probe` (BPF). Tetragon reports the path a program was started by, so a symlink (`/usr/local/bin/tetra`) is listed as such. A real
   desktop will add more; list them in `aegis_tetragon_known` or in the
   policy.
 - **What is not watched:** network behaviour (OpenSnitch and D-25 do that),

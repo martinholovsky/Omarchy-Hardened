@@ -50,9 +50,14 @@ listed section title means updating `SHARD_STARTS`; `run.sh` fails if one
 is missing.
 
 Roles that change the boot, install packages or need systemd (kernel,
-apparmor, opensnitch, agent_containment, drift_check, tetragon) are tested
-only in the VM; `tests/vm/tetragon.sh` checks each Tetragon policy against
-its technique. Run `tests/vm/run.sh` from the `pre-aegis-updated` snapshot (see
+apparmor, opensnitch, agent_containment, drift_check, tetragon,
+control_panel) are tested only in the VM; `tests/vm/tetragon.sh` checks each
+Tetragon policy against its technique, `tests/vm/panel.sh` the panel's polkit
+flow and plugin (Omarchy 4.5 snapshot `pre-aegis-450`).
+
+The panel helper (`roles/control_panel/files/aegis.py`) runs as root on
+request: like the egress collector it is held to every ruff rule, strict
+mypy and its unit tests (`tests/panel`, pre-commit `panel-tests`). Run `tests/vm/run.sh` from the `pre-aegis-updated` snapshot (see
 `tests/vm/README.md`), and do not edit `roles/` while it runs: the D-11 copy
 would change between runs and fail the idempotence check.
 

@@ -135,9 +135,9 @@ BPF kernel reads and tracefs, which Tetragon and bpftrace need.
 | # | Item | Waits on |
 |---|---|---|
 | 27 | **Implemented (D-37, 2026-11-20).** Tetragon, opt-in, detection first: exec and secret-file-read policies on `security_*`/LSM hooks (syscall Override does not load on either kernel), argv redaction, findings into the audit; upstream tarball or cosign-signed image, **never** AUR `tetragon-bin` | new decision (D-37), VM test |
-| 28 | Audit: `bpf` is in `/sys/kernel/security/lsm` (an `lsm=` edit can drop it silently) | owner (audit only) |
-| 29 | Audit: listening-socket inventory, WARN on non-loopback listeners outside an allowlist, INFO on loopback (OpenClaw, Ollama) | owner (audit only) |
-| 30 | Document `aegis-agent --egress enforce -- COMMAND` for untrusted repositories and toolchains | none (docs) |
+| 28 | **Implemented (2026-11-21).** Audit: `bpf` is in `/sys/kernel/security/lsm` (an `lsm=` edit can drop it silently) | owner (audit only) |
+| 29 | **Implemented (2026-11-21).** Audit: listening-socket inventory, WARN on non-loopback listeners outside an allowlist, INFO on loopback (OpenClaw, Ollama) | owner (audit only) |
+| 30 | **Done (2026-11-21, operating-notes §5).** Document `aegis-agent --egress enforce -- COMMAND` for untrusted repositories and toolchains | none (docs) |
 
 ## Do not adopt (breaks Omarchy)
 

@@ -1,0 +1,52 @@
+---
+# D-38: a paused or disabled component is a WARN until it is back on, so the
+# audit and the drift check say so even if the panel is faked.
+- name: Read the pause and disable records
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: aegis_panel_records
+  failed_when: false
+  loop: ["{{ aegis_panel_paused_file }}", "{{ aegis_panel_disabled_file }}"]
+
+- name: Turn disabled components back on (disable lasts until the next apply)
+  ansible.builtin.command:
+    argv: ["{{ aegis_panel_helper }}", resume, "{{ item }}"]
+  loop: >-
+    {{ ((aegis_panel_records.results[1].content | b64decode | from_json)
+        if aegis_panel_records.results[1].content is defined else {}) | list }}
+  register: aegis_panel_reenabled
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not (aegis_drift_check_run | default(false) | bool)
+    - aegis_panel_manage_service | default(true) | bool
+
+- name: Read the disable record after that
+  ansible.builtin.slurp:
+    src: "{{ aegis_panel_disabled_file }}"
+  register: aegis_panel_disabled_now
+  failed_when: false
+
+- name: Record the panel findings
+  vars:
+    aegis_now: "{{ ansible_facts['date_time']['epoch'] | int }}"
+    aegis_paused_raw: >-
+      {{ (aegis_panel_records.results[0].content | b64decode | from_json)
+         if aegis_panel_records.results[0].content is defined else {} }}
+    aegis_paused: >-
+      {{ aegis_paused_raw | dict2items | selectattr('value.until', 'defined')
+         | selectattr('value.until', '>', aegis_now | int) | map(attribute='key') | list }}
+    aegis_disabled: >-
+      {{ ((aegis_panel_disabled_now.content | b64decode | from_json)
+          if aegis_panel_disabled_now.content is defined else {}) | list }}
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [
+           {'id': 'panel.paused',
+            'status': 'WARN' if aegis_paused else 'PASS',
+            'detail': ('paused from the panel (resume on its own): ' ~ (aegis_paused | join(', ')))
+                      if aegis_paused else 'nothing paused'},
+           {'id': 'panel.disabled',
+            'status': 'WARN' if aegis_disabled else 'PASS',
+            'detail': ('disabled with sudo aegis disable, until the next apply: ' ~ (aegis_disabled | join(', ')))
+                      if aegis_disabled else 'nothing disabled'}] }}

@@ -7,6 +7,38 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- Roadmap #28: audit finding `kernel.bpf_lsm` WARNs when `bpf` is missing
+  from the active LSM list (an `lsm=` replaces `CONFIG_LSM`; Tetragon
+  `lsmHooks` and systemd `RestrictFileSystems=` then do nothing).
+- Roadmap #29: audit finding `network.listeners` WARNs on a socket listening
+  beyond loopback that is not in `aegis_integrity_listeners_known` (defaults:
+  avahi, resolved's Docker DNS, NetworkManager's DHCP client). Module
+  `aegis_listeners` parses `ss -Htulpn`.
+- Roadmap #30: operating-notes §5 shows `aegis-agent --egress enforce --
+  COMMAND` for untrusted repositories and toolchains.
+- D-38: `control_panel` role (opt-in, `aegis_panel_enabled`), a status panel
+  and "admin mode" in the Omarchy shell:
+  - **Plugin.** `aegis.status` puts a shield in the bar (urgent on WARN or
+    FAIL) and a panel listing each component with its state, issues and the
+    actions it allows.
+  - **Back end.** One Python program installed as `aegis` (user CLI),
+    `aegis-helper` (root, through pkexec or sudo, a fixed set of actions and
+    the components in `/etc/aegis/panel.json`) and `aegis-status` (root timer
+    writing `/run/aegis/status.json`, `root:wheel` 0640).
+  - **Authentication (D-38 (a)).** polkit `auth_admin_keep` for unlock, pause
+    and logs; resume needs none; `disable` only under sudo in a terminal.
+  - **Bounds.** A pause ends on its own within 120 minutes; a disable lasts
+    until the next apply. Both WARN (`panel.paused`, `panel.disabled`), go to
+    the journal with the uid, and raise a desktop notification. Only Tetragon
+    and OpenSnitch can be paused.
+  - **Tetragon.** The persistence policy now watches
+    `~/.config/omarchy/plugins/` and `shell.json`: plugins run unsandboxed at
+    every login.
+  - **Tests.** Unit tests (`tests/panel`, ruff ALL and mypy strict in
+    pre-commit); container test (85 checks); VM `tests/vm/panel.sh` on an
+    Omarchy 4.5 snapshot.
+  - **Harness.** `tests/vm/pty-auth.py` takes `AEGIS_PTY_DEADLINE` for long
+    commands.
 - D-37: `tetragon` role (opt-in, `aegis_tetragon_enabled`), runtime
   monitoring, detection only:
   - **Install.** Tetragon v1.8.0 from the three layers of the cosign-verified

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- {{ ansible_managed }} -->
+<!-- D-38: one polkit action per aegis-helper verb (exec.argv1, polkit(8)).
+     unlock, pause, logs: {{ 'auth_admin_keep' if aegis_panel_polkit_keep | bool else 'auth_admin' }} ("admin mode").
+     resume: yes, it only turns protection back on.
+     disable has no action here: pkexec falls back to org.freedesktop.policykit.exec,
+     and the helper refuses disable under pkexec (sudo only). -->
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Omarchy-Hardened</vendor>
+{% for verb, desc, allow in [
+     ('unlock', 'Unlock Aegis admin mode', 'auth_admin_keep' if aegis_panel_polkit_keep | bool else 'auth_admin'),
+     ('pause', 'Pause an Aegis protection component', 'auth_admin_keep' if aegis_panel_polkit_keep | bool else 'auth_admin'),
+     ('logs', 'Read the logs of an Aegis component', 'auth_admin_keep' if aegis_panel_polkit_keep | bool else 'auth_admin'),
+     ('resume', 'Turn an Aegis protection component back on', 'yes')] %}
+  <action id="org.aegis.panel.{{ verb }}">
+    <description>{{ desc }}</description>
+    <message>Authentication is required to {{ desc | lower }}</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>{{ allow }}</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">{{ aegis_panel_helper }}</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">{{ verb }}</annotate>
+{% if verb == 'unlock' %}
+    <!-- Admin mode: polkit keeps an authorization per action, so unlock
+         implies pause and logs (polkit(8), org.freedesktop.policykit.imply).
+         VM, 2026-11-21: without it the second action was refused. -->
+    <annotate key="org.freedesktop.policykit.imply">org.aegis.panel.pause org.aegis.panel.logs</annotate>
+{% endif %}
+  </action>
+{% endfor %}
+</policyconfig>

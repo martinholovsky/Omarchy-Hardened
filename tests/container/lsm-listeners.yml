@@ -1,0 +1,28 @@
+---
+# Container test for roadmap #28 (BPF LSM finding) and #29 (listeners), on
+# planted /sys/kernel/security/lsm contents and ss output. Driven by inside.sh.
+- name: Audit planted LSM list and listening sockets
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Read the planted LSM list
+      ansible.builtin.slurp:
+        src: "{{ aegis_apparmor_lsm_file }}"
+      register: aegis_aa_lsm
+      failed_when: false
+
+    - name: Run the BPF LSM check
+      ansible.builtin.include_role:
+        name: apparmor
+        tasks_from: bpf_lsm.yml
+
+    - name: Run the listener check
+      ansible.builtin.include_role:
+        name: pacman_integrity
+        tasks_from: listeners.yml
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report

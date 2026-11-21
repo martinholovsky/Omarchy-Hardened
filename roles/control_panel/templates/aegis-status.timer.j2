@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+# D-38: refresh the panel's status file.
+[Unit]
+Description=Refresh the Aegis status for the panel (D-38)
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec={{ aegis_panel_status_interval }}
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

@@ -2,7 +2,8 @@
 # D-37 Aegis policy: writes to places that start code later (persistence).
 # ATT&CK: T1543.002 (systemd units), T1546.004 (shell startup files),
 #         T1547.013 (XDG autostart), T1098.004 (authorized_keys),
-#         T1574.006 (ld.so.preload), T1548.003 (sudoers), T1556.003 (PAM).
+#         T1574.006 (ld.so.preload), T1548.003 (sudoers), T1556.003 (PAM),
+#         T1547 (Omarchy shell plugins, D-38).
 # Derived from cilium/tetragon v1.8.0 (a5a6678), examples/quickstart/file_monitoring.yaml,
 # Apache-2.0, Copyright Authors of Tetragon. Modified by Omarchy-Hardened:
 # write mask tested with Mask (catches MAY_WRITE|MAY_APPEND), Omarchy paths
@@ -17,7 +18,7 @@ spec:
   - call: security_file_permission
     syscall: false
     message: "write to a file that starts code later"
-    tags: ["T1543.002", "T1546.004", "T1547.013", "T1098.004", "T1574.006", "T1548.003", "T1556.003"]
+    tags: ["T1543.002", "T1546.004", "T1547.013", "T1098.004", "T1574.006", "T1548.003", "T1556.003", "T1547"]
     args:
     - index: 0
       type: file
@@ -37,6 +38,20 @@ spec:
         - {{ aegis_tetragon_home }}/.bash_profile
         - {{ aegis_tetragon_home }}/.profile
         - {{ aegis_tetragon_home }}/.zshrc
+      - index: 1
+        operator: Mask
+        values: ["2"]
+      matchActions:
+      - action: Post
+        rateLimit: 1m
+    # Omarchy shell plugins run unsandboxed in the desktop at every login
+    # (manual/32-shell-plugins.md, v4.5.0): writing one is persistence (D-38).
+    - matchArgs:
+      - index: 0
+        operator: Prefix
+        values:
+        - {{ aegis_tetragon_home }}/.config/omarchy/plugins/
+        - {{ aegis_tetragon_home }}/.config/omarchy/shell.json
       - index: 1
         operator: Mask
         values: ["2"]

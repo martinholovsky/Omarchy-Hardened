@@ -1,0 +1,23 @@
+---
+# Roadmap #29 (D-37 review): listening sockets beyond loopback that are not
+# expected. Split out so tests/container can plant ss output.
+- name: "List listening sockets (roadmap #29)"
+  aegis_listeners:
+    ss_output: "{{ aegis_integrity_ss_output | default(omit) }}"
+    known: "{{ aegis_integrity_listeners_known }}"
+  register: aegis_listen
+
+- name: Record the listener finding
+  vars:
+    aegis_fmt: "{{ aegis_listen.unknown | map(attribute='process')
+                   | zip(aegis_listen.unknown | map(attribute='proto'), aegis_listen.unknown | map(attribute='addr'))
+                   | map('join', ' ') | join('; ') }}"
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [{'id': 'network.listeners',
+         'status': 'WARN' if aegis_listen.error or aegis_listen.unknown else 'PASS',
+         'detail': aegis_listen.error if aegis_listen.error
+                   else (('listening beyond loopback and not in aegis_integrity_listeners_known: ' ~ aegis_fmt)
+                         if aegis_listen.unknown
+                         else ((aegis_listen.exposed | length | string) ~ ' known listener(s) beyond loopback, '
+                               ~ (aegis_listen.loopback | length | string) ~ ' on loopback only'))}] }}
