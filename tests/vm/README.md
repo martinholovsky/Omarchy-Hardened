@@ -207,6 +207,29 @@ The snapshot's pacman databases go stale, so run a full `pacman -Syu`
 `dummy.ko` step needs the running kernel's module tree, which an update
 without a reboot removes.
 
+## 6c. Status panel and admin mode (D-38)
+
+```bash
+tests/vm/panel.sh   # after tests/vm/run.sh (and tetragon.sh), VM still running
+```
+
+The plugin system exists from Omarchy 4.5, so this needs the `pre-aegis-450`
+snapshot: `pre-aegis-updated` plus `pacman -Syu` and `omarchy-update -y`
+over SSH (see Traps; `AEGIS_PTY_DEADLINE` lets `pty-auth.py` wait for the
+update). `panel.sh` answers polkit through `pkexec`'s own text agent on a
+pty. It checks:
+
+- the status file and the user's `aegis status`;
+- a wrong password changes nothing;
+- one authentication covers the next action (`auth_admin_keep`);
+- a pause stops Tetragon, WARNs, is journalled with the uid, and resumes on
+  its own after a minute;
+- `disable` is refused under pkexec, works under sudo, and the next apply
+  turns it back on;
+- the plugin is enabled and valid with no QML errors in the user journal.
+
+It also takes a screenshot of the open panel (`.state/panel-open.png`).
+
 ## 7. Tailscale (D-10, D-24)
 
 ```bash

@@ -166,6 +166,15 @@ drift), **agent container → host and network** (Podman, proxy), and
 |---|---|---|---|---|
 | `tetragon` (D-37, opt-in): six monitor-only Tetragon policies, events summarised by the audit | A2 malware or a misbehaving agent on the host steals credentials (T1552.004, T1552.001, T1555.003, T1539, T1003.008), installs persistence (T1543.002, T1546.004, T1547.013, T1098.004, T1574.006, T1548.003, T1556.003), runs from `/tmp` or memory (T1204.002, T1620), loads kernel modules or BPF (T1547.006, T1014), or injects into another process (T1055.008) | reports (`tetragon.*` WARN); never blocks | A program at an allowlisted path (a replaced `/usr/bin/ssh`; package drift covers that); actions inside a playbook run's window by a fake Ansible module; events while the daemon is down; containers' own files; root that stops or blinds Tetragon; techniques no policy watches (network: see 3.6) | VM (`linux-omarchy` 7.2.15): each policy fires on a harmless version of its technique and stays quiet on a benign look-alike (`tests/vm/tetragon.sh`). Container: install from digest-checked layers, planted-log audit, no command line in findings, a planted `Sigkill` fails the run |
 
+### 3.10 The status panel and admin mode (D-38, opt-in)
+
+The panel adds no protection. It adds a way to switch protection off, so its
+row lists what it lets an attacker do and what bounds that.
+
+| Control | Threat it addresses | Status | Does not stop | Evidence |
+|---|---|---|---|---|
+| `control_panel` (D-38): `aegis-helper` with a fixed set of actions and the component list in root-owned `/etc/aegis/panel.json`; one polkit action per action; `disable` only under sudo; every pause ends within 120 min; pause and disable WARN in the audit, go to the journal (`aegis-helper`, with the uid) and raise a desktop notification; refused requests are logged at `auth.warning` | A2 running as the user, after the user unlocked admin mode or with the user's FIDO2 key (Omarchy's polkit is key-only, D-28), pauses Tetragon or OpenSnitch to work unseen (T1562.001) | bounds it: at most 120 minutes, only Tetragon and OpenSnitch, never the firewall, AppArmor, PAM or sysctl; reported | A2 inside the admin-mode window, or with the key, pausing for up to 120 minutes, repeatedly (each pause is logged and announced). A2 faking the panel's display (it runs as the user, unsandboxed); the audit and journal still tell the truth. Root | Container: install, polkit actions as decided, status file root:wheel 0640, the helper refuses unknown actions and components, ranges, `disable` under pkexec, and a pause it cannot undo; pause/disable WARN. Unit tests (9) with a mutation probe on the pkexec guard. VM (`tests/vm/panel.sh`): one password covers unlock and the implied pause only in the desktop session; SSH is refused without a prompt; a pause WARNs and ends on its own; disable needs sudo |
+
 ## 4. What this release does not protect against
 
 Stated plainly, so nobody reads more into the green audit than is there:
@@ -199,6 +208,8 @@ Stated plainly, so nobody reads more into the green audit than is there:
 | AppArmor complain mode only | D-05 | owner, 2026-10-21 |
 | Outbound allowed by default | D-09, D-26 | owner, 2026-10-21 and 2026-10-24 |
 | A reboot clears the faillock tally while autologin is on | D-23 (a) | owner, 2026-10-22 |
+| With the panel on, the user's FIDO2 key alone (or one password within admin mode's few minutes) can pause Tetragon or OpenSnitch for up to 120 minutes | D-38 (a) | owner, 2026-11-21 |
+| Runtime monitoring reports only, and is off unless enabled | D-37 (a) | owner, 2026-11-20 |
 | Tailscale bypasses ufw; reported, not changed | D-24 (a′) | owner, 2026-10-24 |
 | Egress report is best effort | D-25 | owner, 2026-10-24 |
 | Commits are unsigned; only release tags are signed | D-08 | owner, 2026-10-30 |

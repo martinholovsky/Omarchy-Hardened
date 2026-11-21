@@ -120,3 +120,15 @@ aegis_audit_polkit_known:
     member is caught by groups.empower
 # Omarchy writes autologin to /etc/sddm.conf.d/autologin.conf.
 aegis_audit_sddm_paths: [/etc/sddm.conf, /etc/sddm.conf.d]
+
+# Listening sockets beyond loopback that are expected (process:port, globs
+# allowed); anything else is a WARN (roadmap #29). Omarchy's defaults: avahi
+# (mDNS), resolved answering Docker DNS on docker0 (172.17.0.1:53,
+# etc/systemd/resolved.conf.d/20-docker-dns.conf), NetworkManager's DHCP client.
+# sshd is not listed: it is opt-in, and overlay_network audits it.
+aegis_integrity_listeners_known:
+  - avahi-daemon:5353
+  - avahi-daemon:*
+  - systemd-resolve:53
+  - NetworkManager:68
+  - NetworkManager:546

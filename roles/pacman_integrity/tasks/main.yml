@@ -242,6 +242,9 @@
                       else (aegis_sys.hashes_checked | string) ~ ' password hashes checked, all yescrypt/bcrypt/scrypt'}
          ] }}
 
+- name: Report listening sockets (roadmap 29)
+  ansible.builtin.import_tasks: listeners.yml
+
 - name: Read the group database
   ansible.builtin.getent:
     database: group

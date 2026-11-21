@@ -36,26 +36,33 @@ repos:
         language: system
         pass_filenames: false
         files: \.(ya?ml)$
-      # The egress collector (D-25) is a network-facing service: every ruff
-      # rule, strict mypy and its unit tests. Ansible modules are not covered.
+      # The egress collector (D-25) is a network-facing service and the panel
+      # helper (D-38) runs as root on request: every ruff rule, strict mypy and
+      # their unit tests. Ansible modules are not covered.
       - id: ruff
         name: ruff (collector)
         entry: uv run --frozen ruff check
         language: system
-        files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
+        files: ^(roles/(opensnitch|control_panel)/files/.*\.py|tests/(collector|panel)/.*\.py)$
       - id: ruff-format
         name: ruff format (collector)
         entry: uv run --frozen ruff format --check
         language: system
-        files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
+        files: ^(roles/(opensnitch|control_panel)/files/.*\.py|tests/(collector|panel)/.*\.py)$
       - id: mypy
         name: mypy --strict (collector)
         entry: uv run --frozen mypy
         language: system
-        files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
+        files: ^(roles/(opensnitch|control_panel)/files/.*\.py|tests/(collector|panel)/.*\.py)$
       - id: collector-tests
         name: collector unit tests
         entry: python3 -I -m unittest discover -s tests/collector
         language: system
         pass_filenames: false
         files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
+      - id: panel-tests
+        name: panel helper unit tests (D-38)
+        entry: python3 -I -m unittest discover -s tests/panel
+        language: system
+        pass_filenames: false
+        files: ^(roles/control_panel/files/.*\.py|tests/panel/.*\.py)$

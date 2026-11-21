@@ -1,0 +1,89 @@
+---
+# D-38 (decided 2026-11-21, option (a)): a status panel in the Omarchy shell
+# and an "admin mode" for a few low-risk actions. Opt-in.
+aegis_panel_enabled: false
+
+# The user whose shell gets the plugin (and who must be in wheel to read the
+# status file).
+aegis_panel_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"
+# Turn the plugin on in that user's running shell (omarchy-shell IPC). Without
+# a running session the plugin is installed and the audit says how to enable it.
+aegis_panel_plugin_enable: true
+aegis_panel_plugin_section: right
+
+# polkit for unlock, pause and logs: auth_admin_keep (option (a)). resume needs
+# no authentication: it only turns protection back on. disable is sudo only.
+aegis_panel_polkit_keep: true
+
+# Components the panel shows. Only those with pausable: true can be paused or
+# disabled, and only through their units. `findings` are audit id prefixes;
+# findings no component claims are shown under "Other checks".
+aegis_panel_components:
+  - id: tetragon
+    name: Tetragon (D-37)
+    units: [tetragon.service]
+    findings: [tetragon.]
+    pausable: true
+    logs: [tetragon.service]
+  - id: opensnitch
+    name: OpenSnitch (D-09, D-25)
+    units: [opensnitchd.service, aegis-egress-collector.service]
+    findings: [egress.]
+    pausable: true
+    logs: [opensnitchd.service, aegis-egress-collector.service]
+  - id: firewall
+    name: Firewall (ufw)
+    units: [ufw.service]
+    findings: [firewall., network.]
+    pausable: false
+    logs: [kernel]
+    log_grep: UFW
+  - id: apparmor
+    name: AppArmor (D-05)
+    units: [apparmor.service]
+    findings: [apparmor.]
+    pausable: false
+    logs: [kernel]
+    log_grep: apparmor
+  - id: agents
+    name: Agents (D-07, D-26)
+    units: []
+    findings: [agent.]
+    pausable: false
+    logs: []
+  - id: auth
+    name: Login, sudo, polkit
+    units: []
+    findings: [auth., accounts., login., sudoers., polkit., fido2., ssh.]
+    pausable: false
+    logs: []
+  - id: kernel
+    name: Kernel and sysctl
+    units: []
+    findings: [sysctl., kernel., isolation.]
+    pausable: false
+    logs: []
+  - id: integrity
+    name: Packages and integrity
+    units: []
+    findings: [integrity., pacman., groups., mounts., firmware., flatpak., git.]
+    pausable: false
+    logs: []
+  - id: drift
+    name: Drift check (D-11)
+    units: []
+    findings: [drift_check., panel.]
+    pausable: false
+    logs: [aegis-drift-check.service]
+
+aegis_panel_bin: /usr/local/bin/aegis
+aegis_panel_helper: /usr/local/libexec/aegis-helper
+aegis_panel_status_bin: /usr/local/libexec/aegis-status
+aegis_panel_config: /etc/aegis/panel.json
+aegis_panel_status_file: /run/aegis/status.json
+aegis_panel_paused_file: /run/aegis/paused.json
+aegis_panel_disabled_file: /var/lib/aegis/panel-disabled.json
+aegis_panel_polkit_policy: /usr/share/polkit-1/actions/org.aegis.panel.policy
+aegis_panel_plugin_id: aegis.status
+# How often the status file is rewritten.
+aegis_panel_status_interval: 60s

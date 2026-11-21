@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=82
+checks_total=87
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -897,6 +897,88 @@ if grep -q '/etc/pam.d/su |' /var/lib/aegis/audit.jsonl || ! grep -q '/etc/pam.d
   cat /var/lib/aegis/audit.jsonl; fail "run-window filter wrong: want sudo and login reported, su not"
 fi
 pass "the audit names the key reader and the out-of-tree module, skips known, in-tree, old and own-run events, and keeps no command line"
+
+echo "--- D-38: the panel helper accepts only its allowlist; the status file and pause findings"
+ansible-playbook tests/container/panel.yml >/tmp/panel-install.log 2>&1 \
+  || { cat /tmp/panel-install.log; fail "panel install failed"; }
+for f in /usr/local/bin/aegis /usr/local/libexec/aegis-helper /usr/local/libexec/aegis-status; do
+  [[ -x $f && $(stat -c '%U %a' "$f") == 'root 755' ]] || fail "$f not installed root-owned 0755"
+done
+policy=/usr/share/polkit-1/actions/org.aegis.panel.policy
+python3 -I - "$policy" <<'PY' || fail "polkit actions not as decided (D-38 (a))"
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+got = {}
+for a in root.iter("action"):
+    ann = {x.get("key"): x.text for x in a.iter("annotate")}
+    got[ann["org.freedesktop.policykit.exec.argv1"]] = (a.findtext("defaults/allow_active"), a.findtext("defaults/allow_any"))
+assert got == {"unlock": ("auth_admin_keep", "no"), "pause": ("auth_admin_keep", "no"),
+               "logs": ("auth_admin_keep", "no"), "resume": ("yes", "no")}, got
+PY
+pass "aegis, aegis-helper and aegis-status installed root-owned; polkit: unlock/pause/logs keep, resume yes, no disable"
+mkdir -p /var/lib/aegis
+printf '%s\n' '{"id":"tetragon.cred_access","status":"WARN","detail":"x"}' '{"id":"pacman.siglevel","status":"FAIL","detail":"weak"}' \
+  '{"id":"sysctl.values","status":"PASS","detail":""}' >/var/lib/aegis/audit.jsonl
+/usr/local/libexec/aegis-status || fail "aegis-status failed"
+[[ $(stat -c '%U %G %a' /run/aegis/status.json) == 'root wheel 640' ]] || fail "status file is not root:wheel 0640"
+python3 -I - /run/aegis/status.json <<'PY' || fail "status file not as expected"
+import json, sys
+doc = json.load(open(sys.argv[1]))
+by = {c["id"]: c for c in doc["components"]}
+assert by["tetragon"]["state"] == "warn" and by["tetragon"]["counts"]["WARN"] == 1, by["tetragon"]
+assert by["integrity"]["state"] == "fail" and doc["worst"] == "fail", doc["worst"]
+assert by["firewall"]["actions"]["pause"] is False and by["firewall"]["actions"]["disable"] is False
+assert by["kernel"]["state"] == "ok"
+PY
+helper=/usr/local/libexec/aegis-helper
+for bad in "shell" "pause firewall 10" "pause tetragon 121" "pause tetragon x" "pause --now 10" "disable firewall" "logs ../etc"; do
+  # shellcheck disable=SC2086 # word splitting into argv is the point
+  if $helper $bad >/dev/null 2>&1; then fail "helper accepted: $bad"; fi
+done
+if PKEXEC_UID=1000 $helper disable tetragon >/dev/null 2>&1; then fail "helper accepted disable under pkexec"; fi
+# No systemd here, so the resume timer cannot be scheduled: the pause must
+# refuse and leave nothing paused (fail safe).
+if $helper pause tetragon 5 >/tmp/pause.log 2>&1; then fail "pause succeeded without a resume timer"; fi
+grep -q 'left running' /tmp/pause.log || { cat /tmp/pause.log; fail "pause did not say the component was left running"; }
+[[ ! -e /run/aegis/paused.json ]] || fail "a failed pause was recorded as paused"
+pass "helper refuses unknown verbs, components, ranges, disable under pkexec, and a pause it cannot undo"
+python3 -I -c 'import json, time; json.dump({"tetragon": {"until": int(time.time()) + 600}}, open("/run/aegis/paused.json", "w"))'
+printf '{"opensnitch": {"since": 1}}' >/var/lib/aegis/panel-disabled.json
+ansible-playbook tests/container/panel.yml -e audit_only=true >/tmp/panel-audit.log 2>&1 \
+  || { cat /tmp/panel-audit.log; fail "panel audit run failed"; }
+expect_finding panel.paused WARN
+expect_finding panel.disabled WARN
+grep -q 'paused from the panel (resume on its own): tetragon' /var/lib/aegis/audit.jsonl || fail "paused component not named"
+rm -f /run/aegis/paused.json /var/lib/aegis/panel-disabled.json
+ansible-playbook tests/container/panel.yml -e audit_only=true >/tmp/panel-audit.log 2>&1 || fail "panel audit run failed"
+expect_finding panel.paused PASS
+expect_finding panel.disabled PASS
+pass "a pause and a disable are WARN findings until they end"
+
+echo "--- roadmap 28/29: BPF LSM and listening sockets on planted inputs"
+lsm_play() { # lsm-file ss-file
+  ansible-playbook tests/container/lsm-listeners.yml -e "aegis_apparmor_lsm_file=$1" \
+    -e "{\"aegis_integrity_ss_output\": $(python3 -I -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$2")}" \
+    >/tmp/lsm.log 2>&1 || { cat /tmp/lsm.log; fail "lsm/listener audit run failed"; }
+}
+printf 'capability,landlock,lockdown,yama,apparmor,bpf\n' >/tmp/lsm-ok
+printf 'capability,landlock,lockdown,yama,apparmor\n' >/tmp/lsm-nobpf
+cat >/tmp/ss-out <<'SS'
+udp   UNCONN 0 0   0.0.0.0:5353   0.0.0.0:*  users:(("avahi-daemon",pid=650,fd=12))
+udp   UNCONN 0 0 127.0.0.53%lo:53  0.0.0.0:* users:(("systemd-resolve",pid=500,fd=20))
+tcp   LISTEN 0 128 0.0.0.0:4444 0.0.0.0:* users:(("nc",pid=10,fd=3))
+SS
+grep -v ':4444 ' /tmp/ss-out >/tmp/ss-clean
+lsm_play /tmp/lsm-nobpf /tmp/ss-out
+expect_finding kernel.bpf_lsm WARN
+expect_finding network.listeners WARN
+grep -q 'not in aegis_integrity_listeners_known: nc tcp 0.0.0.0:4444' /var/lib/aegis/audit.jsonl \
+  || { cat /var/lib/aegis/audit.jsonl; fail "the unknown listener is not named"; }
+pass "an lsm= without bpf and an unknown exposed listener both WARN"
+lsm_play /tmp/lsm-ok /tmp/ss-clean
+expect_finding kernel.bpf_lsm PASS
+expect_finding network.listeners PASS
+pass "bpf active and only known or loopback listeners: both PASS"
 
 echo "--- D-02: the kernel role accepts either default, but needs the linux-hardened entry"
 # Synthetic menus: the role reads only the kernel-id= words, in order.

@@ -1069,3 +1069,103 @@ policy at a time, after the events have been reviewed.
   0.027 s without (about +2.6 µs each). 500 execs took 0.741 s and 0.539 s
   (+0.4 ms, +37%). The daemon's resident memory was 208–245 MB over two runs.
   `systemd-analyze security`: 7.3 MEDIUM; it stays root by design.
+- **`linux-hardened` (VM, 2026-11-21, 7.2.10-hardened1-3):**
+  - booted once as the default entry; all six policies loaded, and
+    `tests/vm/tetragon.sh` passed (every technique fires, the look-alikes
+    stay quiet);
+  - `tetra probe`: `override_return: false`, `fmodret`, `lsm` and `signal`
+    true, as predicted from the config;
+  - overhead: 20 000 opens took 0.101 s with Tetragon and 0.041 s without;
+    500 execs 0.809 s and 0.619 s; 154 MB resident.
+
+## D-38 — Status panel and "admin mode" in the Omarchy shell (Decided 2026-11-21: (a))
+
+The owner asked for one place to see the state, issues and logs of every
+component this playbook adds or depends on, and to turn components off and on
+from the desktop. Omarchy 4.5 runs its desktop as Quickshell plugins, and a
+third-party plugin lives in `~/.config/omarchy/plugins/<id>/`
+(`manual/32-shell-plugins.md` at `v4.5.0`). Such a plugin runs **unsandboxed
+inside the shell as the user** ("the same user-level file and process access
+as the shell", `docs/omarchy-shell.md:90`). So anything running as the user
+can drive it or make it show green. It is a convenience; the root audit, the
+journal and the drift-check notifications stay authoritative.
+
+Design:
+
+- **Status.** A root timer writes a cleaned-up `/run/aegis/status.json`
+  (0640, `root:wheel`). For each component it holds state, unit states,
+  finding counts and the WARN/FAIL details, but no command lines and no raw
+  Tetragon events.
+- **CLI.** `aegis` reads the status file and starts the privileged actions.
+- **Root helper.** `aegis-helper` accepts a fixed set of verbs (`unlock`,
+  `pause <component> <minutes>`, `resume`, `logs`, `disable`) and the
+  component names in `/etc/aegis/panel.json`. It has no shell and takes no
+  free-form arguments.
+- **Plugin.** `aegis.status` puts a bar icon (worst state) and a panel in the
+  shell. Actions go through `aegis`.
+- **Admin mode** means: for a few minutes, a fixed list of low-risk actions
+  can be done without asking again. It is never a root shell. Each verb is a
+  polkit action (`exec.argv1`); polkit keeps an `auth_admin_keep`
+  authorization "for a brief period (e.g. five minutes)" (polkit(8)).
+
+Options for how actions authenticate:
+
+- **(a)** `unlock`, `pause` and `logs` use polkit `auth_admin_keep`. With
+  Omarchy's FIDO2 setup the key alone answers polkit, without faillock
+  (D-28). `resume` needs no prompt, as it only turns protection back on.
+  `disable` runs only under `sudo` in a terminal, which under D-04 means key
+  **and** password.
+- **(b)** The same, after making polkit key plus password too. That changes
+  Omarchy's behaviour.
+- **(c)** sudo in a terminal for everything.
+
+**Decided (owner, 2026-11-21): (a).**
+
+Rules that come with it:
+
+- A pause always ends on its own (at most 120 minutes; a transient systemd
+  timer resumes it). Until then the audit WARNs `panel.paused`.
+- `disable` lasts until the next apply, which turns the component back on.
+  Meanwhile the drift check reports it, and the audit WARNs `panel.disabled`.
+- Only the components that can safely be stopped can be paused or disabled:
+  Tetragon and OpenSnitch with its egress collector. The firewall,
+  AppArmor, PAM and sysctl are shown, never toggled.
+- Every privileged action is logged to the journal (`aegis-helper`, with
+  the requesting uid) and announced with a desktop notification.
+- The helper refuses `disable` when started by `pkexec`.
+- Opt-in: `aegis_panel_enabled` defaults to `false` (AGENTS.md).
+- Tetragon's persistence policy also watches `~/.config/omarchy/plugins/`,
+  since plugins are code that runs at every login.
+
+**Found in the VM test (2026-11-21, Omarchy 4.5.0-3, `linux-omarchy` 7.2.15):**
+
+- **polkit keeps an authorization per action.** So "unlock" alone gave no
+  admin mode; the second action was refused. The unlock action now carries
+  `org.freedesktop.policykit.imply` for pause and logs (polkit(8)). With it,
+  one password covered unlock and the pause that followed, in the desktop
+  session.
+- **Admin mode works only in the active local session.** From SSH, polkit
+  applies `allow_any=no` and refuses without a prompt. In the desktop session
+  (polkit sees `unix-session:1`), `allow_active` applies. Remote sessions
+  therefore cannot pause anything through polkit.
+- **`omarchy-shell` IPC needs the desktop session's environment**
+  (`OMARCHY_PATH`, Wayland, Hyprland). The role reads it with
+  `systemctl --user show-environment` and passes only those keys; values
+  systemd shell-quotes (`QT_QPA_PLATFORM`) are left out.
+- **The plugin loads in the running shell.** Its IPC target is registered,
+  `omarchy plugin validate` passes, and the shell log has no QML errors. A
+  `grim` screenshot shows the shield in the bar and the panel listing
+  components, issues and actions. A long name ran into the buttons; names now
+  elide.
+- **Also checked:**
+  - a wrong password is refused, and nothing stops;
+  - a pause WARNs, is journalled with the uid, and ends on its own;
+  - `disable` is refused under pkexec and works under sudo;
+  - `resume` needs no prompt in the desktop;
+  - the next apply turns a disabled component back on.
+- **Not tested:**
+  - typing into Omarchy's own polkit dialog through VirtualBox (polkit logged
+    "FAILED to authenticate"; the screen was on the idle lock screen). The
+    test answers polkit with `pkttyagent` registered for the test's own
+    process, still inside the desktop session;
+  - a FIDO2 key at that dialog (D-28: key alone).

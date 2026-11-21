@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "aegis.status",
+  "name": "Aegis",
+  "version": "1.0.0",
+  "author": "Omarchy-Hardened",
+  "license": "Apache-2.0",
+  "description": "State, issues and logs of the Omarchy-Hardened components, with pause and resume (D-38).",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Aegis",
+    "description": "Hardening status: components, findings, pause, resume and logs.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 20
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 5,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 20
+      }
+    ]
+  }
+}

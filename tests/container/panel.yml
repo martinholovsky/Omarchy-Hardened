@@ -1,0 +1,29 @@
+---
+# Container test for D-38: the panel back end install and its audit findings.
+# No systemd, polkit or desktop session here; the VM test covers those.
+# Driven by inside.sh.
+- name: Install the panel back end, or audit planted pause records
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  vars:
+    aegis_panel_enabled: true
+    aegis_panel_manage_service: false
+  tasks:
+    - name: Run the panel install
+      ansible.builtin.include_role:
+        name: control_panel
+        tasks_from: install.yml
+      when: not (audit_only | default(false) | bool)
+
+    - name: Run the panel audit
+      ansible.builtin.include_role:
+        name: control_panel
+        tasks_from: audit.yml
+      when: audit_only | default(false) | bool
+  post_tasks:
+    - name: Report audit findings
+      ansible.builtin.import_role:
+        name: audit_report
+      when: audit_only | default(false) | bool

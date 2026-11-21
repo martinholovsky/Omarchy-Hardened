@@ -5,3 +5,5 @@
 aegis_firewall_remove_ssh: false
 # D-37 is opt-in; the VM test covers it (run.sh, then tetragon.sh).
 aegis_tetragon_enabled: true
+# D-38 is opt-in; the VM test covers it (run.sh, then panel.sh).
+aegis_panel_enabled: true

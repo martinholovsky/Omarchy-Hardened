@@ -1,0 +1,104 @@
+---
+# D-38: the aegis.status shell plugin, in the desktop user's plugin directory
+# (~/.config/omarchy/plugins/<id>/, manual/32-shell-plugins.md at v4.5.0).
+# Omarchy refuses symlinks inside a plugin, so the files are copied. The
+# drift check runs as a system service and cannot become the user (D-33): it
+# skips this file.
+- name: Find the desktop user's home
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ aegis_panel_user }}"
+  when: not (aegis_drift_check_run | default(false) | bool)
+
+- name: Install and enable the plugin
+  when: not (aegis_drift_check_run | default(false) | bool)
+  vars:
+    aegis_home: "{{ ansible_facts['getent_passwd'][aegis_panel_user][4] }}"
+    aegis_uid: "{{ ansible_facts['getent_passwd'][aegis_panel_user][1] }}"
+    aegis_gid: "{{ ansible_facts['getent_passwd'][aegis_panel_user][2] }}"
+    aegis_plugin_dir: "{{ aegis_home }}/.config/omarchy/plugins/{{ aegis_panel_plugin_id }}"
+  block:
+    - name: Create the plugin directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ aegis_panel_user }}"
+        group: "{{ aegis_gid }}"
+        mode: "0755"
+      loop:
+        - "{{ aegis_home }}/.config/omarchy/plugins"
+        - "{{ aegis_plugin_dir }}"
+
+    - name: Copy the plugin files
+      ansible.builtin.copy:
+        src: "plugin/{{ item }}"
+        dest: "{{ aegis_plugin_dir }}/{{ item }}"
+        owner: "{{ aegis_panel_user }}"
+        group: "{{ aegis_gid }}"
+        mode: "0644"
+      loop: [manifest.json, Panel.qml, Service.qml, Model.js]
+
+    - name: Check whether the plugin is already on (third-party enabled means listed in shell.json)
+      ansible.builtin.slurp:
+        src: "{{ aegis_home }}/.config/omarchy/shell.json"
+      register: aegis_panel_shell_json
+      failed_when: false
+
+    - name: Read the desktop session's environment (omarchy-shell needs OMARCHY_PATH and Wayland)
+      become: true
+      become_user: "{{ aegis_panel_user }}"
+      ansible.builtin.command:
+        argv: [systemctl, --user, show-environment]
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ aegis_uid }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ aegis_uid }}/bus"
+      register: aegis_panel_session_env
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when:
+        - aegis_panel_plugin_enable | bool
+        - not ansible_check_mode
+        - aegis_panel_plugin_id not in (aegis_panel_shell_json.content | default('') | b64decode)
+
+    - name: Turn the plugin on in the running shell
+      become: true
+      become_user: "{{ aegis_panel_user }}"
+      ansible.builtin.command:
+        argv: [omarchy-shell, shell, enablePlugin, "{{ aegis_panel_plugin_id }}",
+               "{{ {'section': aegis_panel_plugin_section} | to_json }}"]
+      vars:
+        aegis_session_keys: [OMARCHY_PATH, PATH, WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE, XDG_RUNTIME_DIR,
+                             DBUS_SESSION_BUS_ADDRESS]
+      # KEY=value lines; values may hold '=' (DBUS_SESSION_BUS_ADDRESS=unix:path=...).
+      environment: >-
+        {%- set env = {'XDG_RUNTIME_DIR': '/run/user/' ~ aegis_uid} -%}
+        {%- for key in aegis_session_keys -%}
+          {%- set hit = aegis_panel_session_env.stdout_lines | default([])
+                        | select('match', key ~ '=') | list -%}
+          {%- if hit -%}{%- set _ = env.update({key: hit[0][key | length + 1:]}) -%}{%- endif -%}
+        {%- endfor -%}
+        {{ env }}
+      register: aegis_panel_enable
+      changed_when: aegis_panel_enable.stdout == 'ok'
+      failed_when: false
+      when:
+        - aegis_panel_plugin_enable | bool
+        - not ansible_check_mode
+        - aegis_panel_plugin_id not in (aegis_panel_shell_json.content | default('') | b64decode)
+
+    - name: Record whether the plugin is on
+      vars:
+        aegis_on: >-
+          {{ (aegis_panel_shell_json.content | default('') | b64decode) is search(aegis_panel_plugin_id | regex_escape)
+             or (aegis_panel_enable.stdout | default('')) == 'ok' }}
+      ansible.builtin.set_fact:
+        aegis_findings: >-
+          {{ (aegis_findings | default([])) + [{'id': 'panel.plugin',
+             'status': 'PASS' if aegis_on | bool else 'INFO',
+             'detail': ('the ' ~ aegis_panel_plugin_id ~ ' plugin is on in ' ~ aegis_panel_user ~ "'s shell")
+                       if aegis_on | bool
+                       else ('installed but not on (no running shell: '
+                             ~ ((aegis_panel_enable.stdout | default(''))
+                                or (aegis_panel_enable.stderr | default('')) or 'skipped')
+                             ~ '); run: omarchy plugin enable ' ~ aegis_panel_plugin_id)}] }}

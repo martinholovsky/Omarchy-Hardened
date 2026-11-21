@@ -23,6 +23,10 @@ spec:
       - operator: NotIn
         values:
         - {{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/usr/bin/tetragon
+        # tetra probe loads test programs; Tetragon reports the executed path,
+        # here the symlink (VM, 2026-11-21: 20 events from one tetra probe).
+        - /usr/local/bin/tetra
+        - {{ aegis_tetragon_root }}/{{ aegis_tetragon_version }}/usr/bin/tetra
         - /usr/lib/systemd/systemd
         - /usr/lib/systemd/systemd-executor
         - /usr/bin/opensnitchd

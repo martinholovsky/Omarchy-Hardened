@@ -75,6 +75,10 @@
     - role: pacman_integrity
       tags: [supply-chain, pacman, audit, p2]
 
+    # Status panel and admin mode in the Omarchy shell (D-38): opt-in
+    - role: control_panel
+      tags: [monitoring, panel, p2]
+
     # Runtime monitoring (D-37): opt-in, detection only. Last role on purpose:
     # its audit counts events from this run apart (run window), and the roles
     # above read and write watched files (pacman_integrity reads /etc/shadow).
