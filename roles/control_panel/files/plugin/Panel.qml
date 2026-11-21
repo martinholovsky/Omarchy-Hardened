@@ -99,7 +99,7 @@ Panel {
               Button {
                 text: aegis.adminActive ? "Admin on" : "Admin mode"
                 iconText: aegis.adminActive ? "" : ""  // unlock / lock
-                tooltipText: "Authenticate once; pause, resume and logs then ask again only after a few minutes"
+                tooltipText: "Authenticate once; pause and logs then do not ask again for a few minutes. Resume never asks"
                 foreground: aegis.adminActive ? root.urgent : root.foreground
                 fontFamily: root.fontFamily
                 onClicked: aegis.unlock()

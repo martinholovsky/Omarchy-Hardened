@@ -1131,7 +1131,9 @@ Rules that come with it:
   Tetragon and OpenSnitch with its egress collector. The firewall,
   AppArmor, PAM and sysctl are shown, never toggled.
 - Every privileged action is logged to the journal (`aegis-helper`, with
-  the requesting uid) and announced with a desktop notification.
+  the requesting uid) and announced with a desktop notification. *(Corrected
+  2026-11-21: every action is journalled; only pause and disable raise a
+  notification, `roles/control_panel/files/aegis.py` `_notify` calls.)*
 - The helper refuses `disable` when started by `pkexec`.
 - Opt-in: `aegis_panel_enabled` defaults to `false` (AGENTS.md).
 - Tetragon's persistence policy also watches `~/.config/omarchy/plugins/`,

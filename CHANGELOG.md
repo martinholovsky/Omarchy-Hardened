@@ -13,7 +13,8 @@ SemVer once 1.0 ships.
 - Roadmap #29: audit finding `network.listeners` WARNs on a socket listening
   beyond loopback that is not in `aegis_integrity_listeners_known` (defaults:
   avahi, resolved's Docker DNS, NetworkManager's DHCP client). Module
-  `aegis_listeners` parses `ss -Htulpn`.
+  `aegis_listeners` parses `ss -Htulpn`. With #28, the container test has
+  87 checks (`tests/container/inside.sh` `checks_total`; 87/87 on 2026-11-21).
 - Roadmap #30: operating-notes §5 shows `aegis-agent --egress enforce --
   COMMAND` for untrusted repositories and toolchains.
 - D-38: `control_panel` role (opt-in, `aegis_panel_enabled`), a status panel
