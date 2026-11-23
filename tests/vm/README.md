@@ -8,13 +8,17 @@ that worked on 2026-10-21. Host: Intel Mac, VirtualBox 7.2.22. Guest: Omarchy
 4.0.6, `linux-omarchy 7.2.8-9`.
 
 Everything under `tests/vm/.state/` (key, password, logs) is git-ignored. Its
-password protects a throwaway VM and nothing else.
+password protects a throwaway VM and nothing else. **Never delete it**: the key
+and the password (also the VM's LUKS and root password) are the only way into
+every snapshot. Where the VM, the ISO and this folder live, and how to move them
+to another Mac: [CLAUDE.md](../../CLAUDE.md), "Where project data lives".
 
 ## 1. Get and verify the ISO
 
 ```bash
 . tests/vm/iso.lock
-mkdir -p ~/Downloads/omarchy-iso && cd ~/Downloads/omarchy-iso
+iso_dir=/Volumes/speedy/VirtualBox/iso   # where this project keeps it; any path works
+mkdir -p "$iso_dir" && cd "$iso_dir"
 curl -fLO "$AEGIS_ISO_URL" -fLO "$AEGIS_ISO_URL.sig"
 export GNUPGHOME=$(mktemp -d)
 curl -fsS "https://keys.openpgp.org/vks/v1/by-fingerprint/$AEGIS_ISO_SIGNER" | gpg --import
@@ -31,7 +35,7 @@ mkdir -m 700 -p tests/vm/.state
 ssh-keygen -q -t ed25519 -N '' -C aegis-vm-test -f tests/vm/.state/id_ed25519
 echo aegis > tests/vm/.state/user
 (umask 077; openssl rand -base64 15 > tests/vm/.state/become-password)
-tests/vm/create.sh ~/Downloads/omarchy-iso/omarchy-4.0.6.iso
+tests/vm/create.sh "$iso_dir/omarchy-4.0.6.iso"
 VBoxManage setextradata aegis-omarchy GUI/AutoresizeGuest false
 VBoxManage startvm aegis-omarchy
 ```

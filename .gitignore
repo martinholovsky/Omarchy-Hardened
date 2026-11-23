@@ -6,3 +6,5 @@ __pycache__/
 .DS_Store
 /tests/container/.out/
 /tests/vm/.state/
+# Tier 2 (see CLAUDE.md "Where project data lives"): local evidence, never delete.
+/evidence/
