@@ -23,14 +23,15 @@ aegis_drift_check_tags: []
 aegis_drift_check_notify: true
 
 # Variables that describe the machine rather than your settings, and are not
-# saved for the check run. aegis_omarchy_paths is resolved on the controller,
-# so it would pin the controller's $HOME. The become_check results describe how
+# saved for the check run. preflight looks the Omarchy path and the desktop
+# user's home up again in the check run. The become_check results describe how
 # this run got root: saved, they would pin a non-root run's answer into the
 # root check run (extra vars beat set_fact), and aegis_become_uid carries the
 # command's timestamps, so every apply would rewrite the file (VM, 2026-10-27).
 aegis_drift_check_exclude_vars:
   - aegis_drift_check_source
   - aegis_omarchy_paths
+  - aegis_preflight_home
   - aegis_omarchy_path
   - aegis_omarchy_stats
   - aegis_omarchy_version_file

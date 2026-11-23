@@ -23,9 +23,9 @@ Sizes and counts are from that day.
 
 No tool in this project writes input paths into a result file: the VM tests
 write their logs to `tests/vm/.state/` (resolved from the script's own
-location), and the container test writes to `tests/container/.out/`. The VM
-playbook logs do name the Mac's home directory, through a `preflight` bug
-(docs/open-items.md §1).
+location), and the container test writes to `tests/container/.out/`. VM logs
+from before 2026-11-23 name the Mac's home directory, through a `preflight` bug
+fixed that day (CHANGELOG).
 
 ### Machine-bound (lost when speedy moves to another Mac)
 

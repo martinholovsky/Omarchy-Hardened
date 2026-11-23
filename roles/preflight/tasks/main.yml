@@ -8,10 +8,22 @@
       (found {{ ansible_facts['distribution'] }}).
     quiet: true
 
+- name: Look up the desktop user on the target
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ aegis_preflight_user }}"
+    fail_key: false
+
+- name: Record the desktop user's home
+  ansible.builtin.set_fact:
+    aegis_preflight_home: >-
+      {{ ((ansible_facts['getent_passwd'] | default({}))[aegis_preflight_user]
+          | default([], true))[4] | default('') }}
+
 - name: Look for an Omarchy install
   ansible.builtin.stat:
     path: "{{ item }}"
-  loop: "{{ aegis_omarchy_paths }}"
+  loop: "{{ aegis_omarchy_paths | select | list }}"
   register: aegis_omarchy_stats
 
 - name: Record the Omarchy install path
@@ -29,7 +41,7 @@
     that:
       - aegis_omarchy_path | length > 0
     fail_msg: >-
-      No Omarchy install found in {{ aegis_omarchy_paths | join(', ') }}.
+      No Omarchy install found in {{ aegis_omarchy_paths | select | join(', ') }}.
       Install Omarchy first, or set aegis_require_omarchy=false to test on plain Arch.
     quiet: true
   when: aegis_require_omarchy | bool

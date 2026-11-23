@@ -1,0 +1,10 @@
+---
+# Container test: preflight alone, with its default aegis_require_omarchy:
+# true. Driven by tests/container/inside.sh (the preflight section).
+- name: Run preflight only
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  roles:
+    - preflight

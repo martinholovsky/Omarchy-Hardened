@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=87
+checks_total=89
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -183,8 +183,8 @@ if ! { [[ -x /usr/local/libexec/aegis-drift-check ]] && grep -q 'systemctl start
 fi
 grep -qx 'aegis_faillock_deny: 10' "$copy/applied-vars.yml" || fail "applied settings not saved"
 ! grep -q '^aegis_drift_check_source:' "$copy/applied-vars.yml" || fail "controller path saved in applied-vars"
-! grep -Eq '^aegis_(become_(uid|sudo_pam|fido2_keys)|run_as_root|sudo_u2f):' "$copy/applied-vars.yml" ||
-  fail "become_check results saved in applied-vars"
+! grep -Eq '^aegis_(become_(uid|sudo_pam|fido2_keys)|run_as_root|sudo_u2f|omarchy_path|preflight_home):' "$copy/applied-vars.yml" ||
+  fail "become_check or preflight results saved in applied-vars"
 # The idempotence run above has the drift check off. aegis_become_uid carries
 # timestamps, so saving it rewrote applied-vars.yml on every apply (VM, 2026-10-27).
 out=$(ansible-playbook tests/container/playbook.yml -e aegis_drift_check_enabled=true)
@@ -1050,6 +1050,26 @@ become_play /tmp/bc/sudo-u2f /tmp/bc/token-none || { cat /tmp/become.log; fail "
 pass "pam_u2f with no key plugged in lets a non-root run go on"
 become_play /tmp/bc/sudo-plain /tmp/bc/token-key || { cat /tmp/become.log; fail "a key without pam_u2f stopped the run"; }
 pass "a key without pam_u2f in sudo lets a non-root run go on"
+
+echo "--- preflight: a 3.x install in the desktop user's home, looked up on the target"
+# The 3.x path used to come from the controller's $HOME: on a remote target
+# the wrong machine, and /root under `sudo ansible-playbook`. SUDO_USER=alice
+# is what sudo sets; the image has no /usr/share/omarchy.
+[[ ! -e /usr/share/omarchy ]] || fail "the image has /usr/share/omarchy; this section needs it absent"
+runuser -u alice -- mkdir -p /home/alice/.local/share/omarchy
+printf '3.9.9\n' >/home/alice/.local/share/omarchy/version
+SUDO_USER=alice HOME=/root ansible-playbook tests/container/preflight.yml >/tmp/preflight.log 2>&1 ||
+  { cat /tmp/preflight.log; fail "preflight did not find the install in alice's home"; }
+grep -qF 'Omarchy 3.9.9 at /home/alice/.local/share/omarchy;' /tmp/preflight.log ||
+  { cat /tmp/preflight.log; fail "preflight did not report alice's install"; }
+pass "preflight finds a 3.x install in the sudo user's home, not in \$HOME (/root)"
+if env -u SUDO_USER ansible-playbook tests/container/preflight.yml >/tmp/preflight.log 2>&1; then
+  cat /tmp/preflight.log; fail "a root run without SUDO_USER found alice's install"
+fi
+grep -qF 'No Omarchy install found in /usr/share/omarchy, /root/.local/share/omarchy.' /tmp/preflight.log ||
+  { cat /tmp/preflight.log; fail "a root run looked somewhere other than root's home"; }
+pass "without SUDO_USER, preflight looks in root's own home and refuses"
+rm -r /home/alice/.local/share/omarchy
 
 [[ $checks_passed -eq $checks_total ]] || fail "only $checks_passed/$checks_total checks ran"
 echo "${checks_passed}/${checks_total} checks passed"
