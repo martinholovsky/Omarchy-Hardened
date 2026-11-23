@@ -3,8 +3,16 @@
 # roles against plain Arch (the CI container does this).
 aegis_require_omarchy: true
 
+# The desktop user whose home may hold a 3.x install: the user who ran sudo,
+# or the connecting user. Resolved on the target, as the other roles do; the
+# controller's $HOME is the wrong machine on a remote target, and /root under
+# `sudo ansible-playbook`.
+aegis_preflight_user: "{{ ansible_facts['env'].SUDO_USER | default(ansible_facts['user_id']) }}"
+
 # Where Omarchy lives. 4.x installs to /usr/share/omarchy; 3.x installs lived
 # under the user's ~/.local/share/omarchy. The first path that exists wins.
+# aegis_preflight_home is that user's home from the target's passwd database
+# (tasks/main.yml); an empty entry is skipped.
 aegis_omarchy_paths:
   - /usr/share/omarchy
-  - "{{ lookup('ansible.builtin.env', 'HOME') }}/.local/share/omarchy"
+  - "{{ (aegis_preflight_home ~ '/.local/share/omarchy') if aegis_preflight_home else '' }}"

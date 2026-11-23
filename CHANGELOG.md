@@ -147,6 +147,16 @@ SemVer once 1.0 ships.
 
 ### Fixed
 
+- `preflight` looked for a 3.x install (`~/.local/share/omarchy`) under the
+  controller's `$HOME`: on a remote target that is the wrong machine (the VM
+  logs named `/Users/<you>/...` on the guest), and under
+  `sudo ansible-playbook` it is `/root`. It now looks up the desktop user
+  (`aegis_preflight_user`: `SUDO_USER`, else the connecting user, as the other
+  roles do) in the target's passwd database. The drift check does not save
+  the resolved home (`aegis_preflight_home`). New container test (89 checks):
+  with `SUDO_USER=alice` and `HOME=/root` it finds an install in alice's
+  home, and without `SUDO_USER` it looks in `/root` and refuses; with the old
+  `lookup('env', 'HOME')` put back, the first check fails (2026-11-23).
 - The container test copied the whole working tree into the container
   (`cp -a /src /work`), git-ignored directories included: a local
   `.collections/` that `ansible-galaxy collection install` then skipped as
