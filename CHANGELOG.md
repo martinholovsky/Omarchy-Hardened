@@ -112,6 +112,11 @@ SemVer once 1.0 ships.
   binaries). The container test's copy guard was mutation-probed on 2026-11-23:
   with `cp -a /src/. /work` put back, it stops with "the working copy in /work
   is incomplete or holds git-ignored host state" (exit 1); unchanged, it passes.
+- The section now opens with when it applies (before creating, moving or
+  deleting project data or memory), lists `~/.claude/hooks/memory-guard.py`
+  and `~/.claude/prompts/` as machine-bound, and restores them on a new Mac.
+  Re-checked 2026-11-23: the hook's selftest passes 12/12, it is registered
+  as a PreToolUse hook, and both memory keys resolve to `.claude-memory/`.
 - The pre-commit unit-test hooks (`collector-tests`, `panel-tests`) run
   under `uv run --frozen python` instead of whatever `python3` is on `PATH`
   (Homebrew moved it to 3.15 on 2026-11-22).

@@ -2,6 +2,9 @@
 
 ## Where project data lives
 
+Before creating, moving or deleting project data or memory, place it by this table and follow the
+move/delete rules below.
+
 The repo folder is `/Volumes/speedy/Github/Omarchy-Hardened`. `~/Github` is a symlink
 to `/Volumes/speedy/Github`, so `~/Github/Omarchy-Hardened` is the same folder (compare
 with `stat -f %d:%i` or `realpath`, never by listing or `diff -r`: a folder
@@ -29,6 +32,9 @@ fixed that day (CHANGELOG).
 
 ### Machine-bound (lost when speedy moves to another Mac)
 
+- `~/.claude/hooks/memory-guard.py` (a PreToolUse hook in `~/.claude/settings.json` that asks
+  before any `rm`/`mv`/`rmdir`/`unlink`/`ln` touching a memory folder) and
+  `~/.claude/prompts/where-project-data-lives.md` (the setup prompt behind this section).
 - `~/.claude/projects/-Volumes-speedy-Github-Omarchy-Hardened/` (session transcripts)
   and the `memory` symlinks in that key and in
   `~/.claude/projects/-Users-martinholovsky-Github-Omarchy-Hardened/`. The memory itself is
@@ -49,6 +55,9 @@ ln -s /Volumes/speedy/Github ~/Github
 VBoxManage setproperty machinefolder /Volumes/speedy/VirtualBox/images
 VBoxManage registervm /Volumes/speedy/VirtualBox/images/aegis-omarchy/aegis-omarchy.vbox
 VBoxManage snapshot aegis-omarchy list        # expect pre-aegis-450 among them
+# ~/.claude/hooks/memory-guard.py, ~/.claude/prompts/ and the hook entry in ~/.claude/settings.json:
+# restore from Time Machine (~/.claude was [Included], 2026-11-23); check with
+# `python3 ~/.claude/hooks/memory-guard.py --selftest`
 # Claude memory: both path keys point at the repo copy
 for k in -Volumes-speedy-Github-Omarchy-Hardened -Users-martinholovsky-Github-Omarchy-Hardened; do
   mkdir -p ~/.claude/projects/$k && ln -s /Volumes/speedy/Github/Omarchy-Hardened/.claude-memory ~/.claude/projects/$k/memory
