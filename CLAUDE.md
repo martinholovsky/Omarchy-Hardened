@@ -19,7 +19,7 @@ Sizes and counts are from that day.
 | Tier | What | Where in this project | Rule |
 |---|---|---|---|
 | 1 Tracked | Code, docs, test data, small reference results | `roles/`, `docs/`, `tests/` (fixtures in `tests/fixtures/`), `tests/vm/iso.lock` (ISO SHA-256), `requirements.yml`, `uv.lock` | Anything a doc, commit, handoff or committed result cites lives here, or its exact regenerate command sits beside the citation. Upstream Omarchy files are cited at a pinned commit (`docs/upstream-baseline.md`): regenerate with `git clone https://github.com/basecamp/omarchy && git -C omarchy checkout <commit>`. The research repos in `docs/research/*.md` are pinned the same way |
-| 2 Local-durable | In the repo, git-ignored, **never deleted** | `tests/vm/.state/` (61 files, 7.7 MB: the VM's only SSH key `id_ed25519`, `become-password` which is also the VM's LUKS and root password, `known_hosts`, every VM run log and screenshot). `.claude-memory/` (Claude memory, 6 files; excluded in `.git/info/exclude`). `evidence/scratchpads/<session>/` (1275 files, 68 MB, copied from 7 earlier session scratchpads on 2026-11-23). `.claude/settings.local.json` | Losing `tests/vm/.state/` locks you out of every VM snapshot. New evidence goes in `evidence/` (or in `tests/vm/.state/` for VM runs). Add new directories only under `evidence/`, `runs/` or `results/`, and ignore them in `.gitignore` |
+| 2 Local-durable | In the repo, git-ignored, **never deleted** | `tests/vm/.state/` (61 files, 7.7 MB: the VM's only SSH key `id_ed25519`, `become-password` which is also the VM's LUKS and root password, `known_hosts`, every VM run log and screenshot). `.claude-memory/` (Claude memory, 6 files; excluded in `.git/info/exclude`; sessions write there through `autoMemoryDirectory`, see below). `evidence/scratchpads/<session>/` (1275 files, 68 MB, copied from 7 earlier session scratchpads on 2026-11-23). `.claude/settings.local.json` (`autoMemoryDirectory` and local permissions; excluded in `.git/info/exclude`) | Losing `tests/vm/.state/` locks you out of every VM snapshot. New evidence goes in `evidence/` (or in `tests/vm/.state/` for VM runs). Add new directories only under `evidence/`, `runs/` or `results/`, and ignore them in `.gitignore` |
 | 3 Rebuildable | In the repo, git-ignored, delete freely | `.venv/` (87 MB): `uv sync --frozen`. `.collections/` (27 MB): `uv run --frozen ansible-galaxy collection install -r requirements.yml`. `.ansible/` (empty; ansible-lint creates it). `.mypy_cache/`, `.ruff_cache/`, `__pycache__/`: the tools rebuild them. `tests/container/.out/`: `run.sh` deletes and recreates it on every run | No secrets here, short-lived tokens included (this project has none). No gate or test may depend on a file here. The container test copies only what git would commit into the container (`tests/container/inside.sh`). The `.venv` interpreter lives in `~/.local/share/uv/python` on the internal disk, so after a move run `rm -rf .venv && uv sync --frozen` |
 | 4 Ephemeral | Throwaway only | The session scratchpad `/Volumes/speedy/scratch/claude/claude-501/-Volumes-speedy-Github-Omarchy-Hardened/<session>/`, `/tmp`, `$TMPDIR` | Cleanup removes it, even though it is on speedy. Never cite a path here in a doc, commit or result file. Before a session ends, copy anything worth keeping into tier 1 or 2 (`evidence/scratchpads/<session>/`) |
 | 5 Outside by design | On speedy, not in the repo | `/Volumes/speedy/VirtualBox/images/aegis-omarchy/` (the test VM: `.vbox`, disks, `Snapshots/`, 15 GB; snapshots `pre-aegis` > `pre-aegis-updated` > `pre-aegis-hw` and `pre-aegis-450`). `/Volumes/speedy/VirtualBox/iso/omarchy-4.0.6.iso` (+ `.sig`, `.sha256`, which matches `tests/vm/iso.lock`). `/Volumes/speedy/VirtualBox/extpack/Oracle_VirtualBox_Extension_Pack-7.2.22.vbox-extpack` (+ `.sha256`, computed locally and not checked against Oracle's list) | The VM cannot be rebuilt as it is: the snapshots hold an install, an enrolled YubiKey (`pre-aegis-hw`) and a 4.5.0 update. Its passwords are in tier 2. Podman holds nothing to archive: the container test pulls `archlinux` by digest (`tests/container/run.sh`), removes its container on exit and creates no volumes |
@@ -38,7 +38,9 @@ fixed that day (CHANGELOG).
 - `~/.claude/projects/-Volumes-speedy-Github-Omarchy-Hardened/` (session transcripts)
   and the `memory` symlinks in that key and in
   `~/.claude/projects/-Users-martinholovsky-Github-Omarchy-Hardened/`. The memory itself is
-  in `.claude-memory/` (tier 2).
+  in `.claude-memory/` (tier 2). Sessions find it through `autoMemoryDirectory` in
+  `.claude/settings.local.json`, which travels with the repo folder; the two symlinks are a
+  fallback for a session that does not read that setting.
 - VirtualBox: the VM registration in `~/Library/VirtualBox/VirtualBox.xml` and the
   default machine folder setting. The extension pack is installed on this Mac but the
   test does not need it (docs/operating-notes.md §6); its copy on speedy is optional.
@@ -58,7 +60,8 @@ VBoxManage snapshot aegis-omarchy list        # expect pre-aegis-450 among them
 # ~/.claude/hooks/memory-guard.py, ~/.claude/prompts/ and the hook entry in ~/.claude/settings.json:
 # restore from Time Machine (~/.claude was [Included], 2026-11-23); check with
 # `python3 ~/.claude/hooks/memory-guard.py --selftest`
-# Claude memory: both path keys point at the repo copy
+# Claude memory: .claude/settings.local.json (in the repo folder) already sets autoMemoryDirectory;
+# the symlinks are the fallback
 for k in -Volumes-speedy-Github-Omarchy-Hardened -Users-martinholovsky-Github-Omarchy-Hardened; do
   mkdir -p ~/.claude/projects/$k && ln -s /Volumes/speedy/Github/Omarchy-Hardened/.claude-memory ~/.claude/projects/$k/memory
 done
@@ -89,3 +92,22 @@ Then run the checks in AGENTS.md ("Verify a change").
   Mounting a local snapshot with `mount_apfs` was refused without `sudo` and
   restored nothing with it (contextips-redteam, 2026-11-23). After a restore, list
   the folder before trusting it.
+
+### How sessions find the memory (tested 2026-11-23, Claude Code 2.1.331)
+
+`.claude/settings.local.json` sets `"autoMemoryDirectory":
+"/Volumes/speedy/Github/Omarchy-Hardened/.claude-memory"`. Claude Code documents the setting as
+ignored in the checked-in `.claude/settings.json`; in `settings.local.json` it is honoured. Tested
+with headless `claude -p` sessions:
+- pointed at an empty test folder, a new session wrote its probe note there (1 file; the real
+  memory stayed at 6; the note is kept in `evidence/automem-test/`);
+- without the setting, a session reported the default key path
+  `~/.claude/projects/-Volumes-speedy-Github-Omarchy-Hardened/memory/` (the symlink);
+- with it, sessions started from `/Volumes/speedy/Github/Omarchy-Hardened` and from
+  `~/Github/Omarchy-Hardened` both reported `.claude-memory/`.
+
+Unverified: an interactive session. The binary has a message that a folder declaring this setting
+"changes where automatic memory is written", which may ask you to trust the folder once. If a
+session declines or ignores it, the symlinks still lead to the same folder. Check any time with
+`claude -p --model haiku -- 'Print MEMDIR= and the absolute path of your memory directory from your
+instructions.'`
