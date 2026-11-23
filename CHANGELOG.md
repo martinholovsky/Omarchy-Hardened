@@ -125,6 +125,9 @@ SemVer once 1.0 ships.
   launch paths now report `.claude-memory/`). Interactive sessions are
   unverified. `.claude/settings.local.json` is now also excluded in
   `.git/info/exclude`, since the global git ignore stays on the old Mac.
+- The machine-bound list and the new-Mac restore step also name the
+  "Where project data lives" pointer section in `~/.claude/CLAUDE.md`, as the
+  reference implementation does (contextips-redteam `60acfa7`).
 - The pre-commit unit-test hooks (`collector-tests`, `panel-tests`) run
   under `uv run --frozen python` instead of whatever `python3` is on `PATH`
   (Homebrew moved it to 3.15 on 2026-11-22).

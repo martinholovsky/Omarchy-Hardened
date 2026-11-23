@@ -34,7 +34,8 @@ fixed that day (CHANGELOG).
 
 - `~/.claude/hooks/memory-guard.py` (a PreToolUse hook in `~/.claude/settings.json` that asks
   before any `rm`/`mv`/`rmdir`/`unlink`/`ln` touching a memory folder) and
-  `~/.claude/prompts/where-project-data-lives.md` (the setup prompt behind this section).
+  `~/.claude/prompts/where-project-data-lives.md` (the setup prompt behind this section), and the
+  "Where project data lives" pointer section in `~/.claude/CLAUDE.md` that sends every session there.
 - `~/.claude/projects/-Volumes-speedy-Github-Omarchy-Hardened/` (session transcripts)
   and the `memory` symlinks in that key and in
   `~/.claude/projects/-Users-martinholovsky-Github-Omarchy-Hardened/`. The memory itself is
@@ -57,7 +58,8 @@ ln -s /Volumes/speedy/Github ~/Github
 VBoxManage setproperty machinefolder /Volumes/speedy/VirtualBox/images
 VBoxManage registervm /Volumes/speedy/VirtualBox/images/aegis-omarchy/aegis-omarchy.vbox
 VBoxManage snapshot aegis-omarchy list        # expect pre-aegis-450 among them
-# ~/.claude/hooks/memory-guard.py, ~/.claude/prompts/ and the hook entry in ~/.claude/settings.json:
+# ~/.claude/hooks/memory-guard.py, ~/.claude/prompts/, the hook entry in ~/.claude/settings.json
+# and the pointer section in ~/.claude/CLAUDE.md:
 # restore from Time Machine (~/.claude was [Included], 2026-11-23); check with
 # `python3 ~/.claude/hooks/memory-guard.py --selftest`
 # Claude memory: .claude/settings.local.json (in the repo folder) already sets autoMemoryDirectory;
