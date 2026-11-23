@@ -105,6 +105,13 @@ SemVer once 1.0 ships.
   now in `.gitignore`. `tests/vm/README.md` no longer points at a
   `~/Downloads` ISO folder that does not exist here, and says never to
   delete `tests/vm/.state/`.
+- The same section now records that `tmutil isexcluded` reports every listed
+  location as backed up, never to cite a tier-4 path, that no tool writes input
+  paths into results, and how to move, delete and restore data safely
+  (including that `grep` in Claude Code sessions skips ignored files and
+  binaries). The container test's copy guard was mutation-probed on 2026-11-23:
+  with `cp -a /src/. /work` put back, it stops with "the working copy in /work
+  is incomplete or holds git-ignored host state" (exit 1); unchanged, it passes.
 - The pre-commit unit-test hooks (`collector-tests`, `panel-tests`) run
   under `uv run --frozen python` instead of whatever `python3` is on `PATH`
   (Homebrew moved it to 3.15 on 2026-11-22).
