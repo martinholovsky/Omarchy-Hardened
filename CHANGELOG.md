@@ -95,6 +95,20 @@ SemVer once 1.0 ships.
 
 ### Changed
 
+- Where project data lives (2026-11-23): `CLAUDE.md` now lists the five
+  storage tiers for this project (tracked, local-durable, rebuildable,
+  ephemeral, outside by design), what is bound to one Mac, and the setup
+  steps for a new one. Claude's memory for the project moved into
+  `.claude-memory/` (ignored through `.git/info/exclude`), and both
+  `~/.claude/projects` path keys symlink to it. Seven earlier session
+  scratchpads (1275 files, 68 MB) were copied to `evidence/scratchpads/`,
+  now in `.gitignore`. `tests/vm/README.md` no longer points at a
+  `~/Downloads` ISO folder that does not exist here, and says never to
+  delete `tests/vm/.state/`.
+- The pre-commit unit-test hooks (`collector-tests`, `panel-tests`) run
+  under `uv run --frozen python` instead of whatever `python3` is on `PATH`
+  (Homebrew moved it to 3.15 on 2026-11-22).
+
 - D-08 (owner, 2026-10-30): only release tags are signed; commits no longer
   are (`commit.gpgsign=false`), so a commit needs no touch on the key. Set
   `aegis_commit_signing_commits: true` to sign every commit again. A run
@@ -125,6 +139,14 @@ SemVer once 1.0 ships.
   databases are behind the mirror (a 404 in run 1).
 
 ### Fixed
+
+- The container test copied the whole working tree into the container
+  (`cp -a /src /work`), git-ignored directories included: a local
+  `.collections/` that `ansible-galaxy collection install` then skipped as
+  already installed, and the VM test's SSH key and become password from
+  `tests/vm/.state/`. `inside.sh` now copies only what git would commit
+  (tracked plus new, not-ignored files) and stops if `/work` holds either
+  directory.
 
 - D-08 verified with a YubiKey (VM, 2026-10-30): an `ed25519-sk` key, the
   role applied, a signed commit and tag that `git` verifies. open-items.md

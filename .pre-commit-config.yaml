@@ -56,13 +56,13 @@ repos:
         files: ^(roles/(opensnitch|control_panel)/files/.*\.py|tests/(collector|panel)/.*\.py)$
       - id: collector-tests
         name: collector unit tests
-        entry: python3 -I -m unittest discover -s tests/collector
+        entry: uv run --frozen python -I -m unittest discover -s tests/collector
         language: system
         pass_filenames: false
         files: ^(roles/opensnitch/files/.*\.py|tests/collector/.*\.py)$
       - id: panel-tests
         name: panel helper unit tests (D-38)
-        entry: python3 -I -m unittest discover -s tests/panel
+        entry: uv run --frozen python -I -m unittest discover -s tests/panel
         language: system
         pass_filenames: false
         files: ^(roles/control_panel/files/.*\.py|tests/panel/.*\.py)$

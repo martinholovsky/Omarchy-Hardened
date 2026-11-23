@@ -41,11 +41,20 @@ echo() {
 trap 'builtin echo "elapsed: ${SECONDS}s"' EXIT
 
 echo "--- installing ansible"
-pacman -Syu --noconfirm --needed ansible-core python ufw expect sudo git >/dev/null
+pacman -Syu --noconfirm --needed ansible-core python ufw expect sudo git tar >/dev/null
 ansible --version | head -1
 
-# Work on a writable copy; /src is mounted read-only.
-cp -a /src /work
+# Work on a writable copy of what git would commit (tracked files plus new,
+# not-ignored ones); /src is mounted read-only. A plain `cp -a /src` also
+# copied the host's git-ignored directories: a stale .collections/ that the
+# galaxy install below skips as already installed, and the VM test's SSH key
+# and become password in tests/vm/.state/. --ignore-failed-read skips a
+# tracked file deleted in the working tree.
+mkdir /work
+git -c safe.directory=/src -C /src ls-files -z --cached --others --exclude-standard |
+  tar -C /src --null --ignore-failed-read -T - -cf - | tar -C /work -xf -
+[[ -f /work/omarchy-harden.yml && ! -e /work/tests/vm/.state && ! -e /work/.collections ]] ||
+  fail "the working copy in /work is incomplete or holds git-ignored host state"
 cd /work
 ansible-galaxy collection install -r requirements.yml >/dev/null
 

@@ -9,6 +9,9 @@ workstation. Requirements: `docs/PRD.md`. Verified upstream behaviour:
 `docs/upstream-baseline.md`. Pending security decisions: `docs/open-decisions.md`. What a run changes for
 the user, how to undo it, and what is untested: `docs/operating-notes.md`. Everything still open for
 implemented work: `docs/open-items.md`; delete a row when you close it.
+Where local data lives (what is tracked, what must never be deleted, what is
+rebuildable, what sits outside the repo): `CLAUDE.md`, "Where project data
+lives".
 
 ## Rules
 
