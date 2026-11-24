@@ -47,7 +47,8 @@ fixed that day (CHANGELOG).
   test does not need it (docs/operating-notes.md §6); its copy on speedy is optional.
 - Podman machine registration (`~/.config/containers`, `~/.local/share/containers`).
 - uv's managed Pythons (`~/.local/share/uv/python`), which `.venv` points at.
-- `~/.ssh`, `gh auth` (pushes and PRs), and the `~/Github` symlink.
+- `~/.ssh`, `gh auth` (pushes and PRs), and the `~/Github` symlink. No CLI keys under
+  `~/.config/<cli>`: this project uses none (searched 2026-11-24).
 - The YubiKey used by `pre-aegis-hw` is hardware and moves with you.
 
 ### Setup on a new Mac

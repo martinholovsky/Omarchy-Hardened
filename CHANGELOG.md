@@ -128,6 +128,12 @@ SemVer once 1.0 ships.
 - The machine-bound list and the new-Mac restore step also name the
   "Where project data lives" pointer section in `~/.claude/CLAUDE.md`, as the
   reference implementation does (contextips-redteam `60acfa7`).
+- `tests/container/sysctl-apply.sh` had the same `cp -a /src /work` as
+  `inside.sh` and now copies only what git would commit, with the same guard.
+  It runs only in CI on a fresh checkout, so it had no ignored state to copy;
+  found by the completeness check of 2026-11-24. Probe: the copy step alone,
+  in an unprivileged container, reaches `/work`; with `cp -a` put back it
+  stops at the guard (exit 1).
 - The pre-commit unit-test hooks (`collector-tests`, `panel-tests`) run
   under `uv run --frozen python` instead of whatever `python3` is on `PATH`
   (Homebrew moved it to 3.15 on 2026-11-22).
