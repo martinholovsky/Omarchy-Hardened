@@ -21,8 +21,15 @@ podman run --rm --privileged --network=host --platform linux/amd64 \
   -v "$repo_root:/src:ro" "$IMAGE" bash -c '
 set -euo pipefail
 fail() { echo "FAIL: $*" >&2; exit 1; }
-pacman -Syu --noconfirm --needed ansible-core python >/dev/null
-cp -a /src /work && cd /work
+pacman -Syu --noconfirm --needed ansible-core python git tar >/dev/null
+# Copy only what git would commit, as inside.sh does: never git-ignored
+# state from the host (.collections/, tests/vm/.state/).
+mkdir /work
+git -c safe.directory=/src -C /src ls-files -z --cached --others --exclude-standard |
+  tar -C /src --null --ignore-failed-read -T - -cf - | tar -C /work -xf -
+[[ -f /work/omarchy-harden.yml && ! -e /work/tests/vm/.state && ! -e /work/.collections ]] ||
+  fail "the working copy in /work is incomplete or holds git-ignored host state"
+cd /work
 ansible-galaxy collection install -r requirements.yml >/dev/null
 play() { ansible-playbook tests/container/sysctl-play.yml "$@"; }
 
