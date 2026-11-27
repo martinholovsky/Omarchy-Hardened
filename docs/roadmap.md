@@ -138,6 +138,7 @@ BPF kernel reads and tracefs, which Tetragon and bpftrace need.
 | 28 | **Implemented (2026-11-21).** Audit: `bpf` is in `/sys/kernel/security/lsm` (an `lsm=` edit can drop it silently) | owner (audit only) |
 | 29 | **Implemented (2026-11-21).** Audit: listening-socket inventory, WARN on non-loopback listeners outside an allowlist, loopback listeners counted in the PASS detail (OpenClaw, Ollama) | owner (audit only) |
 | 30 | **Done (2026-11-21, operating-notes §5).** Document `aegis-agent --egress enforce -- COMMAND` for untrusted repositories and toolchains | none (docs) |
+| 31 | gVisor `runsc` as the OCI runtime of `aegis-agent`, against container escape through a kernel bug (D-07, compared 2026-11-28). Unchecked: rootless Podman with `runsc`, and the D-30 overlay limit on `linux-hardened`. Packaged only in the AUR (`gvisor`, `gvisor-bin`), so an upstream release with a verified checksum, as for Smokescreen | new decision, VM test |
 
 ## Do not adopt (breaks Omarchy)
 
@@ -178,6 +179,15 @@ These were confirmed against Omarchy's source:
   - socket activation as an attack-surface control (#29 instead)
   - bpftrace as a default package
   - the AUR `tetragon-bin` package (a 2022 CLI, not the daemon)
+- From the link review (2026-11-28):
+  - [agentjail](https://github.com/LuD1161/agentjail): agent-hook policy on the
+    host. Its README calls the hooks "cooperative checks, not a filesystem
+    isolation boundary"; the Landlock sandbox applies only under `agentjail
+    run`, and its daemon updates itself (against "pin everything").
+    `aegis-agent` (D-07) is the boundary
+  - OpenDNS FamilyShield as a resolver: content filtering is outside the
+    threat model, and it sends every lookup to Cisco. A user who wants it can
+    run Omarchy's `omarchy dns Custom` (`bin/omarchy-dns`)
 - Kicksecure no-ops on Arch. They would read as controls and change nothing:
   - `cfi=kcfi` (GCC-built kernel)
   - `kfence.sample_interval=100` and `efi_pstore.pstore_disable=1` (already the default)

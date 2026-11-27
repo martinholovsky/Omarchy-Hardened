@@ -149,6 +149,20 @@ container. Only the project directory is bind-mounted. There is no `$HOME`,
 all capabilities are dropped, and new privileges are disabled. Egress control
 comes from D-09. It is opt-in per invocation and changes nothing else.
 
+**Compared later (owner, 2026-11-28), not adopted.** Two stronger boundaries
+against the residual risk of a container escape through a kernel bug
+(threat model §3.5):
+- [trailofbits/coop](https://github.com/trailofbits/coop) (Apache-2.0): agents
+  in disposable Firecracker microVMs. On Linux it needs `/dev/kvm`, `sudo` for
+  networking, jail staging and disk setup, and a root-owned `/var/lib/coop`;
+  its setup installs missing tools only through `apt-get`, and the README
+  installs with `curl | bash` (docs/getting-started.md, read 2026-11-26).
+  Root on the host for every setup is a larger trust grant than rootless
+  Podman, so it is cited here, not wrapped in a role.
+- [gVisor](https://github.com/gvisor/gvisor) (Apache-2.0; moved from
+  `google/gvisor`): `runsc` as the OCI runtime inside `aegis-agent`. Roadmap
+  #31; needs a VM test first.
+
 ## D-08 — Commit signing key type (Decided 2026-10-21: SSH, ed25519-sk; 2026-10-30: tags only)
 
 SSH signing key on a FIDO2 token (`ed25519-sk`) or GPG. **Recommendation:**
@@ -1171,3 +1185,87 @@ Rules that come with it:
     test answers polkit with `pkttyagent` registered for the test's own
     process, still inside the desktop session;
   - a FIDO2 key at that dialog (D-28: key alone).
+
+## D-39 — Encrypted DNS and DNSSEC (Open, opened 2026-11-28)
+
+**What a fresh install does.** DNS goes unencrypted and unvalidated to
+whatever server DHCP hands out:
+- Omarchy (pinned commit `dde0d12`) never calls `omarchy-dns` during install
+  or in a migration, so the provider is DHCP. Its resolved drop-ins only turn
+  off LLMNR and mDNS (`10-disable-multicast.conf`) and add the Docker stub
+  (`20-docker-dns.conf`). The Cloudflare and Google presets of `omarchy dns`
+  set `DNSOverTLS=opportunistic`, DHCP sets `no`, and Custom sets neither.
+  Nothing in Omarchy sets `DNSSEC=`.
+- Arch builds systemd with `-Ddefault-dnssec=no` (PKGBUILD at
+  `archlinux/packaging/packages/systemd` commit `c5437d99`, systemd 262.2,
+  read 2026-11-28). Upstream's default is `allow-downgrade`
+  (`meson_options.txt`, v262.2). Its DNS-over-TLS default is `no`, and
+  Arch does not change it.
+
+**What systemd-resolved can do** (resolved.conf(5), v262.2):
+- **No DNS-over-HTTPS.** The only encrypted transport is `DNSOverTLS=` (TCP
+  853). The upstream request for DoH, systemd/systemd#8639, is still open.
+- **`DNSOverTLS=opportunistic`** "is not capable of authenticating the
+  server", so it is open to man-in-the-middle and downgrade attacks: it does
+  not stop spoofing. **`yes`** checks the certificate against the `#name` in
+  `DNS=`, and if the server cannot be reached over TLS, "all DNS requests will
+  fail". Networks that block 853/tcp are common (owner's concern; not
+  measured here), and on those, strict DoT means no DNS at all.
+- **`DNSSEC=allow-downgrade`** can be downgraded by "synthesizing a DNS
+  response that suggests DNSSEC was not supported". **`yes`** fails every
+  lookup when the server does not support DNSSEC (many home routers and
+  hotel resolvers). Validation proves the answer is authentic only for signed
+  zones, and it does not hide queries.
+- `DNS=` accepts `address:port#name`, so resolved can forward to a local
+  resolver on another port. Resolved keeps its stub, the Docker listener and
+  per-link DNS (Tailscale, D-10). This is not the "replace resolved" item
+  under the roadmap's "Do not adopt".
+
+**DoH would need a forwarder.** `dnscrypt-proxy` is in Arch `extra` (2.1.20;
+ISC; DNSCrypt/dnscrypt-proxy, active). It speaks DoH on 443 and DNSCrypt. It
+ships a `.service` and a `.socket` and a `captive-portals.txt` map, and it has
+`require_dnssec`, `require_nolog` and `require_nofilter` server filters
+(example config, 2.1.21). Its default `listen_addresses` is `127.0.0.1:53`,
+and its `bootstrap_resolvers` (8.8.8.8, 1.1.1.1) are plain DNS, used only to
+find the DoH servers. Not checked:
+- whether it passes DNSSEC records through, so that resolved can validate;
+- how OpenSnitch (D-09) and the egress collector (D-25) name destinations
+  once the upstream leg is HTTPS;
+- whether Tailscale MagicDNS and captive portals still work.
+
+**Trade-offs common to every encrypted option.**
+- Lookups go to one provider instead of the network's resolver, which is a
+  privacy choice.
+- Names that only the local network's DNS knows (a router, a corporate
+  domain) stop resolving unless they are forwarded.
+- A captive-portal login page needs plain DNS until you are signed in.
+- `omarchy dns` rewrites `/etc/systemd/resolved.conf` wholesale, and a drop-in
+  in `resolved.conf.d/` wins over that file. So an aegis drop-in would
+  silently override the user's later `omarchy dns` choice unless the audit
+  reports the conflict.
+
+**Options:**
+- **(a) Audit only.** A finding `dns.transport` reports the effective
+  `DNSOverTLS=` and `DNSSEC=` and the servers in use (`resolvectl status`).
+  INFO on DHCP with neither; WARN on `opportunistic`, because it reads as
+  protection and is not. Changes nothing.
+- **(b) DNSSEC `allow-downgrade`, opt-in.** A resolved drop-in that restores
+  upstream's default. It needs no new package and catches spoofed answers
+  for signed zones unless an attacker forces the downgrade. It needs a VM
+  test against a resolver that strips DNSSEC.
+- **(c) DoH through dnscrypt-proxy, opt-in.** It listens on loopback on a
+  port other than 53, and resolved forwards to it with `DNS=127.0.0.1:<port>`
+  and `Domains=~.`. Traffic leaves on 443, so firewalls that block 853 do not
+  stop it, and `require_dnssec` picks validating servers. It adds a
+  dependency and a daemon on the DNS path, and its servers come from a signed
+  public list unless pinned with `server_names`. It needs the VM checks
+  listed above.
+- **(d) Strict DoT (`DNSOverTLS=yes`), opt-in.** No new package, and the
+  server is authenticated. Every lookup fails where 853 is blocked or a
+  captive portal intercepts.
+
+**Recommendation:** (a) now. Then (c) behind `aegis_dns_mode: omarchy`
+(default) | `doh`, with (b) as `aegis_dns_dnssec: omarchy` (default) |
+`allow-downgrade`, after a VM test. (d) as a mode only if asked for; not as a
+default, for the firewall reason above. Browsers' own DoH (Firefox,
+Chromium) is separate and stays the user's setting.
