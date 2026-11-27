@@ -140,7 +140,7 @@ drift), **agent container → host and network** (Podman, proxy), and
 
 | Control | Threat it addresses | Status | Does not stop | Evidence |
 |---|---|---|---|---|
-| `agent_containment` (D-07, D-01): `aegis-agent` runs the agent in rootless Podman with only the project directory mounted, no `$HOME`, all capabilities dropped, no new privileges, a seccomp profile that refuses user namespaces | An agent reads SSH keys, tokens or other projects, or escalates through the kernel from inside the container. T1611, T1552.001 | opt-in, per invocation; enforces when used | Damage inside the project directory it was given; agents started without the wrapper; a container escape through a kernel bug. It does not run on `linux-hardened` (no unprivileged overlayfs); the audit WARNs (D-30) | VM: no capabilities, no user namespaces, project directory writable (`run.sh`) |
+| `agent_containment` (D-07, D-01): `aegis-agent` runs the agent in rootless Podman with only the project directory mounted, no `$HOME`, all capabilities dropped, no new privileges, a seccomp profile that refuses user namespaces | An agent reads SSH keys, tokens or other projects, or escalates through the kernel from inside the container. T1611, T1552.001 | opt-in, per invocation; enforces when used | Damage inside the project directory it was given; agents started without the wrapper (Omarchy's own `opencode`, or front ends such as OpenChamber, which also offers `--lan` and tunnels; `network.listeners` WARNs on a non-loopback listener); a container escape through a kernel bug. It does not run on `linux-hardened` (no unprivileged overlayfs); the audit WARNs (D-30) | VM: no capabilities, no user namespaces, project directory writable (`run.sh`) |
 | `agent_containment` (D-26): the agent's HTTP(S) goes through Smokescreen; `report` (default) logs hosts outside the allowlist, `enforce` allows only the allowlist with no direct route; LAN and cloud metadata addresses refused | An agent exfiltrates code or secrets, or reaches internal services and metadata endpoints. T1041, T1552.005 | reports by default; enforces in `enforce` mode | Exfiltration to an allowlisted host; in `report` mode, any host (it is logged, not blocked); non-HTTP traffic in `report` mode | VM: report lets listed, unlisted and direct traffic out; enforce allows github.com, refuses example.org, has no direct route; proxies run read-only as 65534 with the seccomp profile (`agent-egress.sh`). Container: checksum-pinned install, a wrong checksum stops it; `169.254.169.254` refused (407) in enforce, and `169.254.169.254` and `10.0.0.1` refused (407) in report mode, where only the address rules can refuse (a config that allows those ranges gets 502 instead, checked 2026-10-26) |
 
 ### 3.6 Host → internet (A2)
@@ -193,6 +193,9 @@ Stated plainly, so nobody reads more into the green audit than is there:
 - **Tailscale traffic bypasses ufw** in Tailscale's default mode (D-24); the
   audit says so.
 - **hardened_malloc is not used** (D-03, deferred).
+- **DNS is neither encrypted nor validated by default** (D-39, open).
+  An attacker on the local network can spoof answers; Omarchy's
+  `opportunistic` DNS-over-TLS presets do not stop that.
 - **Runtime monitoring is off by default and only reports** (D-37). With it
   on, it records and the audit warns; nothing is killed or blocked.
 - **Root is the end of the line.** Every control above assumes the attacker

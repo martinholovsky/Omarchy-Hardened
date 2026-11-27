@@ -92,6 +92,14 @@ SemVer once 1.0 ships.
   sudo authorization (D-36). VM: after an in-place `omarchy-update` to 4.5.0,
   `tests/vm/run.sh` passed (2026-11-11); `tests/vm/README.md` names the
   session variables `omarchy-update` needs when run over SSH.
+- Link review (2026-11-28): D-07 records two compared, not adopted,
+  boundaries (Trail of Bits coop, gVisor); roadmap #31 is gVisor `runsc` for
+  `aegis-agent`, pending a decision and a VM test; "Do not adopt" lists
+  agentjail and OpenDNS FamilyShield; threat model §3.5 names agent front ends
+  started without the wrapper (OpenChamber).
+- D-39 (open): encrypted DNS and DNSSEC. systemd-resolved has DNS-over-TLS
+  but no DoH; Arch builds it with DNSSEC off; options from audit-only to DoH
+  through dnscrypt-proxy. Threat model §4 says DNS is unprotected by default.
 
 ### Changed
 
