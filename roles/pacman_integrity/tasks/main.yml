@@ -245,6 +245,9 @@
 - name: Report listening sockets (roadmap 29)
   ansible.builtin.import_tasks: listeners.yml
 
+- name: Report the DNS transport and DNSSEC mode (D-39)
+  ansible.builtin.import_tasks: dns.yml
+
 - name: Read the group database
   ansible.builtin.getent:
     database: group

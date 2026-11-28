@@ -101,6 +101,7 @@ drift), **agent container → host and network** (Podman, proxy), and
 | `overlay_network` (D-10, D-24): reports Tailscale; opt-in SSH on `tailscale0` only | A5 reaches every listening port, because Tailscale's default netfilter mode accepts `tailscale0` before ufw | reports (WARN `network.overlay`) | The bypass itself: the role reports it, it does not switch Tailscale to `nodivert` (D-24 a′) | VM with Headscale: a tailnet peer reaches a port ufw denies and the audit WARNs; in `nodivert` the port is closed and the finding passes (`tailscale.sh`) |
 | `overlay_network`: sshd audit | A1/A5 brute-forces sshd password logins, or uses a stolen software key file. T1110.001, T1021.004 | reports (`ssh.password_auth`, `ssh.authorized_keys`) | A key the attacker already holds; sshd on a non-default config path | Container: Arch's stock sshd_config warns, Omarchy's key-only drop-in passes, an `ssh-ed25519` key is reported as not hardware-backed, an `sk-` key passes |
 | `pacman_integrity`: listening-socket inventory (roadmap #29) | A1/A5 reaches a service someone started that listens beyond loopback (a forgotten dev server, a backdoor's listener, T1205/T1571) | reports (`network.listeners` WARN for anything not in `aegis_integrity_listeners_known`) | A listener on an allowlisted process and port; one started and stopped between audits; ufw still filters inbound either way | Container: planted `ss` output with an unknown `nc` on 0.0.0.0:4444 WARNs; known (avahi) and loopback-only listeners PASS |
+| `pacman_integrity`: DNS transport and DNSSEC mode (D-39 (a)) | A1 on the local network spoofs or rewrites DNS answers (T1557); Omarchy's `opportunistic` DNS-over-TLS looks like it stops that and does not | reports (`dns.transport`: WARN on `opportunistic`, PASS only when every scope uses strict DNS-over-TLS, INFO for plain DNS) | Changes nothing; spoofing on plain DNS or downgradable DNSSEC; browsers' own DoH; programs that bypass resolved | Container: planted `resolvectl --json` output for strict, opportunistic (Omarchy's Cloudflare preset), DHCP, a plain link under a strict global, and unreadable output. Not run against a live resolved yet |
 | `sysctl` network keys: redirects and source routing off (IPv4/IPv6), loose `rp_filter`, `tcp_syncookies`, `tcp_rfc1337`, IPv6 temporary addresses | A1 on the same segment redirects traffic through itself with ICMP redirects or source-routed packets (T1557); SYN floods; tracking the machine by a stable IPv6 address | enforces (values read back after apply) | ARP/DHCP spoofing, rogue Wi-Fi, anything at layer 2 | Container: all values written and read back; VM: live values after reboot. The effect of each key is the kernel's documented behaviour, not measured here |
 
 ### 3.2 User → root (A2, A3)
@@ -193,9 +194,10 @@ Stated plainly, so nobody reads more into the green audit than is there:
 - **Tailscale traffic bypasses ufw** in Tailscale's default mode (D-24); the
   audit says so.
 - **hardened_malloc is not used** (D-03, deferred).
-- **DNS is neither encrypted nor validated by default** (D-39, open).
-  An attacker on the local network can spoof answers; Omarchy's
-  `opportunistic` DNS-over-TLS presets do not stop that.
+- **DNS is neither encrypted nor validated by default** (D-39, audit
+  only). An attacker on the local network can spoof answers; Omarchy's
+  `opportunistic` DNS-over-TLS presets do not stop that. The audit says which
+  mode is in force (`dns.transport`).
 - **Runtime monitoring is off by default and only reports** (D-37). With it
   on, it records and the audit warns; nothing is killed or blocked.
 - **Root is the end of the line.** Every control above assumes the attacker

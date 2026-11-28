@@ -1186,7 +1186,7 @@ Rules that come with it:
     process, still inside the desktop session;
   - a FIDO2 key at that dialog (D-28: key alone).
 
-## D-39 — Encrypted DNS and DNSSEC (Open, opened 2026-11-28)
+## D-39 — Encrypted DNS and DNSSEC (Decided 2026-11-28: (a))
 
 **What a fresh install does.** DNS goes unencrypted and unvalidated to
 whatever server DHCP hands out:
@@ -1269,3 +1269,16 @@ find the DoH servers. Not checked:
 `allow-downgrade`, after a VM test. (d) as a mode only if asked for; not as a
 default, for the firewall reason above. Browsers' own DoH (Firefox,
 Chromium) is separate and stays the user's setting.
+
+**Decided (owner, 2026-11-28):** (a), audit only. Finding `dns.transport`
+(`pacman_integrity`, module `aegis_dns`) reads `resolvectl --json=short
+status` (systemd 259 or later; Arch ships 262.2). It reports each scope that
+has servers (global, each link; the fallback servers when there are none),
+with its DNS-over-TLS mode, DNSSEC mode and servers. A link without its own
+mode inherits the global one.
+- WARN when any scope is `opportunistic`.
+- PASS when every scope is `yes`.
+- INFO for plain DNS, or when resolved cannot be read.
+
+Nothing is changed on the host. (b) to (d) stay open: revisit with a VM test
+of (c) if the owner wants DoH.

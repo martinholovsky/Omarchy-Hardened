@@ -4,7 +4,7 @@
 set -euo pipefail
 
 readonly FIX=/src/tests/fixtures/omarchy
-checks_total=89
+checks_total=92
 checks_passed=0
 
 # Status of one finding in the latest audit file, or "MISSING".
@@ -965,11 +965,29 @@ expect_finding panel.disabled PASS
 pass "a pause and a disable are WARN findings until they end"
 
 echo "--- roadmap 28/29: BPF LSM and listening sockets on planted inputs"
-lsm_play() { # lsm-file ss-file
+lsm_play() { # lsm-file ss-file [resolvectl-json-file]
+  local q='import json,sys; print(json.dumps(open(sys.argv[1]).read()))'
   ansible-playbook tests/container/lsm-listeners.yml -e "aegis_apparmor_lsm_file=$1" \
-    -e "{\"aegis_integrity_ss_output\": $(python3 -I -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$2")}" \
-    >/tmp/lsm.log 2>&1 || { cat /tmp/lsm.log; fail "lsm/listener audit run failed"; }
+    -e "{\"aegis_integrity_ss_output\": $(python3 -I -c "$q" "$2")}" \
+    -e "{\"aegis_integrity_resolvectl_json\": $(python3 -I -c "$q" "${3:-/tmp/dns-strict.json}")}" \
+    >/tmp/lsm.log 2>&1 || { cat /tmp/lsm.log; fail "lsm/listener/dns audit run failed"; }
 }
+# resolvectl --json=short status (systemd 259+; field names from
+# src/shared/dns-configuration.c at v262.2). Addresses are byte arrays.
+cf='{"address":[1,1,1,1],"family":2,"port":53,"name":"cloudflare-dns.com","accessible":true}'
+lan='{"address":[192,168,1,1],"family":2,"accessible":true}'
+q9='{"address":[9,9,9,9],"family":2,"name":"dns.quad9.net","accessible":true}'
+printf '[{"servers":[%s],"fallbackServers":[%s],"dnsOverTLS":"yes","dnssec":"yes"}]\n' "$cf" "$q9" >/tmp/dns-strict.json
+# Omarchy's Cloudflare preset (DNSOverTLS=opportunistic, Arch's DNSSEC=no).
+printf '[{"servers":[%s],"dnsOverTLS":"opportunistic","dnssec":"no"},{"ifname":"enp0s3","ifindex":2,"servers":[]}]\n' \
+  "$cf" >/tmp/dns-opp.json
+# DHCP: no global servers; the link's server inherits the global "no".
+printf '[{"servers":[],"fallbackServers":[%s],"dnsOverTLS":"no","dnssec":"no"},{"ifname":"enp0s3","ifindex":2,"servers":[%s]}]\n' \
+  "$q9" "$lan" >/tmp/dns-dhcp.json
+# A link that overrides a strict global with plain DNS must not PASS.
+printf '[{"servers":[%s],"dnsOverTLS":"yes","dnssec":"no"},{"ifname":"wlan0","ifindex":3,"servers":[%s],"dnsOverTLS":"no"}]\n' \
+  "$cf" "$lan" >/tmp/dns-mixed.json
+printf 'not json\n' >/tmp/dns-bad.json
 printf 'capability,landlock,lockdown,yama,apparmor,bpf\n' >/tmp/lsm-ok
 printf 'capability,landlock,lockdown,yama,apparmor\n' >/tmp/lsm-nobpf
 cat >/tmp/ss-out <<'SS'
@@ -988,6 +1006,28 @@ lsm_play /tmp/lsm-ok /tmp/ss-clean
 expect_finding kernel.bpf_lsm PASS
 expect_finding network.listeners PASS
 pass "bpf active and only known or loopback listeners: both PASS"
+expect_finding dns.transport PASS
+grep -q 'global: DNS-over-TLS yes, DNSSEC yes, servers 1.1.1.1#cloudflare-dns.com' /var/lib/aegis/audit.jsonl \
+  || { cat /var/lib/aegis/audit.jsonl; fail "strict DNS-over-TLS detail missing"; }
+pass "D-39: strict DNS-over-TLS on every scope is PASS"
+lsm_play /tmp/lsm-ok /tmp/ss-clean /tmp/dns-opp.json
+expect_finding dns.transport WARN
+grep -q 'does not authenticate the server.*global: DNS-over-TLS opportunistic, DNSSEC no' /var/lib/aegis/audit.jsonl \
+  || { cat /var/lib/aegis/audit.jsonl; fail "opportunistic DNS-over-TLS not explained"; }
+pass "D-39: Omarchy's opportunistic DNS-over-TLS preset is WARN"
+lsm_play /tmp/lsm-ok /tmp/ss-clean /tmp/dns-dhcp.json
+expect_finding dns.transport INFO
+grep -q 'link enp0s3: DNS-over-TLS no, DNSSEC no, servers 192.168.1.1' /var/lib/aegis/audit.jsonl \
+  || { cat /var/lib/aegis/audit.jsonl; fail "DHCP link server not reported with the inherited mode"; }
+lsm_play /tmp/lsm-ok /tmp/ss-clean /tmp/dns-mixed.json
+expect_finding dns.transport INFO
+grep -q 'link wlan0: DNS-over-TLS no' /var/lib/aegis/audit.jsonl \
+  || { cat /var/lib/aegis/audit.jsonl; fail "a plain-DNS link under a strict global was not reported"; }
+lsm_play /tmp/lsm-ok /tmp/ss-clean /tmp/dns-bad.json
+expect_finding dns.transport INFO
+grep -q 'cannot read the DNS configuration: resolvectl JSON unreadable' /var/lib/aegis/audit.jsonl \
+  || { cat /var/lib/aegis/audit.jsonl; fail "unreadable resolvectl output not reported"; }
+pass "D-39: plain DNS (DHCP), a plain link under a strict global, and unreadable output are INFO"
 
 echo "--- D-02: the kernel role accepts either default, but needs the linux-hardened entry"
 # Synthetic menus: the role reads only the kernel-id= words, in order.
