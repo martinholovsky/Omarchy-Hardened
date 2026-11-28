@@ -7,6 +7,10 @@ SemVer once 1.0 ships.
 
 ### Added
 
+- Blocking local zizmor gate: pre-commit hook `zizmor-gate`
+  (`scripts/zizmor-gate.sh`, zizmor 1.33.1 pinned, fails closed; online
+  audits when CI config is staged). CI skips it. Dependabot updates now wait
+  a 7-day cooldown (zizmor `dependabot-cooldown`).
 - Roadmap #28: audit finding `kernel.bpf_lsm` WARNs when `bpf` is missing
   from the active LSM list (an `lsm=` replaces `CONFIG_LSM`; Tetragon
   `lsmHooks` and systemd `RestrictFileSystems=` then do nothing).

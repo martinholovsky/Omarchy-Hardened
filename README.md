@@ -122,10 +122,20 @@ uses podman only).
 uv sync                                    # locked ansible-core, ansible-lint, yamllint
 uv run ansible-galaxy collection install -r requirements.yml
 uvx pre-commit install --hook-type pre-commit --hook-type pre-push
+pipx install 'zizmor==1.33.1'              # the pre-commit zizmor gate fails closed without it
 uv run ansible-lint && uv run yamllint --strict .
 tests/container/run.sh                     # planted-problem checks in a pinned Arch image; ends "N/N checks passed"
 tests/container/run.sh 2                   # one of the 3 shards CI runs in parallel (setup, then its sections)
 ```
+
+The pre-commit hook `zizmor-gate` (`scripts/zizmor-gate.sh`) audits the CI
+configuration with zizmor 1.33.1 and blocks the commit on any finding: offline
+audits on every commit, plus the online ones (impostor commits, known-vulnerable
+actions) with your `gh auth token` when a file under `.github/` or
+`.pre-commit-config.yaml` is staged. It fails if zizmor is missing or another
+version, or if `gh` is not logged in while CI config is staged
+(`ZIZMOR_OFFLINE=1` skips only the online audits). It runs locally only; CI
+skips it.
 
 `tests/container/run.sh` seeds the PAM and ufw state Omarchy leaves behind,
 using snippets vendored from Omarchy at a pinned commit. It then runs the

@@ -27,9 +27,11 @@ jobs:
         run: uv sync --frozen
       - name: pre-commit (shellcheck, yamllint, ansible-lint)
         # The gitleaks hook only scans staged changes, so it checks nothing
-        # here; the next step scans the full history instead.
+        # here; the next step scans the full history instead. zizmor-gate is a
+        # local-only gate (operator decision 2026-11-28): the runner has no
+        # zizmor, and the hook fails closed without it.
         env:
-          SKIP: gitleaks
+          SKIP: gitleaks,zizmor-gate
         run: uvx --from pre-commit==4.7.0 pre-commit run --all-files --show-diff-on-failure
       - name: gitleaks (full history)
         env:

@@ -23,6 +23,17 @@ repos:
   # Linters run from uv.lock so local and CI use the same versions.
   - repo: local
     hooks:
+      # Blocking zizmor gate over CI config (workflows, dependabot.yml, this file):
+      # offline audits every commit, online audits (impostor commits, vulnerable
+      # actions) via `gh auth token` when CI config is staged. Local by operator
+      # decision 2026-11-28; CI skips it (SKIP in ci.yml). Needs zizmor 1.33.1.
+      - id: zizmor-gate
+        name: zizmor (CI config)
+        entry: scripts/zizmor-gate.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
       - id: yamllint
         name: yamllint
         entry: uv run --frozen yamllint --strict
