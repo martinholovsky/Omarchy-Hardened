@@ -1,0 +1,33 @@
+---
+# D-39 (a): report the DNS transport and DNSSEC mode in force. Audit only;
+# changes nothing. Split out so tests/container can plant resolvectl output.
+#   WARN  any scope uses DNS-over-TLS "opportunistic": it reads as protection,
+#         but cannot authenticate the server and can be downgraded
+#         (resolved.conf(5))
+#   PASS  every scope uses strict DNS-over-TLS ("yes")
+#   INFO  plain DNS, or resolved could not be read
+- name: "Read the DNS configuration in force (D-39)"
+  aegis_dns:
+    status_json: "{{ aegis_integrity_resolvectl_json | default(omit) }}"
+  register: aegis_dns
+
+- name: Record the DNS finding
+  vars:
+    aegis_dns_opp: "{{ aegis_dns.scopes | selectattr('dot', 'equalto', 'opportunistic') | list }}"
+    aegis_dns_strict: "{{ aegis_dns.scopes | selectattr('dot', 'equalto', 'yes') | list }}"
+    aegis_dns_fmt: >-
+      {%- set rows = [] -%}
+      {%- for s in aegis_dns.scopes -%}
+        {%- set _ = rows.append(s.scope ~ ': DNS-over-TLS ' ~ s.dot ~ ', DNSSEC ' ~ s.dnssec
+                                ~ ', servers ' ~ (s.servers | join(' '))) -%}
+      {%- endfor -%}
+      {{ rows | join('; ') }}
+  ansible.builtin.set_fact:
+    aegis_findings: >-
+      {{ (aegis_findings | default([])) + [{'id': 'dns.transport',
+         'status': 'INFO' if aegis_dns.error
+                   else ('WARN' if aegis_dns_opp
+                         else ('PASS' if (aegis_dns_strict | length) == (aegis_dns.scopes | length) else 'INFO')),
+         'detail': ('cannot read the DNS configuration: ' ~ aegis_dns.error) if aegis_dns.error
+                   else ((('opportunistic DNS-over-TLS does not authenticate the server and can be downgraded'
+                           ' (D-39). ') if aegis_dns_opp else '') ~ aegis_dns_fmt)}] }}

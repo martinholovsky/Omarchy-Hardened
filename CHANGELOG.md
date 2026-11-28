@@ -97,9 +97,13 @@ SemVer once 1.0 ships.
   `aegis-agent`, pending a decision and a VM test; "Do not adopt" lists
   agentjail and OpenDNS FamilyShield; threat model §3.5 names agent front ends
   started without the wrapper (OpenChamber).
-- D-39 (open): encrypted DNS and DNSSEC. systemd-resolved has DNS-over-TLS
-  but no DoH; Arch builds it with DNSSEC off; options from audit-only to DoH
-  through dnscrypt-proxy. Threat model §4 says DNS is unprotected by default.
+- D-39 (decided 2026-11-28: (a), audit only): encrypted DNS and DNSSEC.
+  systemd-resolved has DNS-over-TLS but no DoH, and Arch builds it with
+  DNSSEC off. New finding `dns.transport` (`pacman_integrity`, module
+  `aegis_dns`) reads `resolvectl --json=short status`: WARN on
+  `opportunistic` DNS-over-TLS (Omarchy's Cloudflare and Google presets),
+  PASS when every scope is strict, INFO otherwise. The container test has 92
+  checks (`checks_total`).
 
 ### Changed
 

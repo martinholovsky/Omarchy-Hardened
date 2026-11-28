@@ -22,6 +22,11 @@
       ansible.builtin.include_role:
         name: pacman_integrity
         tasks_from: listeners.yml
+
+    - name: Run the DNS check (D-39)
+      ansible.builtin.include_role:
+        name: pacman_integrity
+        tasks_from: dns.yml
   post_tasks:
     - name: Report audit findings
       ansible.builtin.import_role:
